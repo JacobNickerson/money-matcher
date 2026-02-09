@@ -1,16 +1,102 @@
 import sys
+import os
+import re
+from time import sleep
+import pandas as pd
+from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QSizePolicy
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSizePolicy, QMainWindow
 )
+from PyQt5.QtGui import (
+    QFont, QIcon, QPixmap
+)
+from PyQt5.QtCore import Qt, QSize
 
-from PyQt5.QtCore import (
-    Qt
-)
-from widgets.sidebar import SideBar
-from windows.dashboard import (
-    MarketEvents, OrderBook, TradeHistory, OrderEntry
-)
+class SideBar(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setFixedWidth(112)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            SideBar {
+                background-color: #101010;
+                border-color: #363636;
+                border-width: 1px;
+                border-style: solid;
+            }
+        """)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 64, 10, 20)
+        layout.setSpacing(30)
+        layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+
+        self.dashboard_btn = QPushButton()
+        self.dashboard_btn.setIcon(QIcon("../../resources/images/dashboard.svg"))
+        self.dashboard_btn.setIconSize(QSize(20, 20))
+        self.bot_btn = QPushButton()
+        self.bot_btn.setIcon(QIcon("../../resources/images/bot.svg"))
+        self.bot_btn.setIconSize(QSize(20, 20))
+        self.strat_btn = QPushButton()
+        self.strat_btn.setIcon(QIcon("../../resources/images/strat.svg"))
+        self.strat_btn.setIconSize(QSize(20, 20))
+        self.stats_btn = QPushButton()
+        self.stats_btn.setIcon(QIcon("../../resources/images/chart.svg"))
+        self.stats_btn.setIconSize(QSize(20, 20))
+
+        for btn in [self.dashboard_btn, self.bot_btn, self.strat_btn, self.stats_btn]:
+            btn.setFixedSize(36, 36)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #101010;
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 20px;
+                }
+                QPushButton:hover {
+                    background-color: #D9D9D9;
+                }
+                QPushButton:checked {
+                    background-color: #D9D9D9;
+                }
+            """)
+            btn.setCheckable(True)
+            layout.addWidget(btn)
+
+        self.dashboard_btn.setChecked(True)
+        layout.addStretch()
+        self.setLayout(layout)
+
+class MarketEvents(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFixedHeight(500)
+        self.setFixedWidth(600)
+        self.setStyleSheet("""
+            MarketEvents {
+                background-color: #101010;
+                border-color: #363636;
+                border-width: 1px;
+                border-style: solid;
+                border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        widget = QWidget()
+        widget.setLayout(layout)
+        self.chart = QtChart(widget)
+        layout.addWidget(self.chart.get_webview())
+        self.setLayout(layout)
+
+        test_data = pd.read_csv("../../resources/test_data/ohlc.csv") # TODO: replace with market data feed
+        self.chart.set(test_data)
+        self.chart.layout(background_color="#101010", text_color="#999999", font_family="Inter")
+        self.chart.candle_style(up_color="#27AE60", down_color="#EB5757", wick_up_color="#27AE60", wick_down_color="#EB5757", border_visible=False)
+        self.chart.grid(color="#363636")
 
 class EngineWindow(QWidget):
     def __init__(self):
@@ -37,29 +123,9 @@ class EngineWindow(QWidget):
         content_layout.setSpacing(20)
         content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        row_layout_1 = QHBoxLayout()
-        row_layout_1.setSpacing(20)
-        row_layout_2 = QHBoxLayout()
-        row_layout_2.setSpacing(20)
-
         # MarketEvents
         self.market_events = MarketEvents()
-        row_layout_1.addWidget(self.market_events)
-
-        # OrderBook
-        self.order_book = OrderBook()
-        row_layout_1.addWidget(self.order_book)
-
-        # OrderEntry
-        self.order_entry = OrderEntry()
-        row_layout_1.addWidget(self.order_entry)
-
-        # TradeHistory
-        self.trade_history = TradeHistory()
-        row_layout_2.addWidget(self.trade_history)
-
-        content_layout.addLayout(row_layout_1)
-        content_layout.addLayout(row_layout_2, 2)
+        content_layout.addWidget(self.market_events)
         content_layout.addStretch()
 
         main_layout.addWidget(self.sidebar)
