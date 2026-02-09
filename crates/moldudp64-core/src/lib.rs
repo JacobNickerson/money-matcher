@@ -1,4 +1,5 @@
 mod sessions;
+mod tests;
 mod types;
 use crate::types::{MessageCount, MessageData, MessageLength, Messages, SequenceNumber, SessionID};
 use std::collections::HashMap;
