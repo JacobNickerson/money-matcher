@@ -1,4 +1,5 @@
 use crate::SessionTable;
+use crate::types::{SequenceNumber, SessionID};
 use std::collections::HashMap;
 
 impl SessionTable {
@@ -8,7 +9,7 @@ impl SessionTable {
         }
     }
 
-    pub fn generate_session_id(&mut self) -> [u8; 10] {
+    pub fn generate_session_id(&mut self) -> SessionID {
         let s = format!("MM{:08}", self.sessions.len() + 1);
         let mut session_id = [b' '; 10];
 
@@ -16,15 +17,15 @@ impl SessionTable {
         session_id
     }
 
-    pub fn add_session(&mut self, session_id: [u8; 10], sequence_number: [u8; 8]) {
+    pub fn add_session(&mut self, session_id: SessionID, sequence_number: SequenceNumber) {
         self.sessions.insert(session_id, sequence_number);
     }
 
-    pub fn get_sequence_number(&self, session_id: &[u8; 10]) -> Option<&[u8; 8]> {
-        self.sessions.get(session_id)
+    pub fn get_sequence_number(&self, session_id: SessionID) -> Option<&SequenceNumber> {
+        self.sessions.get(&session_id)
     }
 
-    pub fn remove_session(&mut self, session_id: &[u8; 10]) {
+    pub fn remove_session(&mut self, session_id: &SessionID) {
         self.sessions.remove(session_id);
     }
 }

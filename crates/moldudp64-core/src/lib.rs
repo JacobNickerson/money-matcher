@@ -1,4 +1,6 @@
 mod sessions;
+mod types;
+use crate::types::{MessageCount, MessageData, MessageLength, Messages, SequenceNumber, SessionID};
 use std::collections::HashMap;
 
 pub struct MOLDUDP64 {
@@ -6,19 +8,19 @@ pub struct MOLDUDP64 {
 }
 
 pub struct Header {
-    pub session_id: [u8; 10],
-    pub sequence_number: [u8; 8],
-    pub message_count: [u8; 2],
+    pub session_id: SessionID,
+    pub sequence_number: SequenceNumber,
+    pub message_count: MessageCount,
 }
 
 pub struct MessageBlock {
-    pub message_length: [u8; 2],
-    pub message_data: Vec<u8>,
+    pub message_length: MessageLength,
+    pub message_data: MessageData,
 }
 
 pub struct Packet {
     pub header: Header,
-    pub messages: Vec<MessageBlock>,
+    pub messages: Messages,
 }
 
 impl Packet {
@@ -50,7 +52,7 @@ impl Packet {
         message_count.copy_from_slice(&bytes[..2]);
         bytes = &bytes[2..];
 
-        let mut messages: Vec<MessageBlock> = Vec::new();
+        let mut messages: Messages = Vec::new();
 
         let mc = u16::from_be_bytes(message_count) as usize;
 
@@ -86,20 +88,20 @@ impl Packet {
 }
 
 pub struct RequestPacket {
-    pub session_id: [u8; 10],
-    pub sequence_number: [u8; 8],
-    pub message_count: [u8; 2],
+    pub session_id: SessionID,
+    pub sequence_number: SequenceNumber,
+    pub message_count: MessageCount,
 }
 
 pub struct SessionTable {
-    pub sessions: HashMap<[u8; 10], [u8; 8]>,
+    pub sessions: HashMap<SessionID, SequenceNumber>,
 }
 
 #[test]
 fn test_message_block() {
     let message = "Hello, World!";
-    let message_length: [u8; 2] = (message.len() as u16).to_be_bytes();
-    let message_data: Vec<u8> = message.as_bytes().to_vec();
+    let message_length: MessageLength = (message.len() as u16).to_be_bytes();
+    let message_data: MessageData = message.as_bytes().to_vec();
 
     println!("Original Message: {:?}", message);
     println!("Message Length: {:?}", message_length);
