@@ -7,7 +7,7 @@ use tokio::net::UdpSocket;
 pub struct MOLDPRODUCER {
     pub socket: UdpSocket,
     pub session_table: SessionTable,
-    pub message_queue: MessageQueue,
+    pub message_queue: MessageBlocks,
 }
 
 impl MOLDPRODUCER {
@@ -19,25 +19,15 @@ impl MOLDPRODUCER {
         }
     }
 
-    pub fn make_packet(&mut self, messages: MessageQueue) -> Packet {
+    pub fn make_packet(&mut self, message_blocks: MessageBlocks) -> Packet {
         let session_id = self.session_table.get_current_session();
         let sequence_number = self.session_table.next_sequence(session_id);
-        let message_count = (messages.len() as u16).to_be_bytes();
+        let message_count = (message_blocks.len() as u16).to_be_bytes();
         let header = Header {
             session_id,
             sequence_number,
             message_count,
         };
-
-        let mut message_blocks: MessageBlocks = Vec::new();
-
-        for msg in messages {
-            let block: MessageBlock = MessageBlock {
-                message_length: (msg.len() as u16).to_be_bytes(),
-                message_data: msg,
-            };
-            message_blocks.push(block);
-        }
 
         let packet = Packet {
             header,
@@ -53,7 +43,10 @@ impl MOLDPRODUCER {
     }
 
     pub fn enqueue_message(&mut self, message: MessageData) {
-        self.message_queue.push(message);
+        self.message_queue.push(MessageBlock {
+            message_length: (message.len() as u16).to_be_bytes(),
+            message_data: message,
+        });
     }
 }
 
