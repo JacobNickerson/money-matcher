@@ -4,7 +4,6 @@ use crate::MessageBlock;
 use crate::Packet;
 use crate::sessions::SessionTable;
 use crate::types::*;
-use bytes::Bytes;
 
 #[test]
 fn test_ids() {
@@ -40,7 +39,7 @@ fn test_packet() {
     let size: u16 = message.len() as u16;
     let message = MessageBlock {
         message_length: size.to_be_bytes(),
-        message_data: Bytes::copy_from_slice(message.as_bytes()),
+        message_data: message.as_bytes().to_vec(),
     };
 
     let mut m: Vec<MessageBlock> = Vec::new();
@@ -84,7 +83,7 @@ fn test_packet() {
 fn test_message_block() {
     let message = "Hello, World!";
     let message_length: MessageLength = (message.len() as u16).to_be_bytes();
-    let message_data: MessageData = Bytes::copy_from_slice(message.as_bytes());
+    let message_data: MessageData = message.as_bytes().to_vec();
 
     println!("Original Message: {:?}", message);
     println!("Message Length: {:?}", message_length);

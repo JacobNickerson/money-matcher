@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use moldudp64_engine::engine::MOLDPRODUCER;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
@@ -17,7 +16,7 @@ async fn main() -> std::io::Result<()> {
                 .collect();
 
             println!("Message {:?}: {:?}", i, message);
-            mold.enqueue_message(Bytes::copy_from_slice(message.as_bytes()));
+            mold.enqueue_message(message.as_bytes().to_vec());
         }
 
         let packet = mold.flush();

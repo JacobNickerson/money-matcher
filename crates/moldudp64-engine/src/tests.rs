@@ -1,6 +1,5 @@
 #[cfg(test)]
 use crate::engine::*;
-use bytes::Bytes;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
@@ -18,7 +17,7 @@ async fn test_packet_engine() {
             .map(char::from)
             .collect();
         test_messages.push(message.clone());
-        mold.enqueue_message(Bytes::copy_from_slice(message.as_bytes()));
+        mold.enqueue_message(message.as_bytes().to_vec());
     }
 
     let packet = mold.flush();

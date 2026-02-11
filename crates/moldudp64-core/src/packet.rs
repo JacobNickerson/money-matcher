@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use zerocopy::{FromBytes, IntoBytes};
 
 use crate::types::*;
@@ -47,7 +46,7 @@ impl Packet {
             }
 
             let (msg_bytes, rest) = bytes.split_at(ml);
-            let message_data = Bytes::copy_from_slice(msg_bytes);
+            let message_data = msg_bytes.to_vec();
             bytes = rest;
 
             message_blocks.push(MessageBlock {
