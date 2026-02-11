@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub type Socket = tokio::net::UdpSocket;
 pub type SessionID = [u8; 10];
@@ -8,6 +9,8 @@ pub type MessageLength = [u8; 2];
 pub type MessageData = Bytes;
 pub type MessageBlocks = Vec<MessageBlock>;
 
+#[repr(C)]
+#[derive(IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct Header {
     pub session_id: SessionID,
     pub sequence_number: SequenceNumber,
