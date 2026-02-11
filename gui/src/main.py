@@ -8,9 +8,9 @@ from PyQt5.QtCore import (
     Qt
 )
 from widgets.sidebar import SideBar
-from windows.dashboard import MarketEvents
-from windows.dashboard import OrderBook
-from windows.dashboard import TradeHistory
+from windows.dashboard import (
+    MarketEvents, OrderBook, TradeHistory, OrderEntry
+)
 
 class EngineWindow(QWidget):
     def __init__(self):
@@ -49,6 +49,10 @@ class EngineWindow(QWidget):
         # OrderBook
         self.order_book = OrderBook()
         row_layout_1.addWidget(self.order_book)
+
+        # OrderEntry
+        self.order_entry = OrderEntry()
+        row_layout_1.addWidget(self.order_entry)
 
         # TradeHistory
         self.trade_history = TradeHistory()

@@ -16,9 +16,7 @@ class SideBar(QWidget):
         self.setStyleSheet("""
             SideBar {
                 background-color: #101010;
-                border-color: #363636;
-                border-width: 1.5px;
-                border-style: solid;
+                border-right: 1px solid #363636;
             }
         """)
 
