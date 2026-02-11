@@ -13,7 +13,7 @@ from PyQt5.QtGui import (
     QFont, QIcon, QPixmap, QColor, QPainter, QPen, QPainterPath
 )
 from PyQt5.QtCore import (
-    Qt, QSize, QAbstractTableModel, QModelIndex, QRectF
+    Qt, QSize, QAbstractTableModel, QModelIndex, QRect
 )
 
 class SideBar(QWidget):
@@ -109,6 +109,8 @@ class OrderBookModel(QAbstractTableModel):
         self.max_levels = max_levels
         self.asks = (asks or [])[:max_levels]
         self.bids = (bids or [])[:max_levels]
+        self.last_mid_price = None
+        self.mid_direction = 0
 
     def rowCount(self, parent=QModelIndex()):
         return len(self.asks) + 1 + len(self.bids)
@@ -131,6 +133,8 @@ class OrderBookModel(QAbstractTableModel):
     def row_data(self, row):
         if row < len(self.asks):
             return "ask", self.asks[row]
+        elif row == len(self.asks):
+            return "mid", (self.mid_price(), self.spread(), 0)
         else:
             return "bid", self.bids[row - len(self.asks) - 1]
         
@@ -142,6 +146,12 @@ class OrderBookModel(QAbstractTableModel):
         column = index.column()
 
         if role == Qt.DisplayRole:
+            if side == "mid":
+                if column == 0 and price is not None:
+                    return f"{price:.2f}"
+                elif column == 1 and self.spread() is not None:
+                    return f"{self.spread():.2f}"
+                return ""
             if column == 0:
                 return f"{price:.2f}"
             elif column == 1:
@@ -152,8 +162,15 @@ class OrderBookModel(QAbstractTableModel):
         if role == Qt.ForegroundRole and column == 0:
             if side == "ask":
                 return QColor("#EB5757")
-            else:
+            elif side == "bid":
                 return QColor("#27AE60")
+            elif side == "mid":
+                if self.mid_direction > 0:
+                    return QColor("#27AE60")
+                elif self.mid_direction < 0:
+                    return QColor("#EB5757")
+                else:
+                    return QColor("#999999")
             
         if role == Qt.TextAlignmentRole:
             if column == 0:
@@ -175,6 +192,30 @@ class OrderBookModel(QAbstractTableModel):
     def max_amount(self):
         amounts = [a[1] for a in self.asks + self.bids]
         return max(amounts) if amounts else 1
+    
+    def mid_price(self):
+        if not self.asks or not self.bids:
+            return None
+        
+        best_ask = self.asks[0][0]
+        best_bid = self.bids[0][0]
+        mid = (best_ask + best_bid) / 2
+
+        if self.last_mid_price is not None:
+            if mid > self.last_mid_price:
+                self.mid_direction = 1
+            elif mid < self.last_mid_price:
+                self.mid_direction = -1
+            else:
+                self.mid_direction = 0
+
+        self.last_mid_price = mid
+        return mid
+    
+    def spread(self):
+        if not self.asks or not self.bids:
+            return None
+        return self.asks[0][0] - self.bids[0][0]
 
 class OrderBookTableView(QTableView):
     def __init__(self):
@@ -189,10 +230,11 @@ class OrderBookTableView(QTableView):
         
         self.ask_color = QColor("#251717")
         self.bid_color = QColor("#17291B")
+        self.mid_color = QColor("#1E1E1E")
     
     def paintEvent(self, event):
         painter = QPainter(self.viewport())
-        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setRenderHint(QPainter.Antialiasing, True)
         
         model = self.model()
         if model:
@@ -205,23 +247,45 @@ class OrderBookTableView(QTableView):
             
             for row in range(first_row, last_row + 1):
                 side, price, amount, total = model.row_info(row)
+
+                left_rect = self.visualRect(model.index(row, 0))
+                right_rect = self.visualRect(model.index(row, model.columnCount() - 1))
+                row_rect = left_rect.united(right_rect)
+                row_rect = row_rect.adjusted(0, 3, 0, -3)
+                painter.setPen(Qt.NoPen)
                 
-                if amount > 0:
-                    ratio = amount / max_amount
-                    
-                    left_rect = self.visualRect(model.index(row, 0))
-                    right_rect = self.visualRect(model.index(row, model.columnCount() - 1))
-                    row_rect = left_rect.united(right_rect)
-                    row_rect = row_rect.adjusted(0, 3, 0, -3)
+                if side == "mid":
+                    mid_width = int(row_rect.width())
+                    bar_rect = QRect(
+                        row_rect.center().x() - mid_width // 2,
+                        row_rect.top(),
+                        mid_width,
+                        row_rect.height()
+                    )
+                    color = self.mid_color
+
+                elif amount > 0:
+
+                    if side == "mid":
+                        ratio = 1
+                    else:
+                        ratio = amount / max_amount
                     
                     bar_width = int(row_rect.width() * ratio)
-                    bar_rect = row_rect
-                    bar_rect.setLeft(bar_rect.right() - bar_width)
+                    bar_rect = QRect(
+                        row_rect.right() - bar_width,
+                        row_rect.top(),
+                        bar_width,
+                        row_rect.height()
+                    )
                     
-                    color = self.ask_color if side == "ask" else self.bid_color
-                    painter.setBrush(color)
-                    painter.setPen(Qt.NoPen)
-                    painter.drawRoundedRect(bar_rect, 4, 4)
+                    if side == "ask":
+                        color = self.ask_color
+                    else:
+                        color = self.bid_color
+
+                painter.setBrush(color)
+                painter.drawRoundedRect(bar_rect, 4, 4)
         
         super().paintEvent(event)
 
