@@ -23,7 +23,7 @@ impl Packet {
         bytes
     }
 
-    pub fn from_bytes(mut bytes: &[u8]) -> Packet {
+    pub fn from_bytes(mut bytes: &[u8]) -> Result<Packet, &str> {
         let (header, remaining_bytes) = Header::read_from_prefix(bytes).unwrap();
         bytes = remaining_bytes;
 
@@ -31,13 +31,24 @@ impl Packet {
         let mut message_blocks = Vec::with_capacity(mc);
 
         for _ in 0..mc {
-            let mut message_length: MessageLength = [0u8; 2];
-            message_length.copy_from_slice(&bytes[..2]);
-            bytes = &bytes[2..];
+            if bytes.len() < 2 {
+                return Err("Err");
+            }
 
+            let mut message_length: MessageLength = [0u8; 2];
+
+            let (len_bytes, remaining_bytes) = bytes.split_at(2);
+            message_length.copy_from_slice(len_bytes);
             let ml = u16::from_be_bytes(message_length) as usize;
-            let message_data = Bytes::copy_from_slice(&bytes[..ml]);
-            bytes = &bytes[ml..];
+            bytes = remaining_bytes;
+
+            if bytes.len() < ml {
+                return Err("Err");
+            }
+
+            let (msg_bytes, rest) = bytes.split_at(ml);
+            let message_data = Bytes::copy_from_slice(msg_bytes);
+            bytes = rest;
 
             message_blocks.push(MessageBlock {
                 message_length,
@@ -45,9 +56,9 @@ impl Packet {
             });
         }
 
-        Packet {
+        Ok(Packet {
             header,
             message_blocks,
-        }
+        })
     }
 }

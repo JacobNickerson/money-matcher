@@ -16,7 +16,7 @@ impl MOLDCONSUMER {
             let (len, addr) = self.socket.recv_from(&mut buf).await?;
             println!("{:?} bytes received from {:?}", len, addr);
 
-            let packet = Packet::from_bytes(&buf);
+            let packet = Packet::from_bytes(&buf).expect("invalid packet");
 
             let header = packet.header;
             println!(

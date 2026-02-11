@@ -57,7 +57,7 @@ fn test_packet() {
     let bytes: Vec<u8> = packet.to_bytes();
     println!("Packet as bytes: {:?}", &bytes);
 
-    let reverse_packet: Packet = Packet::from_bytes(&bytes);
+    let reverse_packet: Packet = Packet::from_bytes(&bytes).expect("invalid packet");
 
     println!("Header Session ID: {:?}", reverse_packet.header.session_id);
     println!(
