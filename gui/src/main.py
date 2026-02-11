@@ -5,14 +5,15 @@ from time import sleep
 import pandas as pd
 from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSizePolicy, QMainWindow, QTableView, QStyledItemDelegate, QTabBar
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStyle,
+    QSizePolicy, QMainWindow, QTableView, QStyledItemDelegate, QTabBar, QHeaderView,
+    QStyleOptionViewItem
 )
 from PyQt5.QtGui import (
-    QFont, QIcon, QPixmap, QColor, QPainter, QPen
+    QFont, QIcon, QPixmap, QColor, QPainter, QPen, QPainterPath
 )
 from PyQt5.QtCore import (
-    Qt, QSize, QAbstractTableModel, QModelIndex
+    Qt, QSize, QAbstractTableModel, QModelIndex, QRectF
 )
 
 class SideBar(QWidget):
@@ -100,6 +101,130 @@ class MarketEvents(QWidget):
         self.chart.candle_style(up_color="#27AE60", down_color="#EB5757", wick_up_color="#27AE60", wick_down_color="#EB5757", border_visible=False)
         self.chart.grid(color="#363636")
 
+class OrderBookModel(QAbstractTableModel):
+    headers = ["Price", "Amount", "Total"]
+
+    def __init__(self, asks=None, bids=None, max_levels=7):
+        super().__init__()
+        self.max_levels = max_levels
+        self.asks = (asks or [])[:max_levels]
+        self.bids = (bids or [])[:max_levels]
+
+    def rowCount(self, parent=QModelIndex()):
+        return len(self.asks) + 1 + len(self.bids)
+    
+    def columnCount(self, parent=QModelIndex()):
+        return len(self.headers)
+    
+    def headerData(self, section, orientation, role):
+        if orientation == Qt.Horizontal:
+            if role == Qt.DisplayRole:
+                return self.headers[section]
+            
+        if role == Qt.FontRole:
+            font = QFont("Inter", 10)
+            font.setWeight(QFont.Medium)
+            return font
+        
+        return None
+    
+    def row_data(self, row):
+        if row < len(self.asks):
+            return "ask", self.asks[row]
+        else:
+            return "bid", self.bids[row - len(self.asks) - 1]
+        
+    def data(self, index, role):
+        if not index.isValid():
+            return None
+        
+        side, (price, amount, total) = self.row_data(index.row())
+        column = index.column()
+
+        if role == Qt.DisplayRole:
+            if column == 0:
+                return f"{price:.2f}"
+            elif column == 1:
+                return f"{amount:.4f}"
+            elif column == 2:
+                return f"{total:.2f}"
+            
+        if role == Qt.ForegroundRole and column == 0:
+            if side == "ask":
+                return QColor("#EB5757")
+            else:
+                return QColor("#27AE60")
+            
+        if role == Qt.TextAlignmentRole:
+            if column == 0:
+                return Qt.AlignLeft | Qt.AlignVCenter
+            elif column == 1:
+                return Qt.AlignCenter | Qt.AlignVCenter
+            elif column == 2:
+                return Qt.AlignRight | Qt.AlignVCenter
+            
+        if role == Qt.FontRole:
+            font = QFont("Inter", 10)
+            font.setWeight(QFont.Medium)
+            return font
+            
+    def row_info(self, row):
+        side, (price, amount, total) = self.row_data(row)
+        return side, price, amount, total
+    
+    def max_amount(self):
+        amounts = [a[1] for a in self.asks + self.bids]
+        return max(amounts) if amounts else 1
+
+class OrderBookTableView(QTableView):
+    def __init__(self):
+        super().__init__()
+        self.verticalHeader().setVisible(False)
+        self.setShowGrid(False)
+        self.setSelectionMode(QTableView.NoSelection)
+        self.setEditTriggers(QTableView.NoEditTriggers)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.verticalHeader().setDefaultSectionSize(32)
+        
+        self.ask_color = QColor("#251717")
+        self.bid_color = QColor("#17291B")
+    
+    def paintEvent(self, event):
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        
+        model = self.model()
+        if model:
+            max_amount = model.max_amount()
+            
+            first_row = self.rowAt(0)
+            last_row = self.rowAt(self.viewport().height())
+            if last_row == -1:
+                last_row = model.rowCount() - 1
+            
+            for row in range(first_row, last_row + 1):
+                side, price, amount, total = model.row_info(row)
+                
+                if amount > 0:
+                    ratio = amount / max_amount
+                    
+                    left_rect = self.visualRect(model.index(row, 0))
+                    right_rect = self.visualRect(model.index(row, model.columnCount() - 1))
+                    row_rect = left_rect.united(right_rect)
+                    row_rect = row_rect.adjusted(0, 3, 0, -3)
+                    
+                    bar_width = int(row_rect.width() * ratio)
+                    bar_rect = row_rect
+                    bar_rect.setLeft(bar_rect.right() - bar_width)
+                    
+                    color = self.ask_color if side == "ask" else self.bid_color
+                    painter.setBrush(color)
+                    painter.setPen(Qt.NoPen)
+                    painter.drawRoundedRect(bar_rect, 4, 4)
+        
+        super().paintEvent(event)
+
 class OrderBook(QWidget):
     def __init__(self):
         super().__init__()
@@ -115,7 +240,7 @@ class OrderBook(QWidget):
             }
         """)
         layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(16, 16, 16, 16)
         self.setLayout(layout)
 
         tabbar = QTabBar()
@@ -135,6 +260,54 @@ class OrderBook(QWidget):
             }
         """)
         layout.addWidget(tabbar)
+
+        self.table = OrderBookTableView()
+        self.table.setStyleSheet("""
+            QTableView {
+                background-color: #101010;
+                color: white;
+                font-size: 12px;
+                gridline-color: transparent;
+                border: none;
+            }
+            QHeaderView::section {
+                background-color: #101010;
+                color: #999999;
+                padding: 4px;
+                border: none;
+            }                      
+        """)
+        
+        self.loadTestData()
+
+        scroll_bar_style = """
+            QScrollBar:vertical {
+                background-color: #101010;
+                width: 8px;
+                margin: 0px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #363636;
+                min-height: 20px;
+                border-radius: 4px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background-color: #101010;
+            }
+        """
+        self.table.verticalScrollBar().setStyleSheet(scroll_bar_style)
+
+        self.layout().addWidget(self.table)
+
+    def loadTestData(self):
+        asks = [(100.50 + i, 1.5 + i*0.1, (100.50 + i) * (1.5 + i*0.1)) for i in range(10)]
+        bids = [(100.00 - i, 2.0 + i*0.2, (100.00 - i) * (2.0 + i*0.2)) for i in range(10)]
+
+        model = OrderBookModel(asks, bids)
+        self.table.setModel(model)
+        self.table.resizeColumnsToContents()
+
 
 class TradeHistoryModel(QAbstractTableModel):
     headers = [
@@ -187,6 +360,8 @@ class TradeHistoryModel(QAbstractTableModel):
             font = QFont("Inter", 10)
             font.setWeight(QFont.Medium)
             return font
+        
+        return None
         
 class CancelButtonDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
@@ -271,6 +446,29 @@ class TradeHistory(QWidget):
         self.table.setSelectionMode(QTableView.NoSelection)
         self.table.setEditTriggers(QTableView.NoEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setFocusPolicy(Qt.NoFocus)
+
+        scroll_bar_style = """
+            QScrollBar:vertical {
+                background-color: #101010;
+                width: 8px;
+                margin: 0px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #363636;
+                min-height: 20px;
+                border-radius: 4px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background-color: #101010;
+            }
+        """
+        self.table.verticalScrollBar().setStyleSheet(scroll_bar_style)
 
         layout.addWidget(self.table)
 
