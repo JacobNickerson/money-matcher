@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub type Socket = tokio::net::UdpSocket;
@@ -5,7 +6,7 @@ pub type SessionID = [u8; 10];
 pub type SequenceNumber = [u8; 8];
 pub type MessageCount = [u8; 2];
 pub type MessageLength = [u8; 2];
-pub type MessageData = Vec<u8>;
+pub type MessageData = Bytes;
 pub type MessageBlocks = Vec<MessageBlock>;
 
 #[repr(C)]

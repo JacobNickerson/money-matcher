@@ -1,4 +1,5 @@
 use crate::MoldConsumer;
+use bytes::BytesMut;
 use netlib::moldudp64_core::types::Packet;
 use std::io;
 use tokio::net::UdpSocket;
@@ -11,12 +12,16 @@ impl MoldConsumer {
     }
 
     pub async fn consume(&self) -> io::Result<()> {
-        let mut buf = [0; 2048];
+        let mut buf = BytesMut::with_capacity(2048);
+
         loop {
+            buf.resize(2048, 0);
+
             let (len, addr) = self.socket.recv_from(&mut buf).await?;
             println!("{:?} bytes received from {:?}", len, addr);
 
-            let packet = Packet::from_bytes(&buf).expect("invalid packet");
+            let bytes = buf.split_to(len).freeze();
+            let packet = Packet::from_bytes(bytes).expect("invalid packet");
 
             let header = packet.header;
             println!(
@@ -41,6 +46,8 @@ impl MoldConsumer {
                 println!("Message {:?}: {:?}", k, message);
                 k += 1;
             }
+
+            buf.clear();
         }
     }
 }
