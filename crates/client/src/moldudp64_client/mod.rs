@@ -1,5 +1,5 @@
 mod udp;
 
-pub struct MOLDCONSUMER {
-	socket: tokio::net::UdpSocket,
+pub struct MoldConsumer {
+    socket: tokio::net::UdpSocket,
 }

@@ -1,5 +1,5 @@
 mod moldudp64_engine;
-use moldudp64_engine::engine::MOLDPRODUCER;
+use moldudp64_engine::engine::MoldProducer;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
@@ -7,7 +7,7 @@ use tokio::time::{Duration, sleep};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let mut mold: MOLDPRODUCER = MOLDPRODUCER::new().await;
+    let mut mold: MoldProducer = MoldProducer::new().await;
     let mut rng = rand::thread_rng();
 
     loop {

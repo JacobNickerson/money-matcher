@@ -5,6 +5,12 @@ pub struct SessionTable {
     pub current_session: SessionID,
 }
 
+impl Default for SessionTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionTable {
     #[inline(always)]
     pub fn new() -> SessionTable {
@@ -15,7 +21,7 @@ impl SessionTable {
             current_session,
         };
 
-        table.add_session(current_session, (0 as u64).to_be_bytes());
+        table.add_session(current_session, 0_u64.to_be_bytes());
 
         table
     }

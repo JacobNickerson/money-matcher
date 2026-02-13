@@ -1,13 +1,13 @@
-use crate::MOLDCONSUMER;
+use crate::MoldConsumer;
 use netlib::moldudp64_core::types::Packet;
 use std::io;
 use tokio::net::UdpSocket;
 
-impl MOLDCONSUMER {
+impl MoldConsumer {
     pub async fn initialize(bind_addr: &str) -> io::Result<Self> {
         let socket = UdpSocket::bind(bind_addr).await?;
-        println!("Initialized MOLDCONSUMER on {}", bind_addr);
-        Ok(MOLDCONSUMER { socket })
+        println!("Initialized MoldConsumer on {}", bind_addr);
+        Ok(MoldConsumer { socket })
     }
 
     pub async fn consume(&self) -> io::Result<()> {

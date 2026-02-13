@@ -2,7 +2,7 @@ use netlib::moldudp64_core::sessions::SessionTable;
 use netlib::moldudp64_core::types::*;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
-pub struct MOLDPRODUCER {
+pub struct MoldProducer {
     pub socket: UdpSocket,
     session_table: SessionTable,
     pub(crate) message_queue: MessageBlocks,
@@ -13,9 +13,9 @@ pub struct MOLDPRODUCER {
     max_packet_size: usize,
 }
 
-impl MOLDPRODUCER {
+impl MoldProducer {
     pub async fn new() -> Self {
-        MOLDPRODUCER {
+        MoldProducer {
             socket: UdpSocket::bind("0.0.0.0:9000").await.unwrap(),
             session_table: SessionTable::new(),
             max_messages: 65535,
@@ -37,12 +37,10 @@ impl MOLDPRODUCER {
             message_count,
         };
 
-        let packet = Packet {
+        Packet {
             header,
             message_blocks,
-        };
-
-        packet
+        }
     }
 
     pub async fn flush(&mut self) -> std::io::Result<()> {
@@ -62,7 +60,7 @@ impl MOLDPRODUCER {
         let message_length = message.len();
         let total_message_length = 2 + message_length;
         if (self.packet_size + total_message_length) > self.max_packet_size {
-            println!("");
+            println!();
             println!("Flushing messages before reaching 1400 bytes");
             println!("Current Bytes: {:?}", self.packet_size);
             println!("Message Bytes: {:?}", total_message_length);
@@ -77,13 +75,13 @@ impl MOLDPRODUCER {
         });
 
         if self.message_queue.len() >= self.max_messages {
-            println!("");
+            println!();
             println!("Flushing messages due to message_queue reaching capacity");
             self.flush().await?;
         }
 
         if self.last_flush.elapsed() >= self.flush_interval {
-            println!("");
+            println!();
             println!("Flushing messages due to timer");
             self.flush().await?;
         }
