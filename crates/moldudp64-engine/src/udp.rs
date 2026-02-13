@@ -1,6 +1,5 @@
 use crate::engine::MOLDPRODUCER;
 use std::io;
-use tokio::net::UdpSocket;
 
 impl MOLDPRODUCER {
     pub async fn produce(&self, payload: &[u8], addr: std::net::SocketAddr) -> io::Result<usize> {

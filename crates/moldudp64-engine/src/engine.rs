@@ -80,13 +80,13 @@ impl MOLDPRODUCER {
             message_data: message,
         });
 
-        if (self.message_queue.len() >= self.max_messages) {
+        if self.message_queue.len() >= self.max_messages {
             println!("");
             println!("Flushing messages due to message_queue reaching capacity");
             self.flush().await?;
         }
 
-        if (self.last_flush.elapsed() >= self.flush_interval) {
+        if self.last_flush.elapsed() >= self.flush_interval {
             println!("");
             println!("Flushing messages due to timer");
             self.flush().await?;

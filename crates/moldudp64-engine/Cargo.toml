@@ -7,4 +7,3 @@ edition = "2024"
 moldudp64-core = {path = "../moldudp64-core"}
 tokio = { version = "1.49.0", features = ["full"] }
 rand = "0.8"
-bytes = "1.11.1"
