@@ -1,9 +1,0 @@
-[package]
-name = "moldudp64-engine"
-version = "0.0.1"
-edition = "2024"
-
-[dependencies]
-moldudp64-core = {path = "../moldudp64-core"}
-tokio = { version = "1.49.0", features = ["full"] }
-rand = "0.8"

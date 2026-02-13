@@ -1,3 +1,4 @@
+mod moldudp64_engine;
 use moldudp64_engine::engine::MOLDPRODUCER;
 use rand::Rng;
 use rand::distributions::Alphanumeric;

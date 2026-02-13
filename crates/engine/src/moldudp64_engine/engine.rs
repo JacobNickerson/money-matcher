@@ -1,5 +1,5 @@
-use moldudp64_core::sessions::SessionTable;
-use moldudp64_core::types::*;
+use netlib::moldudp64_core::sessions::SessionTable;
+use netlib::moldudp64_core::types::*;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 pub struct MOLDPRODUCER {
@@ -25,10 +25,6 @@ impl MOLDPRODUCER {
             packet_size: 20,
             max_packet_size: 1400,
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.message_queue.is_empty()
     }
 
     pub fn make_packet(&mut self, message_blocks: MessageBlocks) -> Packet {

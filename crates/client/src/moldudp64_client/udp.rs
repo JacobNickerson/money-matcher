@@ -1,5 +1,5 @@
 use crate::MOLDCONSUMER;
-use moldudp64_core::types::Packet;
+use netlib::moldudp64_core::types::Packet;
 use std::io;
 use tokio::net::UdpSocket;
 

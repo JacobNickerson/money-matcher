@@ -1,6 +1,6 @@
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::types::*;
+use crate::moldudp64_core::types::*;
 impl Packet {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut capacity = 10 + 8 + 2;

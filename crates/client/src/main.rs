@@ -1,3 +1,4 @@
+mod moldudp64_client;
 use moldudp64_client::MOLDCONSUMER;
 
 #[tokio::main]

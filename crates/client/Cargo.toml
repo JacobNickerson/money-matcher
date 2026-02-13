@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-moldudp64-client = {path = "../moldudp64-client"}
+netlib = {path = "../netlib"}
 tokio = { version = "1.49.0", features = ["full"] }
