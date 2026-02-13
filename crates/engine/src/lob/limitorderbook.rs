@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use crate::lob::types::Side;
-use crate::lob::types::{OrderId, OrderStatus, Price};
-use crate::lob::limitorder::LimitOrder;
+use crate::lob::order::{LimitOrder, Order, OrderSide, OrderStatus, OrderType};
+use crate::lob::types::{OrderId, Price};
 
 #[derive(Debug, Default)]
 pub struct PriceLevel {
@@ -64,6 +63,36 @@ impl OrderBook {
 			ask_orders: BTreeMap::new(),
 		}
 	}
+	/// Accepts an Order and handles it according to its OrderType
+	/// 
+	/// LimitOrders are matched and added into LOB if not completely matched
+	/// MarketOrders attempt to make qty trades starting from best price and partially fill
+	///   if there is not enough liquidity
+	/// CancelOrders attempt to cancel an order
+	/// UpdateOrders cancel the previously existing order and resubmit a new order
+	pub fn process_order(&mut self, order: Order) -> Option<LimitOrder> {
+	// TODO: Update return type to be more informative
+		match order.kind {
+			OrderType::LimitOrder { qty, price } => {
+				Some(self.add_order(
+					LimitOrder::new(order, qty, price)
+				))
+			}
+			OrderType::MarketOrder { mut qty } => {
+				self.market_order(&mut qty, order.side);
+				Some(LimitOrder::new(order, qty, 0))
+			}
+			OrderType::CancelOrder => {
+				self.cancel_order(order.order_id)
+			}
+			OrderType::UpdateOrder { old_id, qty, price }=> {
+				self.update_order(
+					LimitOrder::new(order,qty,price),
+					old_id
+				)
+			}
+		}
+	}
 	/// Prunes lazily removed bid orders and returns the current best bid
 	pub fn best_bid(&mut self) -> Option<Price> {
 		// TODO: Will probably need to adjust this when perf-profiling and trying to reduce allocations
@@ -117,17 +146,17 @@ impl OrderBook {
 	}
 	/// Executes a trade if a valid match can be made, see match_order() for details about matching.
 	/// Adds an order to the side of the book specified in the order if any of the order's quantity is unmatched.
-	pub fn add_order(&mut self, original_order: LimitOrder) -> LimitOrder {
+	fn add_order(&mut self, original_order: LimitOrder) -> LimitOrder {
 		let mut order = original_order; 
 		self.match_order(&mut order);
 		if order.qty == 0 { return order; }
 		let level = match order.side {
-			Side::Bid => {
+			OrderSide::Bid => {
 				self.bid_orders
 					.entry(order.price)
 					.or_default()
 			}
-			Side::Ask => {
+			OrderSide::Ask => {
 				self.ask_orders
 					.entry(order.price)
 					.or_default()
@@ -139,14 +168,14 @@ impl OrderBook {
 	}
 	/// Updates an existing order by cancelling it and replacing it with a new order. Executes
 	/// a trade if a valid match can be made
-	pub fn update_order(&mut self, order: LimitOrder, old_order_id: OrderId) -> Option<LimitOrder>{
+	fn update_order(&mut self, order: LimitOrder, old_order_id: OrderId) -> Option<LimitOrder>{
 		self
 			.cancel_order(old_order_id)
 			.map(|_| self.add_order(order))
 	}
 	/// Lazily cancels an order by marking it as canceled. Lazily canceled orders are pruned
 	/// by `best_bid()`, `best_ask()`, or `match()`
-	pub fn cancel_order(&mut self, order_id: OrderId) -> Option<LimitOrder> {
+	fn cancel_order(&mut self, order_id: OrderId) -> Option<LimitOrder> {
 		match self.orders.get_mut(&order_id) {
 			Some(order) => {
 				order.status = OrderStatus::Canceled;
@@ -160,7 +189,7 @@ impl OrderBook {
 	/// If a match is made, a trade is executed at the price of the order that already existed.
 	fn match_order(&mut self, order: &mut LimitOrder) {
 		match order.side {
-			Side::Ask => {
+			OrderSide::Ask => {
 				// NOTE: Probably not necessary, but at least it prunes the book
 				if self.best_bid().unwrap_or(0) < order.price {
 					return;
@@ -179,7 +208,7 @@ impl OrderBook {
 					}
 				}
 			}
-			Side::Bid => {
+			OrderSide::Bid => {
 				// NOTE: This might be janky, maybe implement some additional verification of order prices to avoid having this cause issues
 				if self.best_ask().unwrap_or(u64::MAX) > order.price {
 					return;
@@ -192,6 +221,40 @@ impl OrderBook {
 						let trade_volume = std::cmp::min(sell_order.qty,order.qty);
 						sell_order.qty -= trade_volume;
 						order.qty -= trade_volume;
+						if sell_order.qty == 0 { level.pop_front(); }
+						else { break; }
+						// TODO: IMPLEMENT TRADE EVENT EMITTING
+					}
+				}
+			}
+		};
+	}
+
+	fn market_order(&mut self, qty: &mut u64, side: OrderSide) {
+		match side {
+			OrderSide::Ask => {
+				for (price, level) in self.bid_orders.iter_mut().rev() {
+					while let Some(buy_order_id) = level.front() {
+						// NOTE: Can panic, but an id in a price level should always be in orders until it is pruned
+						let mut buy_order = self.orders[&buy_order_id];
+						let trade_volume = std::cmp::min(buy_order.qty,*qty);
+						buy_order.qty -= trade_volume;
+						*qty -= trade_volume;
+						if buy_order.qty == 0 { level.pop_front(); }
+						else { break; }
+						// TODO: IMPLEMENT TRADE EVENT EMITTING
+					}
+				}
+			}
+			OrderSide::Bid => {
+				// NOTE: This might be janky, maybe implement some additional verification of order prices to avoid having this cause issues
+				for (price, level) in self.ask_orders.iter_mut() {
+					while let Some(sell_order_id) = level.front() {
+						// NOTE: Can panic, but an id in a price level should always be in orders until it is pruned
+						let mut sell_order = self.orders[&sell_order_id];
+						let trade_volume = std::cmp::min(sell_order.qty,*qty);
+						sell_order.qty -= trade_volume;
+						*qty -= trade_volume;
 						if sell_order.qty == 0 { level.pop_front(); }
 						else { break; }
 						// TODO: IMPLEMENT TRADE EVENT EMITTING
@@ -217,11 +280,11 @@ mod tests {
 	#[test]
 	fn add_bid_without_crossing() {
 		let mut book = OrderBook::new();
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Bid,1,OrderType::LimitOrder { qty: 1, price: 100 })
 		);
-		book.add_order(
-			LimitOrder::new(1, Side::Ask, 200, 5, 1)
+		book.process_order(
+			Order::new(0,OrderSide::Ask,1,OrderType::LimitOrder { qty: 1, price: 200 })
 		);
 		assert_eq!(book.best_bid(), Some(100));
 		assert_eq!(book.best_ask(), Some(200));
@@ -231,10 +294,14 @@ mod tests {
 	fn cancel_removes_order() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Bid,1,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
-		assert!(book.cancel_order(0).is_some());
+		assert!(
+			book
+				.process_order(Order::new(0,OrderSide::Bid,1,OrderType::CancelOrder))
+				.is_some()
+		);
 		assert!(book.best_bid().is_none());
 	}
 
@@ -242,15 +309,11 @@ mod tests {
 	fn pruning_multiple_price_levels() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
-		);
-		book.add_order(
-			LimitOrder::new(1, Side::Bid, 105, 5, 1)
-		);
-		book.add_order(
-			LimitOrder::new(2, Side::Bid, 110, 5, 2)
-		);
+		for i in 0..=2 {
+			book.process_order(
+				Order::new(i,OrderSide::Bid,i,OrderType::LimitOrder { qty: 5, price: 100 + 5*i })
+			);
+		}
 		assert_eq!(book.best_bid(), Some(110));
 		assert!(book.cancel_order(1).is_some());
 		assert!(book.cancel_order(2).is_some());
@@ -260,19 +323,22 @@ mod tests {
 	#[test]
 	fn cancel_nonexistent_returns_none() {
 		let mut book = OrderBook::new();
-		assert!(book.cancel_order(42).is_none());
+		assert!(
+			book
+				.process_order(Order::new(0,OrderSide::Bid,1,OrderType::CancelOrder))
+				.is_none()
+		);
 	}
 	
 	#[test]
 	fn update_order_updates_order() {
 		let mut book = OrderBook::new();
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Bid,1,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
 		assert_eq!(book.best_bid(), Some(100));
-		book.update_order(
-			LimitOrder::new(0, Side::Bid, 500, 5, 0),
-			0
+		book.process_order(
+			Order::new(1,OrderSide::Bid,1,OrderType::UpdateOrder { old_id: 0, qty: 5, price: 500 })
 		);
 		assert_eq!(book.best_bid(), Some(500));
 	}
@@ -280,13 +346,12 @@ mod tests {
 	#[test]
 	fn update_nonexistent_order_has_no_effect() {
 		let mut book = OrderBook::new();
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Bid,1,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
 		assert_eq!(book.best_bid(), Some(100));
-		book.update_order(
-			LimitOrder::new(10, Side::Bid, 500, 5, 0),
-			10
+		book.process_order(
+			Order::new(1,OrderSide::Bid,1,OrderType::UpdateOrder { old_id: 1, qty: 5, price: 500 })
 		);
 		assert_eq!(book.best_bid(), Some(100));
 	}
@@ -295,16 +360,11 @@ mod tests {
 	fn best_bid_is_highest_price() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
-		);
-		book.add_order(
-			LimitOrder::new(1, Side::Bid, 105, 5, 1)
-		);
-		book.add_order(
-			LimitOrder::new(2, Side::Bid, 110, 5, 2)
-		);
-
+		for i in 0..=2 {
+			book.process_order(
+				Order::new(i,OrderSide::Bid,i,OrderType::LimitOrder { qty: 5, price: 100 + 5*i })
+			);
+		}
 		assert_eq!(book.best_bid(), Some(110));
 	}
 
@@ -313,8 +373,8 @@ mod tests {
 		let mut book = OrderBook::new();
 
 		for i in 0..1_000_000 {
-			book.add_order(
-				LimitOrder::new(i, Side::Bid, 100 + (i%10), 5, i)
+			book.process_order(
+				Order::new(i,OrderSide::Bid,i,OrderType::LimitOrder { qty: 10, price: 100 + (i%10) })
 			);
 		}
 
@@ -325,15 +385,14 @@ mod tests {
 	fn fifo_within_price_level() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Ask, 100, 5, 0)
-		);
-		book.add_order(
-			LimitOrder::new(1, Side::Ask, 100, 5, 1)
-		);
+		for i in 0..2 {
+			book.process_order(
+				Order::new(i,OrderSide::Ask,i,OrderType::LimitOrder { qty: 5, price: 100 })
+			);
+		}
 
-		book.add_order(
-			LimitOrder::new(2, Side::Bid, 100, 6, 2)
+		book.process_order(
+			Order::new(2,OrderSide::Bid,2,OrderType::LimitOrder { qty: 6, price: 100 })
 		);
 
 		// TODO: Determine structure for trades and test it here
@@ -347,11 +406,11 @@ mod tests {
 	fn simple_full_match() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Bid,0,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
-		book.add_order(
-			LimitOrder::new(1, Side::Ask, 100, 5, 1)
+		book.process_order(
+			Order::new(1,OrderSide::Ask,1,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
 
 		// TODO: Determine structure for trades and test it here
@@ -364,11 +423,11 @@ mod tests {
 	fn partial_match_leaves_resting_qty() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Bid, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Bid,0,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
-		book.add_order(
-			LimitOrder::new(0, Side::Ask, 100, 10, 1)
+		book.process_order(
+			Order::new(1,OrderSide::Ask,1,OrderType::LimitOrder { qty: 6, price: 100 })
 		);
 
 		// TODO: Determine structure for trades and test it here
@@ -380,17 +439,79 @@ mod tests {
 	fn multi_level_sweep() {
 		let mut book = OrderBook::new();
 
-		book.add_order(
-			LimitOrder::new(0, Side::Ask, 100, 5, 0)
+		book.process_order(
+			Order::new(0,OrderSide::Ask,0,OrderType::LimitOrder { qty: 5, price: 100 })
 		);
-		book.add_order(
-			LimitOrder::new(1, Side::Ask, 105, 5, 1)
+		book.process_order(
+			Order::new(1,OrderSide::Ask,1,OrderType::LimitOrder { qty: 5, price: 105 })
 		);
-		book.add_order(
-			LimitOrder::new(2, Side::Bid, 105, 8, 2)
+		book.process_order(
+			Order::new(2,OrderSide::Bid,2,OrderType::LimitOrder { qty: 6, price: 105 })
 		);
 
 		// TODO: Determine structure for trades and test it here
 		assert_eq!(book.best_ask(), Some(105));
+	}
+
+	#[test]
+	fn market_order_single_level() {
+		let mut book = OrderBook::new();
+
+		book.process_order(
+			Order::new(0,OrderSide::Ask,0,OrderType::LimitOrder { qty: 5, price: 100 })
+		);
+		assert_eq!(book.best_ask(), Some(100));
+		book.process_order(
+			Order::new(0,OrderSide::Bid,0,OrderType::MarketOrder { qty: 5 })
+		);
+		// TODO: Determine structure for trades and test it here
+		assert!(book.best_ask().is_none());
+	}
+
+	#[test]
+	fn market_order_multi_level() {
+		let mut book = OrderBook::new();
+
+		book.process_order(
+			Order::new(0,OrderSide::Ask,0,OrderType::LimitOrder { qty: 5, price: 100 })
+		);
+		book.process_order(
+			Order::new(0,OrderSide::Ask,0,OrderType::LimitOrder { qty: 5, price: 150 })
+		);
+		assert_eq!(book.best_ask(), Some(100));
+		book.process_order(
+			Order::new(0,OrderSide::Bid,0,OrderType::MarketOrder { qty: 10 })
+		);
+		// TODO: Determine structure for trades and test it here
+		assert!(book.best_ask().is_none());
+	}
+
+	#[test]
+	fn market_order_partial_fill() {
+		let mut book = OrderBook::new();
+
+		book.process_order(
+			Order::new(0,OrderSide::Ask,0,OrderType::LimitOrder { qty: 5, price: 100 })
+		);
+		book.process_order(
+			Order::new(0,OrderSide::Ask,0,OrderType::LimitOrder { qty: 5, price: 150 })
+		);
+		assert_eq!(book.best_ask(), Some(100));
+		book.process_order(
+			Order::new(0,OrderSide::Bid,0,OrderType::MarketOrder { qty: 15 })
+		);
+		// TODO: Determine structure for trades and test it here
+		assert!(book.best_ask().is_none());
+	}
+
+	#[test]
+	fn market_order_no_fill() {
+		let mut book = OrderBook::new();
+
+		book.process_order(
+			Order::new(0,OrderSide::Bid,0,OrderType::MarketOrder { qty: 15 })
+		);
+		// TODO: Determine structure for trades and test it here
+		assert!(book.best_ask().is_none());
 	}
 }
