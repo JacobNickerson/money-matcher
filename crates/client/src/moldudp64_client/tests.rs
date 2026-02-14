@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::moldudp64_client;
+    use crate::moldudp64_client::*;
 
     #[tokio::test]
     async fn benchmark_mold_consumer_enqueue() -> std::io::Result<()> {
