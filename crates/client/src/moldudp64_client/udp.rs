@@ -21,6 +21,7 @@ impl MoldConsumer {
             buf.resize(2048, 0);
 
             let (len, addr) = self.socket.recv_from(&mut buf).await?;
+            println!();
             println!("{:?} bytes received from {:?}", len, addr);
 
             let bytes = buf.split_to(len).freeze();
@@ -42,20 +43,37 @@ impl MoldConsumer {
                 "Header Message Count: {:?} {:?}",
                 message_count, header.message_count
             );
+
             let message_blocks = packet.message_blocks;
             let mut k = 1;
+
             for msg in message_blocks {
-                let nanos = u128::from_be_bytes(msg.message_data.as_ref().try_into().unwrap());
-                let time = UNIX_EPOCH + Duration::from_nanos(nanos as u64);
-                let now = SystemTime::now();
-                let elapsed = now.duration_since(time).unwrap();
+                let message_type = msg.message_data[0];
 
                 println!(
-                    "Message {:?} Elapsed: {}.{:09}s",
-                    k,
-                    elapsed.as_secs(),
-                    elapsed.subsec_nanos()
+                    "{:?} Message {:?}: {:?}",
+                    message_type as char, k, msg.message_length
                 );
+
+                match message_type {
+                    b'Z' => {
+                        let nanos =
+                            u128::from_be_bytes(msg.message_data[1..17].try_into().unwrap());
+
+                        let time = UNIX_EPOCH + Duration::from_nanos(nanos as u64);
+                        let now = SystemTime::now();
+                        let elapsed = now.duration_since(time).unwrap();
+
+                        println!(
+                            "Elapsed: {}.{:09}s",
+                            elapsed.as_secs(),
+                            elapsed.subsec_nanos()
+                        );
+                    }
+                    _ => {
+                        println!("Message {:?} UNKNOWN Type: {:?}", k, message_type as char);
+                    }
+                }
 
                 k += 1;
             }
