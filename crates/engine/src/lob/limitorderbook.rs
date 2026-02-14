@@ -5,7 +5,7 @@ use crate::lob::types::{OrderId, Price};
 #[derive(Debug, Default)]
 pub struct PriceLevel {
 	pub total_qty: u64,
-	pub orders: VecDeque<OrderId>,
+	orders: VecDeque<OrderId>,
 }
 impl PriceLevel {
 	pub fn new() -> Self {
@@ -47,21 +47,13 @@ impl PriceLevel {
 
 #[derive(Debug, Default)]
 pub struct OrderBook {
-	best_buy: Price,
-	best_sell: Price,
 	orders: HashMap<OrderId, LimitOrder>,
-	buy_orders: BTreeMap<Price, PriceLevel>, 
-	sell_orders: BTreeMap<Price, PriceLevel>,
 	bid_orders: BTreeMap<Price, PriceLevel>, 
 	ask_orders: BTreeMap<Price, PriceLevel>, 
 }
 impl OrderBook {
 	pub fn new() -> Self {
 		Self {
-			best_buy: 0,
-			best_sell: 0,
-			buy_orders: BTreeMap::new(),
-			sell_orders: BTreeMap::new(),
 			orders: HashMap::new(),
 			bid_orders: BTreeMap::new(),
 			ask_orders: BTreeMap::new(),
