@@ -51,7 +51,7 @@ impl MoldConsumer {
                 let elapsed = now.duration_since(time).unwrap();
 
                 println!(
-                    "Message {:?} Elapsed: {}.{:09} s",
+                    "Message {:?} Elapsed: {}.{:09}s",
                     k,
                     elapsed.as_secs(),
                     elapsed.subsec_nanos()

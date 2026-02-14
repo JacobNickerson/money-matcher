@@ -2,26 +2,6 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use crate::moldudp64_core::types::*;
 impl Packet {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut capacity = 10 + 8 + 2;
-
-        for message in &self.message_blocks {
-            capacity += 2;
-            capacity += message.message_data.len();
-        }
-
-        let mut bytes = Vec::with_capacity(capacity);
-
-        bytes.extend_from_slice(self.header.as_bytes());
-
-        for message in &self.message_blocks {
-            bytes.extend_from_slice(&message.message_length);
-            bytes.extend_from_slice(&message.message_data);
-        }
-
-        bytes
-    }
-
     pub fn from_bytes(mut bytes: MessageData) -> Result<Packet, &'static str> {
         let header_bytes = bytes.split_to(20);
         let header = Header::read_from_prefix(&header_bytes).unwrap().0;
