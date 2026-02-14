@@ -58,6 +58,10 @@ pub struct OrderBook {
 impl OrderBook {
 	pub fn new() -> Self {
 		Self {
+			best_buy: 0,
+			best_sell: 0,
+			buy_orders: BTreeMap::new(),
+			sell_orders: BTreeMap::new(),
 			orders: HashMap::new(),
 			bid_orders: BTreeMap::new(),
 			ask_orders: BTreeMap::new(),

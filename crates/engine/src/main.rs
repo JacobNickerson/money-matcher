@@ -1,3 +1,4 @@
+pub mod lob;
 mod moldudp64_engine;
 use bytes::Bytes;
 use moldudp64_engine::engine::MoldProducer;
