@@ -1,3 +1,3 @@
 pub mod types;
-pub mod limitorder;
+pub mod order;
 pub mod limitorderbook;
