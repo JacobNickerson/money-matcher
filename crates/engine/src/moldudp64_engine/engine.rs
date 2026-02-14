@@ -68,19 +68,26 @@ impl MoldProducer {
         self.packet_size += total_message_length;
         self.message_count += 1;
 
-        self.packet
-            .extend_from_slice(&(message_length as u16).to_be_bytes());
-        self.packet.extend_from_slice(&message);
+        print!(
+            "Message {:?}: {:?} Bytes | ",
+            self.message_count, total_message_length
+        );
 
-        if self.packet.len() >= self.max_messages {
+        self.packet.put_u16(message_length as u16);
+        self.packet.put_slice(&message);
+
+        if self.message_count >= self.max_messages {
             println!();
-            println!("Flushing messages due to packet reaching capacity");
+            println!(
+                "Flushing {:?} messages due to packet reaching capacity",
+                self.message_count
+            );
             self.flush().await?;
         }
 
         if self.last_flush.elapsed() >= self.flush_interval {
             println!();
-            println!("Flushing messages due to timer");
+            println!("Flushing {:?} messages due to timer", self.message_count);
             self.flush().await?;
         }
 
