@@ -6,11 +6,23 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::net::UdpSocket;
+#[cfg(feature = "tracing")]
+use tracing_subscriber::FmtSubscriber;
 
 impl MoldConsumer {
     pub async fn initialize(bind_addr: &str) -> io::Result<Self> {
         let socket = UdpSocket::bind(bind_addr).await?;
-        println!("Initialized MoldConsumer on {}", bind_addr);
+        #[cfg(feature = "tracing")]
+        tracing::info!(bind_addr = bind_addr, "mold_consumer_initialized");
+
+        #[cfg(feature = "tracing")]
+        let subscriber = FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish();
+
+        #[cfg(feature = "tracing")]
+        tracing::subscriber::set_global_default(subscriber).expect("tracing init failed");
+
         Ok(MoldConsumer { socket })
     }
 
@@ -21,27 +33,25 @@ impl MoldConsumer {
             buf.resize(2048, 0);
 
             let (len, addr) = self.socket.recv_from(&mut buf).await?;
-            println!();
-            println!("{:?} bytes received from {:?}", len, addr);
+            #[cfg(feature = "tracing")]
+            tracing::trace!(
+                bytes = len,
+                source = %addr,
+                "udp_receive"
+            );
 
             let bytes = buf.split_to(len).freeze();
             let packet = Packet::from_bytes(bytes).expect("invalid packet");
-
             let header = packet.header;
-            println!(
-                "Header Session ID: {:?} {:?}",
-                std::str::from_utf8(&header.session_id).unwrap(),
-                header.session_id
-            );
-            println!(
-                "Header Sequence Number: {:?} {:?}",
-                u64::from_be_bytes(header.sequence_number) as usize,
-                header.sequence_number
-            );
             let message_count = u16::from_be_bytes(header.message_count) as usize;
-            println!(
-                "Header Message Count: {:?} {:?}",
-                message_count, header.message_count
+
+            #[cfg(feature = "tracing")]
+            tracing::debug!(
+                source = %addr,
+                session = %std::str::from_utf8(&header.session_id).unwrap(),
+                sequence = u64::from_be_bytes(header.sequence_number),
+                count = message_count,
+                "packet_received"
             );
 
             let message_blocks = packet.message_blocks;
@@ -49,10 +59,14 @@ impl MoldConsumer {
 
             for msg in message_blocks {
                 let message_type = msg.message_data[0];
+                let message_char = message_type as char;
 
-                println!(
-                    "{:?} Message {:?}: {:?}",
-                    message_type as char, k, msg.message_length
+                #[cfg(feature = "tracing")]
+                tracing::trace!(
+                    index = k,
+                    message_type = %message_char,
+                    length = u16::from_be_bytes(msg.message_length),
+                    "message_block"
                 );
 
                 match message_type {
@@ -64,14 +78,20 @@ impl MoldConsumer {
                         let now = SystemTime::now();
                         let elapsed = now.duration_since(time).unwrap();
 
-                        println!(
-                            "Elapsed: {}.{:09}s",
-                            elapsed.as_secs(),
-                            elapsed.subsec_nanos()
+                        #[cfg(feature = "tracing")]
+                        tracing::trace!(
+                            index = k,
+                            latency_ns = elapsed.as_nanos(),
+                            "benchmark_latency"
                         );
                     }
                     _ => {
-                        println!("Message {:?} UNKNOWN Type: {:?}", k, message_type as char);
+                        #[cfg(feature = "tracing")]
+                        tracing::warn!(
+                            index = k,
+                            message_type = %message_char,
+                            "unknown_message_type"
+                        );
                     }
                 }
 

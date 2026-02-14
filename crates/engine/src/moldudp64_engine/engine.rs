@@ -3,6 +3,10 @@ use netlib::moldudp64_core::sessions::SessionTable;
 use netlib::moldudp64_core::types::*;
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
+#[cfg(feature = "tracing")]
+use tracing::debug;
+#[cfg(feature = "tracing")]
+use tracing_subscriber::FmtSubscriber;
 pub struct MoldProducer {
     pub socket: UdpSocket,
     session_table: SessionTable,
@@ -20,6 +24,14 @@ impl MoldProducer {
         let mut packet = BytesMut::with_capacity(1400);
         packet.resize(20, 0);
 
+        #[cfg(feature = "tracing")]
+        let subscriber = FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish();
+
+        #[cfg(feature = "tracing")]
+        tracing::subscriber::set_global_default(subscriber).expect("tracing init failed");
+
         MoldProducer {
             socket: UdpSocket::bind("0.0.0.0:9000").await.unwrap(),
             session_table: SessionTable::new(),
@@ -34,6 +46,13 @@ impl MoldProducer {
     }
 
     pub async fn flush(&mut self) -> std::io::Result<()> {
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            message_count = self.message_count,
+            packet_bytes = self.packet_size,
+            "packet_flushed"
+        );
+
         let session_id: [u8; 10] = self.session_table.get_current_session();
         let sequence_number = self.session_table.next_sequence(session_id);
 
@@ -57,37 +76,54 @@ impl MoldProducer {
         let message_length = message.len();
         let total_message_length = 2 + message_length;
         if (self.packet_size + total_message_length) > self.max_packet_size {
-            println!();
-            println!("Flushing messages before reaching 1400 bytes");
-            println!("Current Bytes: {:?}", self.packet_size);
-            println!("Message Bytes: {:?}", total_message_length);
-            println!("Total Bytes: {:?}", self.packet_size + total_message_length);
+            #[cfg(feature = "tracing")]
+            tracing::debug!(
+                reason = "capacity",
+                current = self.packet_size,
+                incoming = total_message_length,
+                total = self.packet_size + total_message_length,
+                max = self.max_packet_size,
+                "flush"
+            );
+
             self.flush().await?;
         }
 
         self.packet_size += total_message_length;
         self.message_count += 1;
 
-        print!(
-            "Message {:?}: {:?} Bytes | ",
-            self.message_count, total_message_length
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+            message_index = self.message_count,
+            message_bytes = total_message_length,
+            packet_bytes = self.packet_size,
+            "enqueue"
         );
 
         self.packet.put_u16(message_length as u16);
         self.packet.put_slice(&message);
 
         if self.message_count >= self.max_messages {
-            println!();
-            println!(
-                "Flushing {:?} messages due to packet reaching capacity",
-                self.message_count
+            #[cfg(feature = "tracing")]
+            tracing::debug!(
+                reason = "max_messages",
+                count = self.message_count,
+                max = self.max_messages,
+                "flush"
             );
+
             self.flush().await?;
         }
 
         if self.last_flush.elapsed() >= self.flush_interval {
-            println!();
-            println!("Flushing {:?} messages due to timer", self.message_count);
+            #[cfg(feature = "tracing")]
+            debug!(
+                reason = "timer",
+                count = self.message_count,
+                interval_ms = self.flush_interval.as_millis(),
+                "flush"
+            );
+
             self.flush().await?;
         }
 

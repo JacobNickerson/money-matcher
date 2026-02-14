@@ -3,6 +3,10 @@ name = "engine"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["tracing"]
+tracing = []
+
 [dependencies]
 netlib = {path = "../netlib"}
 tokio = { version = "1.49.0", features = ["full"] }
@@ -13,3 +17,5 @@ rand = "0.10.0"
 rand_chacha = "0.10.0"
 rand_distr = "0.6.0"
 smallrand = "1.0.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
