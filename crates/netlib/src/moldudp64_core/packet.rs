@@ -1,4 +1,4 @@
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::FromBytes;
 
 use crate::moldudp64_core::types::*;
 impl Packet {
