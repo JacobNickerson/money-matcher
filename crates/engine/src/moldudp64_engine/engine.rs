@@ -1,4 +1,4 @@
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use netlib::moldudp64_core::sessions::SessionTable;
 use netlib::moldudp64_core::types::*;
 use std::time::{Duration, Instant};
