@@ -1,7 +1,10 @@
-use crate::MoldConsumer;
+use crate::moldudp64_client::MoldConsumer;
 use bytes::BytesMut;
 use netlib::moldudp64_core::types::Packet;
-use std::io;
+use std::{
+    io,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tokio::net::UdpSocket;
 
 impl MoldConsumer {
@@ -42,8 +45,18 @@ impl MoldConsumer {
             let message_blocks = packet.message_blocks;
             let mut k = 1;
             for msg in message_blocks {
-                let message: String = std::str::from_utf8(&msg.message_data).unwrap().to_string();
-                println!("Message {:?}: {:?}", k, message);
+                let nanos = u128::from_be_bytes(msg.message_data.as_ref().try_into().unwrap());
+                let time = UNIX_EPOCH + Duration::from_nanos(nanos as u64);
+                let now = SystemTime::now();
+                let elapsed = now.duration_since(time).unwrap();
+
+                println!(
+                    "Message {:?} Elapsed: {}.{:09} s",
+                    k,
+                    elapsed.as_secs(),
+                    elapsed.subsec_nanos()
+                );
+
                 k += 1;
             }
 
