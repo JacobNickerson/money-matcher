@@ -1,167 +1,39 @@
-use bytes::{BufMut, BytesMut};
-use netlib::moldudp64_core::sessions::SessionTable;
-use netlib::moldudp64_core::types::*;
-use std::time::{Duration, Instant};
-use tokio::net::UdpSocket;
-#[cfg(feature = "tracing")]
-use tracing::debug;
+use crate::moldudp64_engine::types::*;
+use core_affinity2;
+use nexus_queue::spsc;
+use std::thread;
 #[cfg(feature = "tracing")]
 use tracing_subscriber::FmtSubscriber;
-pub struct MoldProducer {
-    pub socket: UdpSocket,
-    session_table: SessionTable,
-    pub(crate) packet: BytesMut,
-    last_flush: Instant,
-    flush_interval: Duration,
-    message_count: usize,
-    max_messages: usize,
-    packet_size: usize,
-    max_packet_size: usize,
-}
 
-impl MoldProducer {
-    pub async fn new() -> Self {
-        let mut packet = BytesMut::with_capacity(1400);
-        packet.resize(20, 0);
+impl Engine {
+    pub fn start() -> Self {
+        let (event_tx, event_rx) = spsc::ring_buffer::<Event>(8192);
+        let (seq_tx, seq_rx) = spsc::ring_buffer::<SequencedEvent>(8192);
 
-        #[cfg(feature = "tracing")]
-        let subscriber = FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish();
+        let sequencer = Sequencer::new(event_rx, seq_tx);
+        let publisher = Publisher::new(seq_rx);
 
-        #[cfg(feature = "tracing")]
-        tracing::subscriber::set_global_default(subscriber).expect("tracing init failed");
+        let cores = core_affinity2::get_core_ids().unwrap();
 
-        MoldProducer {
-            socket: UdpSocket::bind("0.0.0.0:9000").await.unwrap(),
-            session_table: SessionTable::new(),
-            message_count: 0,
-            max_messages: 65535,
-            packet,
-            last_flush: Instant::now(),
-            flush_interval: Duration::from_millis(500),
-            packet_size: 20,
-            max_packet_size: 1400,
-        }
+        let seq_core = cores[1];
+        let pub_core = cores[2];
+
+        thread::spawn(move || {
+            if seq_core.set_affinity().is_ok() {
+                sequencer.run();
+            }
+        });
+
+        thread::spawn(move || {
+            if pub_core.set_affinity().is_ok() {
+                publisher.run();
+            }
+        });
+
+        Self { event_tx }
     }
 
-    pub async fn flush(&mut self) -> std::io::Result<()> {
-        #[cfg(feature = "tracing")]
-        tracing::debug!(
-            message_count = self.message_count,
-            packet_bytes = self.packet_size,
-            "packet_flushed"
-        );
-
-        let session_id: [u8; 10] = self.session_table.get_current_session();
-        let sequence_number = self.session_table.next_sequence(session_id);
-
-        self.packet[0..10].copy_from_slice(&session_id);
-        self.packet[10..18].copy_from_slice(&sequence_number);
-        self.packet[18..20].copy_from_slice(&(self.message_count as u16).to_be_bytes());
-
-        self.produce(&self.packet, "127.0.0.1:8081".parse().unwrap())
-            .await?;
-
-        self.packet.truncate(20);
-
-        self.packet_size = 20;
-        self.message_count = 0;
-        self.last_flush = Instant::now();
-
-        Ok(())
-    }
-
-    pub async fn enqueue_message(&mut self, message: MessageData) -> std::io::Result<()> {
-        let message_length = message.len();
-        let total_message_length = 2 + message_length;
-        if (self.packet_size + total_message_length) > self.max_packet_size {
-            #[cfg(feature = "tracing")]
-            tracing::debug!(
-                reason = "capacity",
-                current = self.packet_size,
-                incoming = total_message_length,
-                total = self.packet_size + total_message_length,
-                max = self.max_packet_size,
-                "flush"
-            );
-
-            self.flush().await?;
-        }
-
-        self.packet_size += total_message_length;
-        self.message_count += 1;
-
-        #[cfg(feature = "tracing")]
-        tracing::debug!(
-            message_index = self.message_count,
-            message_bytes = total_message_length,
-            packet_bytes = self.packet_size,
-            "enqueue"
-        );
-
-        self.packet.put_u16(message_length as u16);
-        self.packet.put_slice(&message);
-
-        if self.message_count >= self.max_messages {
-            #[cfg(feature = "tracing")]
-            tracing::debug!(
-                reason = "max_messages",
-                count = self.message_count,
-                max = self.max_messages,
-                "flush"
-            );
-
-            self.flush().await?;
-        }
-
-        if self.last_flush.elapsed() >= self.flush_interval {
-            #[cfg(feature = "tracing")]
-            debug!(
-                reason = "timer",
-                count = self.message_count,
-                interval_ms = self.flush_interval.as_millis(),
-                "flush"
-            );
-
-            self.flush().await?;
-        }
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    use tokio::time::{Duration, sleep};
-
-    #[tokio::test]
-    async fn benchmark_mold_producer_enqueue() -> std::io::Result<()> {
-        let mut mold: MoldProducer = MoldProducer::new().await;
-
-        for _ in 0..100 {
-            sleep(Duration::from_millis(100)).await;
-
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-
-            let mut msg = BytesMut::with_capacity(17);
-            msg.put_u8(b'b');
-            msg.extend_from_slice(&nanos.to_be_bytes());
-
-            mold.enqueue_message(msg.freeze()).await?;
-
-            let mut msg = BytesMut::with_capacity(17);
-            msg.put_u8(b'z');
-            msg.extend_from_slice(&nanos.to_be_bytes());
-
-            mold.enqueue_message(msg.freeze()).await?;
-        }
-
-        Ok(())
+    pub fn push_event(&mut self, event: Event) {
+        let _ = self.event_tx.push(event);
     }
 }

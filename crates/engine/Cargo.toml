@@ -8,11 +8,12 @@ default = ["tracing"]
 tracing = []
 
 [dependencies]
-netlib = {path = "../netlib"}
-tokio = { version = "1.49.0", features = ["full"] }
 bytes = "1.11.1"
 circular-buffer = "1.2.0"
+core_affinity2 = "0.15.4"
 fastrand = "2.3.0"
+netlib = {path = "../netlib"}
+nexus-queue = "1.0.0"
 rand = "0.10.0"
 rand_chacha = "0.10.0"
 rand_distr = "0.6.0"

@@ -27,8 +27,8 @@ impl Packet {
             let message_data = bytes.split_to(ml);
 
             message_blocks.push(MessageBlock {
-                message_length,
                 message_data,
+                message_length,
             });
         }
 

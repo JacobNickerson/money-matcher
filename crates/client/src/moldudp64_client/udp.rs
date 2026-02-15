@@ -81,7 +81,8 @@ impl MoldConsumer {
                         #[cfg(feature = "tracing")]
                         tracing::trace!(
                             index = k,
-                            latency_ns = elapsed.as_nanos(),
+                            latency =
+                                format!("{}.{:09}", elapsed.as_secs(), elapsed.subsec_nanos()),
                             "benchmark_latency"
                         );
                     }
