@@ -21,6 +21,7 @@ const QUANTITIES: [u64; 5] = [1, 2, 5, 10, 20];
 pub struct GaussianOrderGenerator {
     dist: Normal<f64>,
     order_counter: u64,
+    current_time: u64,
     active_bids: Box<CircularBuffer<{ Self::ACTIVE_ORDER_BUFFER_SIZE }, OrderId>>,
     active_asks: Box<CircularBuffer<{ Self::ACTIVE_ORDER_BUFFER_SIZE }, OrderId>>,
 }
@@ -30,6 +31,7 @@ impl GaussianOrderGenerator {
         let mut this = Self {
             dist: Normal::new(mean, deviation).unwrap(),
             order_counter: 0,
+            current_time: 0,
             active_bids: CircularBuffer::boxed(),
             active_asks: CircularBuffer::boxed(),
         };
@@ -62,6 +64,7 @@ impl OrderGenerator for GaussianOrderGenerator {
         let price = self.compute_price(rng);
         let qty = QUANTITIES[fastrand::usize(0..QUANTITIES.len())];
         self.order_counter += 1;
+        self.current_time += time_stamp;
         match kind {
             OrderType::Limit { qty: _, price: _ } => {
                 match side {
@@ -71,20 +74,20 @@ impl OrderGenerator for GaussianOrderGenerator {
                 Order::new(
                     self.order_counter,
                     side,
-                    time_stamp,
+                    self.current_time,
                     OrderType::Limit { qty, price },
                 )
             }
             OrderType::Market { qty: _ } => Order::new(
                 self.order_counter,
                 side,
-                time_stamp,
+                self.current_time,
                 OrderType::Market { qty },
             ),
             OrderType::Cancel => Order::new(
                 self.get_active_order(side),
                 side,
-                time_stamp,
+                self.current_time,
                 OrderType::Cancel,
             ),
             OrderType::Update {
@@ -94,7 +97,7 @@ impl OrderGenerator for GaussianOrderGenerator {
             } => Order::new(
                 self.order_counter,
                 side,
-                time_stamp,
+                self.current_time,
                 OrderType::Update {
                     old_id: self.get_active_order(side),
                     qty,
