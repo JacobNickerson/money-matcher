@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-netlib = {path = "../netlib"}
-tokio = { version = "1.49.0", features = ["full"] }
 bytes = "1.11.1"
+netlib = {path = "../netlib"}
+nexus-queue = "1.0.0"
+tokio = { version = "1.49.0", features = ["full"] }
+zerocopy = { version = "0.8.39", features = ["derive"] }
