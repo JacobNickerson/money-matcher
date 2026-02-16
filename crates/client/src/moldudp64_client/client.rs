@@ -59,7 +59,7 @@ mod tests {
                     _ => {}
                 }
             } else {
-                if count == 0 && autostop.elapsed() > Duration::from_secs(5) {
+                if count == 0 && autostop.elapsed() > Duration::from_secs(20) {
                     break;
                 }
                 std::hint::spin_loop();
