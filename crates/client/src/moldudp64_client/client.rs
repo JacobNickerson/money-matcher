@@ -22,13 +22,14 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn benchmark_mold_consumer_enqueue() {
         let mut client = Client::start();
         let mut count = 0u64;
         let mut start_instant: Option<Instant> = None;
+        let autostop = Instant::now();
 
         loop {
             if let Some(event) = client.handler_rx.pop() {
@@ -58,6 +59,9 @@ mod tests {
                     _ => {}
                 }
             } else {
+                if count == 0 && autostop.elapsed() > Duration::from_secs(5) {
+                    break;
+                }
                 std::hint::spin_loop();
             }
         }
