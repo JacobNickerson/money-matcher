@@ -3,6 +3,9 @@ use zerocopy::FromBytes;
 use crate::moldudp64_core::types::*;
 impl Packet {
     pub fn from_bytes(mut bytes: MessageData) -> Result<Packet, &'static str> {
+        if bytes.len() < 20 {
+            return Err("Packet too small");
+        }
         let header_bytes = bytes.split_to(20);
         let header = Header::read_from_prefix(&header_bytes).unwrap().0;
 
@@ -11,7 +14,7 @@ impl Packet {
 
         for _ in 0..mc {
             if bytes.len() < 2 {
-                return Err("Err");
+                return Err("Message block length too short");
             }
 
             let len_bytes = bytes.split_to(2);
@@ -21,7 +24,7 @@ impl Packet {
             let ml = u16::from_be_bytes(message_length) as usize;
 
             if bytes.len() < ml {
-                return Err("Err");
+                return Err("Message block length too short 2");
             }
 
             let message_data = bytes.split_to(ml);

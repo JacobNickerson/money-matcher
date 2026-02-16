@@ -1,48 +1,58 @@
-use crate::moldudp64_engine::types::*;
 use bytes::{BufMut, BytesMut};
+use netlib::moldudp64_core::sessions::SessionTable;
+use netlib::moldudp64_core::types::{Event, SequencedEvent};
 use nexus_queue::spsc;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
-#[cfg(feature = "tracing")]
-use tracing_subscriber::FmtSubscriber;
 
-impl Publisher {
-    pub fn new(input: spsc::Consumer<SequencedEvent>) -> Self {
+pub struct SequencerPublisher {
+    input: spsc::Consumer<Event>,
+
+    sequence_number: u64,
+    session_table: SessionTable,
+
+    socket: UdpSocket,
+    packet: BytesMut,
+
+    current_session: Option<[u8; 10]>,
+    first_sequence_number: Option<u64>,
+    message_count: usize,
+
+    max_packet_size: usize,
+    flush_interval: Duration,
+    next_flush: Instant,
+}
+
+impl SequencerPublisher {
+    pub fn new(input: spsc::Consumer<Event>) -> Self {
         let socket = UdpSocket::bind("0.0.0.0:9000").unwrap();
         let mut packet = BytesMut::with_capacity(1400);
         packet.resize(20, 0);
 
-        #[cfg(feature = "tracing")]
-        let subscriber = FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish();
-
-        #[cfg(feature = "tracing")]
-        tracing::subscriber::set_global_default(subscriber).expect("tracing init failed");
-
-        let flush_interval = Duration::from_millis(500);
+        let flush_interval = Duration::from_micros(5);
 
         Self {
+            input,
+            sequence_number: 1,
+            session_table: SessionTable::new(),
+            socket,
+            packet,
             current_session: None,
             first_sequence_number: None,
-            flush_interval,
-            input,
-            max_packet_size: 1400,
             message_count: 0,
+            max_packet_size: 1400,
+            flush_interval,
             next_flush: Instant::now() + flush_interval,
-            packet_size: 20,
-            packet,
-            socket,
         }
     }
 
     pub fn flush(&mut self) {
         if self.message_count > 0 {
             #[cfg(feature = "tracing")]
-            tracing::debug!(
+            tracing::trace!(
                 sequence_number = self.first_sequence_number.unwrap(),
                 message_count = self.message_count,
-                packet_bytes = self.packet_size,
+                packet_bytes = self.packet.len(),
                 "packet_flushed"
             );
 
@@ -53,23 +63,40 @@ impl Publisher {
 
             let addr = "127.0.0.1:8081";
             let len = self.socket.send_to(&self.packet, addr).unwrap();
+
             #[cfg(feature = "tracing")]
-            tracing::debug!(bytes = len, destination = addr, "udp_send");
+            tracing::debug!(
+                bytes = len,
+                message_count = self.message_count,
+                destination = addr,
+                "udp_send"
+            );
 
             self.packet.truncate(20);
 
             self.current_session = None;
             self.first_sequence_number = None;
             self.message_count = 0;
-            self.packet_size = 20;
         }
 
-        self.next_flush += self.flush_interval;
+        self.next_flush = Instant::now() + self.flush_interval;
     }
 
     pub fn run(mut self) {
         loop {
-            if let Some(sequenced_event) = self.input.pop() {
+            if Instant::now() >= self.next_flush {
+                self.flush();
+            }
+
+            if let Some(event) = self.input.pop() {
+                let sequenced_event = SequencedEvent {
+                    event,
+                    sequence_number: self.sequence_number,
+                    session_id: self.session_table.get_current_session(),
+                };
+
+                self.sequence_number += 1;
+
                 if self.current_session.is_none() {
                     self.first_sequence_number = Some(sequenced_event.sequence_number);
                     self.current_session = Some(sequenced_event.session_id);
@@ -80,15 +107,16 @@ impl Publisher {
                     self.first_sequence_number = Some(sequenced_event.sequence_number);
                 }
 
-                let message_length = sequenced_event.payload.len();
+                let message_length = sequenced_event.event.len();
                 let total_message_length = 2 + message_length;
-                if (self.packet_size + total_message_length) > self.max_packet_size {
+
+                if (self.packet.len() + total_message_length) > self.max_packet_size {
                     #[cfg(feature = "tracing")]
-                    tracing::debug!(
+                    tracing::trace!(
                         reason = "capacity",
-                        current = self.packet_size,
+                        current = self.packet.len(),
                         incoming = total_message_length,
-                        total = self.packet_size + total_message_length,
+                        total = self.packet.len() + total_message_length,
                         max = self.max_packet_size,
                         "flush"
                     );
@@ -100,59 +128,20 @@ impl Publisher {
                 }
 
                 self.message_count += 1;
-                self.packet_size += total_message_length;
 
                 #[cfg(feature = "tracing")]
-                tracing::debug!(
+                tracing::trace!(
                     message_index = self.message_count,
                     message_bytes = total_message_length,
-                    packet_bytes = self.packet_size,
+                    packet_bytes = self.packet.len(),
                     "enqueue"
                 );
 
                 self.packet.put_u16(message_length as u16);
-                self.packet.put_slice(&sequenced_event.payload);
-            } else {
-                if Instant::now() >= self.next_flush {
-                    self.flush();
-                }
-
-                std::thread::yield_now();
+                self.packet.put_slice(&sequenced_event.event);
             }
+
+            std::hint::spin_loop();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::{
-        thread,
-        time::{Duration, SystemTime, UNIX_EPOCH},
-    };
-
-    #[test]
-    fn benchmark_mold_producer_enqueue() -> std::io::Result<()> {
-        let mut engine = Engine::start();
-
-        for _ in 0..100 {
-            thread::sleep(Duration::from_millis(100));
-
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-
-            let mut msg = BytesMut::with_capacity(17);
-            msg.put_u8(b'b');
-            msg.extend_from_slice(&nanos.to_be_bytes());
-            let event = Event {
-                payload: msg.freeze(),
-            };
-
-            engine.push_event(event);
-        }
-
-        Ok(())
     }
 }
