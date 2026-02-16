@@ -1,7 +1,6 @@
-use bytes::{Bytes, BytesMut};
-use netlib::moldudp64_core::types::{
-    AddOrder, Header, ItchEvent, OrderExecutedMessage, TestBenchmark,
-};
+use bytes::BytesMut;
+use netlib::itch_core::types::{AddOrder, ItchEvent, OrderExecutedMessage, TestBenchmark};
+use netlib::moldudp64_core::types::Header;
 use nexus_queue::{Full, spsc};
 use std::net::UdpSocket;
 use zerocopy::FromBytes;

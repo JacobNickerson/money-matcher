@@ -3,12 +3,6 @@ name = "netlib"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = ["tracing"]
-tracing = []
-
 [dependencies]
 zerocopy = { version = "0.8.39", features = ["derive"] }
 bytes = "1.11.1"
-tracing = "0.1"
-tracing-subscriber = "0.3"
