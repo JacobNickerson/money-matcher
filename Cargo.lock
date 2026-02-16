@@ -55,7 +55,9 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "netlib",
+ "nexus-queue",
  "tokio",
+ "zerocopy",
 ]
 
 [[package]]
@@ -68,6 +70,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
 name = "engine"
 version = "0.1.0"
 dependencies = [
@@ -75,11 +83,13 @@ dependencies = [
  "circular-buffer",
  "fastrand",
  "netlib",
+ "nexus-queue",
  "rand",
  "rand_chacha",
  "rand_distr",
+ "redb",
  "smallrand",
- "tokio",
+ "zerocopy",
 ]
 
 [[package]]
@@ -236,8 +246,16 @@ name = "netlib"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "tokio",
  "zerocopy",
+]
+
+[[package]]
+name = "nexus-queue"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "448259cb57565bbae23c5129d390b01574e1b7e83fa740cb963e2efe2ebe7612"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -357,6 +375,15 @@ checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits",
  "rand",
+]
+
+[[package]]
+name = "redb"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae323eb086579a3769daa2c753bb96deb95993c534711e0dbe881b5192906a06"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

@@ -14,3 +14,4 @@ rand_chacha = "0.10.0"
 rand_distr = "0.6.0"
 smallrand = "1.0.1"
 zerocopy = { version = "0.8.39", features = ["derive"] }
+redb = "3.1.0"
