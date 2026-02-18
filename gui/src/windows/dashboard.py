@@ -3,7 +3,7 @@ from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QSizePolicy, QTableView, QStyledItemDelegate, QTabBar, QHeaderView,
-    QFrame, QGridLayout
+    QFrame, QGridLayout, QComboBox, QScrollArea
 )
 from PyQt5.QtGui import (
     QFont, QColor, QPainter
@@ -19,8 +19,10 @@ class MarketEvents(QWidget):
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setFixedHeight(600)
-        self.setFixedWidth(900)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
         self.setStyleSheet("""
             MarketEvents {
                 background-color: #101010;
@@ -58,7 +60,7 @@ class OrderBookTableView(QTableView):
         self.setEditTriggers(QTableView.NoEditTriggers)
         self.setFocusPolicy(Qt.NoFocus)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.verticalHeader().setDefaultSectionSize(32)
+        self.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         self.ask_color = QColor("#251717")
         self.bid_color = QColor("#17291B")
@@ -126,6 +128,8 @@ class OrderBook(QWidget):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.setMinimumWidth(320)
+        self.setMaximumWidth(350)
         self.setStyleSheet("""
             OrderBook {
                 background-color: #101010;
@@ -159,6 +163,7 @@ class OrderBook(QWidget):
         layout.addWidget(tabbar)
 
         self.table = OrderBookTableView()
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.setStyleSheet("""
             QTableView {
                 background-color: #101010;
@@ -176,25 +181,6 @@ class OrderBook(QWidget):
         """)
         
         self.loadTestData()
-
-        scroll_bar_style = """
-            QScrollBar:vertical {
-                background-color: #101010;
-                width: 8px;
-                margin: 0px;
-                border: none;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #363636;
-                min-height: 20px;
-                border-radius: 4px;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background-color: #101010;
-            }
-        """
-        self.table.verticalScrollBar().setStyleSheet(scroll_bar_style)
-
         self.layout().addWidget(self.table)
 
     def loadTestData(self):
@@ -210,6 +196,7 @@ class OrderEntry(QWidget):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.setMinimumWidth(320)
 
         self.setStyleSheet("""
             OrderEntry {
@@ -342,10 +329,10 @@ class OrderEntry(QWidget):
 
         layout.addWidget(self.table())
 
-        layout.addStretch()
-
         self.submit_btn = QPushButton()
-        self.submit_btn.setFixedHeight(44)
+        self.submit_btn.setMinimumHeight(32)
+        self.submit_btn.setMaximumHeight(44)
+        self.submit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.submit_btn.setFont(QFont("Inter", 11, QFont.Bold))
         self.submit_btn.setCursor(Qt.PointingHandCursor)
 
@@ -365,7 +352,7 @@ class OrderEntry(QWidget):
         """)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
         label = QLabel(label_text)
         label.setFont(QFont("Inter", 9))
@@ -374,12 +361,14 @@ class OrderEntry(QWidget):
         field = QLineEdit()
         field.setPlaceholderText(placeholder)
         field.setFont(QFont("Inter", 10))
-        field.setFixedHeight(36)
+        field.setMinimumHeight(30)
+        field.setMaximumHeight(36)
+
         field.setStyleSheet("""
             QLineEdit {
                 background-color: #1D1D1D;
                 border: none;
-                border-radius: 8px;
+                border-radius: 6px;
                 padding-right: 10px;
                 color: white;
             }
@@ -616,6 +605,7 @@ class TradeHistory(QWidget):
             }
         """
         self.table.verticalScrollBar().setStyleSheet(scroll_bar_style)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         layout.addWidget(self.table)
 
@@ -647,3 +637,161 @@ class TradeHistory(QWidget):
             side_index = model.index(row, 3)
             side = model.data(side_index, Qt.DisplayRole)
             self.table.model().rows[row]["Side"] = side
+
+class LogCard(QFrame):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("""
+            QFrame {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 12px;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 0, 4, 0)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self.container = QWidget()
+        self.log_layout = QVBoxLayout(self.container)
+        self.log_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.log_layout.setSpacing(6)
+
+        self.scroll.setWidget(self.container)
+        layout.addWidget(self.scroll)
+
+    def add_log(self, text, color="white", time=""):
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+
+        label = QLabel(text)
+        label.setFont(QFont("Inter", 10, QFont.Normal))
+        label.setStyleSheet(f"color: {color}; border: none;")
+        label.setWordWrap(True)
+
+        time_label = QLabel(time)
+        time_label.setFont(QFont("Inter", 10, QFont.Normal))
+        time_label.setStyleSheet("color: #999999; border: none;")
+        time_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        row_layout.addWidget(label, stretch=1)
+        row_layout.addWidget(time_label)
+
+        self.log_layout.addWidget(row)
+
+class Strategies(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setStyleSheet("""
+            Strategies {
+                background-color: #101010;
+                border-width: 1px;
+                border-style: solid;
+                border-color: #363636;
+                border-radius: 16px;
+            }
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("Strategies")
+        title.setFont(QFont("Inter", 12, QFont.Medium))
+        title.setStyleSheet("""
+            color: white;
+            background-color: #101010;
+        """)
+        layout.addWidget(title)
+
+        self.strategy_list = QComboBox()
+        self.strategy_list.setFont(QFont("Inter", 10))
+        self.strategy_list.setStyleSheet("""
+            QComboBox {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 8px;
+                padding: 8px;
+                color: white;
+            }
+            QComboBox::drop-down {
+                border: none;
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: url(../../resources/images/down-arrow.svg);
+                width: 16px;
+                height: 16px;
+                margin-right: 16px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #080808;
+                selection-background-color: #363636;
+                color: white;
+            }
+        """)
+        self.strategy_list.addItems(["Metatron", "Momentum", "Arbitrage", "Scalping"])
+        layout.addWidget(self.strategy_list)
+
+        self.log_card = LogCard()
+        layout.addWidget(self.log_card, stretch=2)
+
+        self.log_card.add_log("Target profit set $744.12 (+5%)", "#27AE60", "03:14")
+        self.log_card.add_log("Entry Conditions Triggered!", "white", "03:14")
+        self.log_card.add_log("Metatron was activated!", "white", "03:14")
+
+        open_card = QFrame()
+        open_card.setStyleSheet("""
+            QFrame {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 12px;
+            }
+        """)
+        open_layout = QVBoxLayout(open_card)
+        open_layout.setContentsMargins(8, 8, 8, 8)
+        open_layout.addLayout(self.row("Open $ Profit/Loss", "+10.00", "#999999", "#27AE60"))
+        open_layout.addLayout(self.row("Open Trade", "1", "#999999", "white"))
+        layout.addWidget(open_card)
+
+        risk_card = QFrame()
+        risk_card.setStyleSheet("""
+            QFrame {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 12px;
+            }
+        """)
+        risk_layout = QVBoxLayout(risk_card)
+        risk_layout.setContentsMargins(8, 8, 8, 8)
+        risk_layout.addLayout(self.row("Risk/Reward", "1.74","#27AE60", "white"))
+        risk_layout.addLayout(self.row("Avg. Win", "$236","#27AE60", "white"))
+        risk_layout.addLayout(self.row("Avg. Loss", "$126","#EB5757", "white"))
+        risk_layout.addLayout(self.row("Max Drawdown", "9%","#EB5757", "white"))
+        layout.addWidget(risk_card)
+
+        layout.addStretch()
+
+    def row(self, label, value, label_color, value_color):
+        layout = QHBoxLayout()
+        left = QLabel(label)
+        left.setFont(QFont("Inter", 10, QFont.Normal))
+        left.setStyleSheet(f"color: {label_color}; border: none;")
+
+        right = QLabel(value)
+        right.setFont(QFont("Inter", 10, QFont.Normal))
+        right.setStyleSheet((f"color: {value_color}; border: none;"))
+        right.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        layout.addWidget(left)
+        layout.addWidget(right)
+        return layout
