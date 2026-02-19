@@ -299,6 +299,8 @@ class OrderEntry(QWidget):
         for btn in (self.limit_btn, self.tpsl_btn):
             btn.setCheckable(True)
             btn.setFont(QFont("Inter", 10))
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setAutoExclusive(True)
             btn.setStyleSheet("""
                 QPushButton {
                     background: #101010;
@@ -314,10 +316,6 @@ class OrderEntry(QWidget):
             type_layout.addWidget(btn)
 
         self.limit_btn.setChecked(True)
-        self.limit_btn.setCursor(Qt.PointingHandCursor)
-        self.limit_btn.setAutoExclusive(True)
-        self.tpsl_btn.setCursor(Qt.PointingHandCursor)
-        self.tpsl_btn.setAutoExclusive(True)
 
         type_layout.addStretch()
         type_layout.insertWidget(0, self.market_lbl)
@@ -551,6 +549,8 @@ class TradeHistory(QWidget):
             btn.setCheckable(True)
             btn.setFixedSize(120, 32)
             btn.setFont(QFont("Inter", 10))
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setAutoExclusive(True)
             btn.setStyleSheet("""
                 QPushButton {
                     background-color: #101010;
@@ -566,12 +566,6 @@ class TradeHistory(QWidget):
             btn_layout.addWidget(btn)
 
         self.open_orders_btn.setChecked(True)
-        self.open_orders_btn.setAutoExclusive(True)
-        self.open_positions_btn.setAutoExclusive(True)
-        self.order_history_btn.setAutoExclusive(True)
-        self.open_orders_btn.setCursor(Qt.PointingHandCursor)
-        self.open_positions_btn.setCursor(Qt.PointingHandCursor)
-        self.order_history_btn.setCursor(Qt.PointingHandCursor)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
