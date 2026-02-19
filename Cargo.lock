@@ -54,8 +54,11 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "itoa",
  "netlib",
+ "nexus-queue",
  "tokio",
+ "zerocopy",
 ]
 
 [[package]]
@@ -68,6 +71,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
 name = "engine"
 version = "0.1.0"
 dependencies = [
@@ -75,11 +84,12 @@ dependencies = [
  "circular-buffer",
  "fastrand",
  "netlib",
+ "nexus-queue",
  "rand",
  "rand_chacha",
  "rand_distr",
  "smallrand",
- "tokio",
+ "zerocopy",
 ]
 
 [[package]]
@@ -236,8 +246,16 @@ name = "netlib"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "tokio",
  "zerocopy",
+]
+
+[[package]]
+name = "nexus-queue"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "448259cb57565bbae23c5129d390b01574e1b7e83fa740cb963e2efe2ebe7612"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
