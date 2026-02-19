@@ -9,3 +9,4 @@ netlib = {path = "../netlib"}
 nexus-queue = "1.0.0"
 tokio = { version = "1.49.0", features = ["full"] }
 zerocopy = { version = "0.8.39", features = ["derive"] }
+itoa = "1.0.17"
