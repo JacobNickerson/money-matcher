@@ -31,7 +31,23 @@ impl OrderMerger {
         }
     }
     pub fn process_batch(&mut self) {
-        let synth_count = self.synthetic_orders.pop_slice(&mut self.synthetic_buffer);
-        let user_count = self.user_orders.pop_slice(&mut self.user_buffer);
+        let mut synth_count = 0;
+        let mut user_count = 0;
+        {
+            if (synth_count == 0) {
+                synth_count = self.synthetic_orders.pop_slice(&mut self.synthetic_buffer);
+            }
+            if (user_count == 0) {
+                user_count = self.user_orders.pop_slice(&mut self.user_buffer);
+            }
+            // TODO: Replace buffers with array + pointer to last elem
+            if (self.synthetic_buffer.last().timestamp < self.user_buffer.first().timestamp) {
+                // TODO: FLUSH
+            } else if (self.user_buffer.last().timestamp < self.synthetic_buffer.first().timestamp) {
+                // TODO: FLUSH
+            } else {
+                // TODO: MERGE
+            }
+        }
     }
 }
