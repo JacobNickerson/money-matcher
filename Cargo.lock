@@ -54,6 +54,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "itoa",
  "netlib",
  "nexus-queue",
  "tokio",
