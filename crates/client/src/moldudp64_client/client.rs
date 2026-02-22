@@ -59,7 +59,34 @@ mod tests {
                     _ => {}
                 }
             } else {
-                if count == 0 && autostop.elapsed() > Duration::from_secs(20) {
+                if count == 0 && autostop.elapsed() > Duration::from_secs(60) {
+                    break;
+                }
+                std::hint::spin_loop();
+            }
+        }
+    }
+
+    #[test]
+    fn receive_orders() {
+        let mut client = Client::start();
+        let mut count = 0u64;
+        let autostop = Instant::now();
+
+        loop {
+            if let Some(event) = client.handler_rx.pop() {
+                match event {
+                    ItchEvent::AddOrder(_s) => {
+                        count += 1;
+                        _s.print();
+                    }
+
+                    _ => {
+                        println!("received something..")
+                    }
+                }
+            } else {
+                if count == 0 && autostop.elapsed() > Duration::from_secs(60) {
                     break;
                 }
                 std::hint::spin_loop();
