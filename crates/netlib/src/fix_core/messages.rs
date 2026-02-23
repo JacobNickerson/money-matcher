@@ -1,6 +1,5 @@
 use crate::fix_core::types::NewOrder;
 use chrono::Local;
-use std::collections::HashMap;
 
 pub fn write_header(
     write_buf: &mut Vec<u8>,
@@ -37,10 +36,10 @@ pub fn write_header(
     write_buf.push(0x01);
 }
 
-pub fn calculate_checksum(write_buf: &Vec<u8>) -> u32 {
+pub fn calculate_checksum(message: &[u8]) -> u32 {
     let mut sum: u32 = 0;
 
-    for &byte in write_buf.iter() {
+    for &byte in message.iter() {
         sum += byte as u32;
     }
 
@@ -49,7 +48,7 @@ pub fn calculate_checksum(write_buf: &Vec<u8>) -> u32 {
 
 pub fn write_trailer(write_buf: &mut Vec<u8>) {
     // Checksum
-    let checksum: u32 = calculate_checksum(write_buf);
+    let checksum: u32 = calculate_checksum(write_buf.as_slice());
     write_buf.extend_from_slice(b"10=");
     write_buf.push(b'0' + (checksum / 100) as u8);
     write_buf.push(b'0' + ((checksum / 10) % 10) as u8);
@@ -66,25 +65,6 @@ pub fn print_message(message: &Vec<u8>) {
     }
 
     println!("{}", String::from_utf8_lossy(&output));
-}
-
-pub fn split_message(message: &[u8]) -> HashMap<&[u8], &[u8]> {
-    let mut fields = HashMap::new();
-
-    for field in message.split(|&b| b == 0x01) {
-        if field.is_empty() {
-            continue;
-        }
-
-        let mut kv = field.splitn(2, |&b| b == b'=');
-
-        let tag = kv.next().unwrap();
-        let value = kv.next().unwrap();
-
-        fields.insert(tag, value);
-    }
-
-    fields
 }
 
 pub fn get_timestamp() -> String {

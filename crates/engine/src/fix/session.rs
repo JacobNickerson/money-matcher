@@ -1,6 +1,6 @@
+use netlib::fix_core::iterator::FixIterator;
+use netlib::fix_core::messages::{calculate_checksum, print_message};
 use std::{io::Read, net::TcpStream, str::from_utf8};
-
-use netlib::fix_core::messages::{calculate_checksum, print_message, split_message};
 
 pub struct Session {
     stream: TcpStream,
@@ -28,8 +28,19 @@ impl Session {
             self.buffer.extend_from_slice(&tmp[..n]);
 
             while let Some(msg) = self.extract_message() {
-                //let fields = split_message(&msg);
-                print_message(&msg);
+                let mut msg_type = None;
+
+                for (tag, value) in FixIterator::new(&msg) {
+                    if tag == b"35" {
+                        msg_type = Some(value);
+                        break;
+                    }
+                }
+
+                match msg_type {
+                    Some(b"D") => self.handle_new_order(&msg),
+                    _ => {}
+                }
             }
         }
     }
@@ -63,7 +74,7 @@ impl Session {
             .ok()?
             .parse()
             .ok()?;
-        let checksum = calculate_checksum(&self.buffer[..body_end].to_vec());
+        let checksum = calculate_checksum(&self.buffer[..body_end]);
 
         if recv_checksum != checksum {
             println!("Checksum mismatch {} {}", recv_checksum, checksum);
@@ -75,5 +86,15 @@ impl Session {
         }
 
         Some(self.buffer.drain(0..total_len).collect())
+    }
+
+    fn handle_new_order(&mut self, msg: &Vec<u8>) {
+        for (tag, value) in FixIterator::new(msg) {
+            println!(
+                "{} = {}",
+                String::from_utf8_lossy(&tag),
+                String::from_utf8_lossy(&value)
+            );
+        }
     }
 }
