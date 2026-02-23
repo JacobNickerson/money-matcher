@@ -1,16 +1,20 @@
-use netlib::fix_core::iterator::FixIterator;
 use netlib::fix_core::messages::calculate_checksum;
+use netlib::fix_core::types::NewOrder;
+use netlib::fix_core::{iterator::FixIterator, messages::FIXCommand};
+use nexus_queue::mpsc::Producer;
 use std::{io::Read, net::TcpStream, str::from_utf8};
 
 pub struct Session {
     stream: TcpStream,
+    lob_tx: Producer<FIXCommand>,
     buffer: Vec<u8>,
 }
 
 impl Session {
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(stream: TcpStream, lob_tx: Producer<FIXCommand>) -> Self {
         Self {
             stream,
+            lob_tx,
             buffer: Vec::new(),
         }
     }
@@ -116,14 +120,15 @@ impl Session {
             }
         }
 
-        println!(
-            "Read New Order | cl_ord_id(11)={} | qty(38)={} | price(44)={} | side(54)={} | symbol(55)={}",
-            cl_ord_id.ok_or("")?,
-            qty.ok_or("")?,
-            price.ok_or("")?,
-            side.ok_or("")?,
-            symbol.ok_or("")?
+        let order = NewOrder::new(
+            cl_ord_id.ok_or("Missing 11")?,
+            qty.ok_or("Missing 38")?,
+            price.ok_or("Missing 44")?,
+            side.ok_or("Missing 54")?,
+            symbol.ok_or("Missing 55")?,
         );
+
+        self.lob_tx.push(FIXCommand::NewOrder(order));
 
         Ok(())
     }

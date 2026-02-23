@@ -145,3 +145,7 @@ impl IntoBytes for NewOrder {
         buf
     }
 }
+
+pub enum FIXCommand {
+    NewOrder(NewOrder),
+}
