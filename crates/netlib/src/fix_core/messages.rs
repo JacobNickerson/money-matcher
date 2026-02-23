@@ -1,4 +1,6 @@
+use crate::fix_core::types::NewOrder;
 use chrono::Local;
+use std::collections::HashMap;
 
 pub fn write_header(
     write_buf: &mut Vec<u8>,
@@ -55,15 +57,34 @@ pub fn write_trailer(write_buf: &mut Vec<u8>) {
     write_buf.push(0x01);
 }
 
-pub fn print_message(write_buf: &Vec<u8>) {
-    let mut output = Vec::with_capacity(write_buf.len());
+pub fn print_message(message: &Vec<u8>) {
+    let mut output = Vec::with_capacity(message.len());
 
-    for &byte in write_buf.iter() {
+    for &byte in message.iter() {
         let c = if byte == 0x01 { b'|' } else { byte };
         output.push(c);
     }
 
     println!("{}", String::from_utf8_lossy(&output));
+}
+
+pub fn split_message(message: &[u8]) -> HashMap<&[u8], &[u8]> {
+    let mut fields = HashMap::new();
+
+    for field in message.split(|&b| b == 0x01) {
+        if field.is_empty() {
+            continue;
+        }
+
+        let mut kv = field.splitn(2, |&b| b == b'=');
+
+        let tag = kv.next().unwrap();
+        let value = kv.next().unwrap();
+
+        fields.insert(tag, value);
+    }
+
+    fields
 }
 
 pub fn get_timestamp() -> String {
@@ -79,4 +100,68 @@ pub fn get_maturity_month_year() -> String {
 pub fn get_maturity_month_year_day() -> String {
     let now = Local::now();
     now.format("%Y%m%d").to_string()
+}
+
+pub trait IntoBytes {
+    fn as_bytes(&self) -> Vec<u8>;
+}
+
+impl NewOrder {
+    pub fn new(cl_ord_id: u64, qty: u32, price: u32, side: u8, symbol: [u8; 3]) -> Self {
+        Self {
+            cl_ord_id,
+            qty,
+            price,
+            side,
+            symbol,
+        }
+    }
+}
+impl IntoBytes for NewOrder {
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut itoa_buf = itoa::Buffer::new();
+        let mut buf = Vec::new();
+
+        buf.extend_from_slice(b"11=");
+        buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"21=1\x01");
+
+        buf.extend_from_slice(b"38=");
+        buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"40=2\x01");
+
+        buf.extend_from_slice(b"44=");
+        buf.extend_from_slice(itoa_buf.format(self.price).as_bytes());
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"54=");
+        buf.extend_from_slice(itoa_buf.format(self.side).as_bytes());
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"55=");
+        buf.extend_from_slice(&self.symbol);
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"60=");
+        buf.extend_from_slice(get_timestamp().as_bytes());
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"77=O\x01");
+        buf.extend_from_slice(b"167=OPT\x01");
+
+        buf.extend_from_slice(b"200=");
+        buf.extend_from_slice(get_maturity_month_year().as_bytes());
+        buf.push(0x01);
+
+        buf.extend_from_slice(b"201=1\x01");
+        buf.extend_from_slice(b"202=10\x01");
+        buf.extend_from_slice(b"204=0\x01");
+        buf.extend_from_slice(b"205=10\x01");
+
+        buf
+    }
 }

@@ -20,21 +20,9 @@ mod tests {
                         let mut reader = BufReader::new(stream.try_clone().unwrap());
 
                         loop {
-                            let mut line = String::new();
-
-                            match reader.read_line(&mut line) {
-                                Ok(_) => {
-                                    println!("Received: {}", line);
-
-                                    if line.trim() == "FINISH" {
-                                        println!("FINISH: {}", line);
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    println!("{}", e)
-                                }
-                            }
+                            let mut buf = [0u8; 4096];
+                            let n = reader.read(&mut buf).unwrap();
+                            println!("{:x?}", &buf[..n]);
                         }
                     });
                 }

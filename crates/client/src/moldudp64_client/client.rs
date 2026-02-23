@@ -2,11 +2,11 @@ use crate::moldudp64_client::receiverhandler::ReceiverHandler;
 use netlib::itch_core::types::ItchEvent;
 use nexus_queue::spsc;
 use std::thread;
-pub struct Client {
+pub struct MoldClient {
     handler_rx: spsc::Consumer<ItchEvent>,
 }
 
-impl Client {
+impl MoldClient {
     pub fn start() -> Self {
         let (handler_tx, handler_rx) = spsc::ring_buffer::<ItchEvent>(8192);
         let receiver_handler = ReceiverHandler::new(handler_tx);
@@ -26,13 +26,13 @@ mod tests {
 
     #[test]
     fn benchmark_mold_consumer_enqueue() {
-        let mut client = Client::start();
+        let mut MoldClient = MoldClient::start();
         let mut count = 0u64;
         let mut start_instant: Option<Instant> = None;
         let autostop = Instant::now();
 
         loop {
-            if let Some(event) = client.handler_rx.pop() {
+            if let Some(event) = MoldClient.handler_rx.pop() {
                 match event {
                     ItchEvent::TestBenchmark(_s) => {
                         if start_instant.is_none() {
@@ -69,12 +69,12 @@ mod tests {
 
     #[test]
     fn receive_orders() {
-        let mut client = Client::start();
+        let mut MoldClient = MoldClient::start();
         let mut count = 0u64;
         let autostop = Instant::now();
 
         loop {
-            if let Some(event) = client.handler_rx.pop() {
+            if let Some(event) = MoldClient.handler_rx.pop() {
                 match event {
                     ItchEvent::AddOrder(_s) => {
                         count += 1;

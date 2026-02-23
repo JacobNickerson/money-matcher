@@ -21,6 +21,7 @@ pub struct TestBenchmark {
     pub(crate) message_type: u8,
     pub timestamp: [u8; 6],
     pub tracking_number: U16<BigEndian>,
+    pub stock_locate: U16<BigEndian>,
 }
 
 #[repr(C)]

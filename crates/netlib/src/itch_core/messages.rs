@@ -1,7 +1,10 @@
+use std::str::from_utf8;
+
 use crate::itch_core::{helpers::encode_u48, types::*};
 use zerocopy::byteorder::{U16, U32, U64};
-pub trait HasTrackingNumber {
+pub trait ItchMessage {
     fn set_tracking_number(&mut self, n: u16);
+    fn set_stock_locate(&mut self, n: u16);
 }
 
 impl OrderExecutedMessage {
@@ -26,9 +29,13 @@ impl OrderExecutedMessage {
     }
 }
 
-impl HasTrackingNumber for OrderExecutedMessage {
+impl ItchMessage for OrderExecutedMessage {
     fn set_tracking_number(&mut self, n: u16) {
         self.tracking_number = U16::new(n);
+    }
+
+    fn set_stock_locate(&mut self, n: u16) {
+        self.stock_locate = U16::new(n);
     }
 }
 
@@ -66,15 +73,19 @@ impl AddOrder {
             self.order_reference_number.get(),
             self.buy_sell_indicator as char,
             self.shares.get(),
-            std::str::from_utf8(&self.stock).unwrap(),
+            from_utf8(&self.stock).unwrap(),
             self.price.get(),
         );
     }
 }
 
-impl HasTrackingNumber for AddOrder {
+impl ItchMessage for AddOrder {
     fn set_tracking_number(&mut self, n: u16) {
         self.tracking_number = U16::new(n);
+    }
+
+    fn set_stock_locate(&mut self, n: u16) {
+        self.stock_locate = U16::new(n);
     }
 }
 
@@ -86,12 +97,17 @@ impl TestBenchmark {
             message_type: Self::MESSAGE_TYPE,
             timestamp: encode_u48(timestamp),
             tracking_number: 0.into(),
+            stock_locate: 0.into(),
         }
     }
 }
 
-impl HasTrackingNumber for TestBenchmark {
+impl ItchMessage for TestBenchmark {
     fn set_tracking_number(&mut self, n: u16) {
         self.tracking_number = U16::new(n);
+    }
+
+    fn set_stock_locate(&mut self, n: u16) {
+        self.stock_locate = U16::new(n);
     }
 }

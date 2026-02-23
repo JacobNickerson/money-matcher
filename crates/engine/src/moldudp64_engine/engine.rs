@@ -1,8 +1,8 @@
 use crate::moldudp64_engine::sequencerpublisher::SequencerPublisher;
 use bytes::Bytes;
-use netlib::{itch_core::messages::HasTrackingNumber, moldudp64_core::types::Event};
+use netlib::{itch_core::messages::ItchMessage, moldudp64_core::types::Event};
 use nexus_queue::{Full, spsc};
-use std::{os::raw, thread};
+use std::thread;
 use zerocopy::{Immutable, IntoBytes};
 
 pub struct MoldEngine {
@@ -27,7 +27,7 @@ impl MoldEngine {
 
     pub fn push_event<T>(&mut self, mut event: T)
     where
-        T: IntoBytes + Immutable + HasTrackingNumber,
+        T: IntoBytes + Immutable + ItchMessage,
     {
         loop {
             event.set_tracking_number(self.current_tracking_number);
