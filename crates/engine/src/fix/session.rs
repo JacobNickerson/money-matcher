@@ -1,5 +1,5 @@
 use netlib::fix_core::iterator::FixIterator;
-use netlib::fix_core::messages::{calculate_checksum, print_message};
+use netlib::fix_core::messages::calculate_checksum;
 use std::{io::Read, net::TcpStream, str::from_utf8};
 
 pub struct Session {
@@ -39,8 +39,8 @@ impl Session {
 
                 match msg_type {
                     Some(b"D") => self.handle_new_order(&msg),
-                    _ => {}
-                }
+                    _ => Ok(()),
+                };
             }
         }
     }
@@ -88,13 +88,43 @@ impl Session {
         Some(self.buffer.drain(0..total_len).collect())
     }
 
-    fn handle_new_order(&mut self, msg: &Vec<u8>) {
+    fn handle_new_order(&mut self, msg: &Vec<u8>) -> Result<(), &str> {
+        let mut cl_ord_id: Option<u64> = None;
+        let mut qty: Option<u32> = None;
+        let mut price: Option<u32> = None;
+        let mut side: Option<u8> = None;
+        let mut symbol: Option<String> = None;
+
         for (tag, value) in FixIterator::new(msg) {
-            println!(
-                "{} = {}",
-                String::from_utf8_lossy(&tag),
-                String::from_utf8_lossy(&value)
-            );
+            match tag {
+                b"11" => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                }
+                b"38" => {
+                    qty = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                }
+                b"44" => {
+                    price = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                }
+                b"54" => {
+                    side = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                }
+                b"55" => {
+                    symbol = from_utf8(value).ok().and_then(|f| Some(f.to_owned()));
+                }
+                _ => {}
+            }
         }
+
+        println!(
+            "Read New Order | cl_ord_id(11)={} | qty(38)={} | price(44)={} | side(54)={} | symbol(55)={}",
+            cl_ord_id.ok_or("")?,
+            qty.ok_or("")?,
+            price.ok_or("")?,
+            side.ok_or("")?,
+            symbol.ok_or("")?
+        );
+
+        Ok(())
     }
 }

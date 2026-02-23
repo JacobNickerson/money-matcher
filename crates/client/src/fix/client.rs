@@ -59,7 +59,7 @@ mod tests {
             qty: 10,
             price: 10,
             side: 0,
-            symbol: *b"XYZ",
+            symbol: "OSISTRING".to_string(),
         });
         thread::sleep(Duration::from_secs(10));
     }

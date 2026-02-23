@@ -87,7 +87,7 @@ pub trait IntoBytes {
 }
 
 impl NewOrder {
-    pub fn new(cl_ord_id: u64, qty: u32, price: u32, side: u8, symbol: [u8; 3]) -> Self {
+    pub fn new(cl_ord_id: u64, qty: u32, price: u32, side: u8, symbol: String) -> Self {
         Self {
             cl_ord_id,
             qty,
@@ -123,7 +123,7 @@ impl IntoBytes for NewOrder {
         buf.push(0x01);
 
         buf.extend_from_slice(b"55=");
-        buf.extend_from_slice(&self.symbol);
+        buf.extend_from_slice(&self.symbol.as_bytes());
         buf.push(0x01);
 
         buf.extend_from_slice(b"60=");
