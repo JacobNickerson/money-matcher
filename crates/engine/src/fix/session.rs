@@ -1,8 +1,14 @@
-use netlib::fix_core::messages::calculate_checksum;
+use netlib::fix_core::helpers::{calculate_checksum, convert_timestamp};
+use netlib::fix_core::iterator::FixIterator;
 use netlib::fix_core::types::NewOrder;
-use netlib::fix_core::{iterator::FixIterator, messages::FIXCommand};
 use nexus_queue::mpsc::Producer;
 use std::{io::Read, net::TcpStream, str::from_utf8};
+
+use crate::lob::types::Timestamp;
+use crate::lob::{
+    order::{Order, OrderSide, OrderType},
+    types::{OrderId, Price},
+};
 
 pub struct Session {
     stream: TcpStream,
@@ -92,44 +98,66 @@ impl Session {
         Some(self.buffer.drain(0..total_len).collect())
     }
 
-    fn handle_new_order(&mut self, msg: &Vec<u8>) -> Result<(), &str> {
-        let mut cl_ord_id: Option<u64> = None;
+    fn handle_new_order(&mut self, msg: &[u8]) -> Result<(), &'static str> {
+        let mut cl_ord_id: Option<OrderId> = None;
         let mut qty: Option<u32> = None;
-        let mut price: Option<u32> = None;
-        let mut side: Option<u8> = None;
-        let mut symbol: Option<String> = None;
+        let mut price: Option<Price> = None;
+        let mut side: Option<OrderSide> = None;
+        let mut ord_type: Option<u8> = None;
+        let mut timestamp: Option<Timestamp> = None;
 
         for (tag, value) in FixIterator::new(msg) {
             match tag {
                 b"11" => {
-                    cl_ord_id = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
                 b"38" => {
-                    qty = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                    qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
                 b"44" => {
-                    price = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                    price = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
                 b"54" => {
-                    side = from_utf8(value).ok().and_then(|f| f.parse().ok());
+                    side = match value {
+                        b"1" => Some(OrderSide::Bid),
+                        b"2" => Some(OrderSide::Ask),
+                        _ => return Err("Invalid 54"),
+                    };
                 }
-                b"55" => {
-                    symbol = from_utf8(value).ok().and_then(|f| Some(f.to_owned()));
+                b"40" => {
+                    ord_type = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                b"60" => {
+                    timestamp = convert_timestamp(value);
                 }
                 _ => {}
             }
         }
 
-        let order = NewOrder::new(
+        let qty = qty.ok_or("Missing 38")?;
+        let kind = match ord_type.ok_or("Missing 40")? {
+            1 => OrderType::Market { qty },
+            2 => OrderType::Limit {
+                qty,
+                price: price.ok_or("Missing 44")?,
+            },
+            _ => return Err("Unsupported 40"),
+        };
+
+        let order = Order::new(
             cl_ord_id.ok_or("Missing 11")?,
-            qty.ok_or("Missing 38")?,
-            price.ok_or("Missing 44")?,
             side.ok_or("Missing 54")?,
-            symbol.ok_or("Missing 55")?,
+            timestamp.ok_or("Missing 60")?,
+            kind,
         );
 
-        self.lob_tx.push(FIXCommand::NewOrder(order));
+        self.lob_tx
+            .push(FIXCommand::Order(order))
+            .map_err(|_| "LOB queue full")?;
 
         Ok(())
     }
+}
+pub enum FIXCommand {
+    Order(Order),
 }

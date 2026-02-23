@@ -1,11 +1,11 @@
 pub struct FixIterator<'a> {
     i: usize,
-    msg: &'a Vec<u8>,
+    msg: &'a [u8],
     msg_len: usize,
 }
 
 impl<'a> FixIterator<'a> {
-    pub fn new(msg: &'a Vec<u8>) -> Self {
+    pub fn new(msg: &'a [u8]) -> Self {
         Self {
             i: 0,
             msg,

@@ -1,4 +1,4 @@
-use netlib::fix_core::messages::{IntoBytes, get_maturity_month_year, get_timestamp};
+use netlib::fix_core::messages::IntoBytes;
 use nexus_queue::{Full, spsc};
 use std::thread;
 
@@ -54,13 +54,17 @@ mod tests {
     #[test]
     fn test() {
         let mut engine = FixClient::start();
-        engine.push_command(NewOrder {
-            cl_ord_id: 1,
-            qty: 10,
-            price: 10,
-            side: 0,
-            symbol: "OSISTRING".to_string(),
-        });
+        engine.push_command(NewOrder::new(
+            1,
+            1,
+            10,
+            2,
+            666,
+            1,
+            "OSISTRING".to_string(),
+            0,
+            "OPT".to_string(),
+        ));
         thread::sleep(Duration::from_secs(10));
     }
 }

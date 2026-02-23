@@ -1,6 +1,6 @@
 use std::{net::TcpListener, thread};
 
-use netlib::fix_core::messages::FIXCommand;
+use crate::fix::session::FIXCommand;
 use nexus_queue::mpsc::Producer;
 
 use crate::fix::session::Session;
@@ -30,7 +30,7 @@ impl FixEngine {
 
 #[cfg(test)]
 mod tests {
-    use netlib::fix_core::messages::FIXCommand;
+    use crate::fix::session::FIXCommand;
     use nexus_queue::mpsc;
     use std::time::Duration;
 
@@ -41,17 +41,15 @@ mod tests {
         let (lob_tx, mut lob_rx) = mpsc::bounded::<FIXCommand>(1024);
 
         let _engine = FixEngine::start(lob_tx);
-        if let Some(cmd) = lob_rx.pop() {
-            match cmd {
-                FIXCommand::NewOrder(_s) => {
-                    println!(
-                        "Read New Order | cl_ord_id(11)={} | qty(38)={} | price(44)={} | side(54)={} | symbol(55)={}",
-                        _s.cl_ord_id, _s.qty, _s.price, _s.side, _s.symbol
-                    );
+        loop {
+            if let Some(cmd) = lob_rx.pop() {
+                match cmd {
+                    FIXCommand::Order(order) => {
+                        println!("Read Order | {:?} |", order,);
+                        break;
+                    }
                 }
             }
         }
-
-        thread::sleep(Duration::from_secs(10));
     }
 }
