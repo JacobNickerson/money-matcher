@@ -67,3 +67,82 @@ impl SessionTable {
         self.current_session
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_initial_state() {
+        let st = SessionTable::new();
+
+        let s1 = SessionTable::make_session_id(1);
+
+        assert_eq!(st.sessions.len(), 1);
+        assert_eq!(st.get_current_session(), s1);
+        assert_eq!(*st.sessions.get(&s1).expect("err"), 0_u64.to_be_bytes());
+    }
+
+    #[test]
+    fn test_make_session_id_values() {
+        let s1 = SessionTable::make_session_id(1);
+        let s12 = SessionTable::make_session_id(12);
+        let s123 = SessionTable::make_session_id(123);
+
+        assert_eq!(&s1, b"MM00000001");
+        assert_eq!(&s12, b"MM00000012");
+        assert_eq!(&s123, b"MM00000123");
+    }
+
+    #[test]
+    fn test_add_session_updates_current() {
+        let mut st = SessionTable::new();
+
+        let s2 = SessionTable::make_session_id(2);
+        let n1 = 12_u64.to_be_bytes();
+
+        st.add_session(s2, n1);
+
+        assert_eq!(st.sessions.len(), 2);
+        assert_eq!(st.get_current_session(), s2);
+        assert_eq!(*st.sessions.get(&s2).expect("err"), n1);
+    }
+
+    #[test]
+    fn test_remove_session_removes_entry() {
+        let mut st = SessionTable::new();
+        let s1 = st.get_current_session();
+
+        st.remove_session(&s1);
+
+        assert!(st.sessions.is_empty());
+    }
+
+    #[test]
+    fn test_next_sequence_single_session() {
+        let mut st = SessionTable::new();
+        let s1 = st.get_current_session();
+
+        let n1 = st.next_sequence(s1);
+        let n2 = st.next_sequence(s1);
+
+        assert_eq!(u64::from_be_bytes(n1), 1);
+        assert_eq!(u64::from_be_bytes(n2), 2);
+    }
+
+    #[test]
+    fn test_next_sequence_multiple_sessions() {
+        let mut st = SessionTable::new();
+
+        let s1 = st.get_current_session();
+        let s2 = SessionTable::make_session_id(2);
+
+        st.add_session(s2, 1_u64.to_be_bytes());
+
+        let a1 = st.next_sequence(s1);
+        let b1 = st.next_sequence(s2);
+
+        assert_eq!(u64::from_be_bytes(a1), 1);
+        assert_eq!(u64::from_be_bytes(b1), 2);
+    }
+}

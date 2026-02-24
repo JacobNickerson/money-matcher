@@ -4,14 +4,14 @@ use netlib::moldudp64_core::types::Header;
 use nexus_queue::{Full, spsc};
 use std::net::UdpSocket;
 use zerocopy::FromBytes;
+
 pub struct ReceiverHandler {
     socket: UdpSocket,
     output: spsc::Producer<ItchEvent>,
 }
 
 impl ReceiverHandler {
-    pub fn new(output: spsc::Producer<ItchEvent>) -> Self {
-        let socket = UdpSocket::bind("127.0.0.1:8081").unwrap();
+    pub fn new(output: spsc::Producer<ItchEvent>, socket: UdpSocket) -> Self {
         Self { socket, output }
     }
 
@@ -19,84 +19,220 @@ impl ReceiverHandler {
         let mut buf = BytesMut::with_capacity(2048);
 
         loop {
-            buf.clear();
-            buf.reserve(2048);
-            unsafe { buf.set_len(2048) };
+            buf.resize(2048, 0);
 
-            let (len, _) = self.socket.recv_from(&mut buf).unwrap();
-            unsafe { buf.set_len(len) };
-
-            let bytes = buf.split_to(len).freeze();
-
-            let len: usize = bytes.len();
-            if len < 20 {
-                continue;
-            }
-
-            let header = match Header::read_from_prefix(&bytes) {
-                Ok(v) => v.0,
-                Err(_) => continue,
+            let (len, _) = match self.socket.recv_from(&mut buf) {
+                Ok(v) => v,
+                Err(_e) => continue,
             };
 
-            let mc = u16::from_be_bytes(header.message_count) as usize;
-            let mut offset = 20;
+            let bytes = buf.split_to(len).freeze();
+            self.handle_packet(&bytes);
+        }
+    }
 
-            for _ in 0..mc {
-                if offset + 2 > len {
-                    break;
-                }
+    fn handle_packet(&mut self, bytes: &[u8]) {
+        let len: usize = bytes.len();
+        if len < 20 {
+            return;
+        }
 
-                let ml = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]) as usize;
-                offset += 2;
+        let header = match Header::read_from_prefix(bytes) {
+            Ok(v) => v.0,
+            Err(_) => return,
+        };
 
-                if offset + ml > len {
-                    break;
-                }
+        let mc = u16::from_be_bytes(header.message_count) as usize;
+        let mut offset = 20;
 
-                let message_data = &bytes[offset..offset + ml];
-                offset += ml;
+        for _ in 0..mc {
+            if !self.handle_message(bytes, len, &mut offset) {
+                break;
+            }
+        }
+    }
 
-                if message_data.is_empty() {
-                    continue;
-                }
+    fn handle_message(&mut self, bytes: &[u8], len: usize, offset: &mut usize) -> bool {
+        if *offset + 2 > len {
+            return false;
+        }
 
-                let message_type = message_data[0];
+        let ml = u16::from_be_bytes([bytes[*offset], bytes[*offset + 1]]) as usize;
+        *offset += 2;
 
-                let mut event: ItchEvent = match message_type {
-                    b'b' => {
-                        let (msg, _) = match TestBenchmark::read_from_prefix(message_data) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-                        ItchEvent::TestBenchmark(msg)
-                    }
-                    b'A' => {
-                        let (msg, _) = match AddOrder::read_from_prefix(message_data) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-                        ItchEvent::AddOrder(msg)
-                    }
-                    b'E' => {
-                        let (msg, _) = match OrderExecutedMessage::read_from_prefix(message_data) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-                        ItchEvent::OrderExecutedMessage(msg)
-                    }
-                    _ => continue,
+        if *offset + ml > len {
+            return false;
+        }
+
+        let message_data = &bytes[*offset..*offset + ml];
+        *offset += ml;
+
+        if message_data.is_empty() {
+            return true;
+        }
+
+        let event = match Self::parse_event(message_data) {
+            Some(v) => v,
+            None => return true,
+        };
+
+        self.push_event(event);
+        true
+    }
+
+    fn parse_event(message_data: &[u8]) -> Option<ItchEvent> {
+        if message_data.is_empty() {
+            return None;
+        }
+
+        let message_type = message_data[0];
+
+        match message_type {
+            b'b' => {
+                let (msg, _) = match TestBenchmark::read_from_prefix(message_data) {
+                    Ok(v) => v,
+                    Err(_) => return None,
                 };
+                Some(ItchEvent::TestBenchmark(msg))
+            }
+            b'A' => {
+                let (msg, _) = match AddOrder::read_from_prefix(message_data) {
+                    Ok(v) => v,
+                    Err(_) => return None,
+                };
+                Some(ItchEvent::AddOrder(msg))
+            }
+            b'E' => {
+                let (msg, _) = match OrderExecutedMessage::read_from_prefix(message_data) {
+                    Ok(v) => v,
+                    Err(_) => return None,
+                };
+                Some(ItchEvent::OrderExecutedMessage(msg))
+            }
+            _ => None,
+        }
+    }
 
-                loop {
-                    match self.output.push(event) {
-                        Ok(_) => break,
-                        Err(Full(e)) => {
-                            event = e;
-                            std::hint::spin_loop();
-                        }
-                    }
+    fn push_event(&mut self, mut event: ItchEvent) {
+        loop {
+            match self.output.push(event) {
+                Ok(_) => break,
+                Err(Full(e)) => {
+                    event = e;
+                    std::hint::spin_loop();
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerocopy::IntoBytes;
+
+    fn make_handler() -> (ReceiverHandler, spsc::Consumer<ItchEvent>) {
+        let (tx, rx) = spsc::ring_buffer::<ItchEvent>(8);
+        let socket = UdpSocket::bind("127.0.0.1:0").expect("err");
+        (ReceiverHandler::new(tx, socket), rx)
+    }
+
+    #[test]
+    fn test_parse_event_test_benchmark() {
+        let msg = TestBenchmark::new(123);
+        let bytes = msg.as_bytes();
+
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::TestBenchmark(v) => {
+                assert_eq!(v.timestamp, msg.timestamp);
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_event_add_order() {
+        let mut stock = [b' '; 8];
+        stock[..4].copy_from_slice(b"TEST");
+
+        let msg = AddOrder::new(1, 12, 123, b'B', 10, stock, 99);
+        let bytes = msg.as_bytes();
+
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::AddOrder(v) => {
+                assert_eq!(v.shares.get(), 10);
+                assert_eq!(v.price.get(), 99);
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_handle_message_updates_offset() {
+        let (mut h, _rx) = make_handler();
+
+        let msg = TestBenchmark::new(123);
+        let bytes = msg.as_bytes();
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+        buf.extend_from_slice(bytes);
+
+        let mut offset = 0;
+        let ok = h.handle_message(&buf, buf.len(), &mut offset);
+
+        assert!(ok);
+        assert_eq!(offset, buf.len());
+    }
+
+    #[test]
+    fn test_handle_packet_multiple_messages() {
+        let (mut h, mut rx) = make_handler();
+
+        let msg1 = TestBenchmark::new(1);
+        let msg2 = TestBenchmark::new(2);
+
+        let bytes1 = msg1.as_bytes();
+        let bytes2 = msg2.as_bytes();
+
+        let header = Header {
+            session_id: [b'A'; 10],
+            sequence_number: 1u64.to_be_bytes(),
+            message_count: (2u16).to_be_bytes(),
+        };
+
+        let mut packet = Vec::new();
+        packet.extend_from_slice(header.as_bytes());
+
+        packet.extend_from_slice(&(bytes1.len() as u16).to_be_bytes());
+        packet.extend_from_slice(bytes1);
+
+        packet.extend_from_slice(&(bytes2.len() as u16).to_be_bytes());
+        packet.extend_from_slice(bytes2);
+
+        h.handle_packet(&packet);
+
+        assert!(matches!(
+            rx.pop().expect("err"),
+            ItchEvent::TestBenchmark(_)
+        ));
+        assert!(matches!(
+            rx.pop().expect("err"),
+            ItchEvent::TestBenchmark(_)
+        ));
+    }
+
+    #[test]
+    fn test_handle_packet_ignores_short_packet() {
+        let (mut h, mut rx) = make_handler();
+
+        let buf = [0u8; 10];
+        h.handle_packet(&buf);
+
+        assert!(rx.pop().is_none());
     }
 }
