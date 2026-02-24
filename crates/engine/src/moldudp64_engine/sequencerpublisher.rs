@@ -2,15 +2,11 @@ use bytes::{BufMut, BytesMut};
 use netlib::moldudp64_core::sessions::SessionTable;
 use netlib::moldudp64_core::types::Event;
 use nexus_queue::spsc;
-use redb::{Database, Error, ReadableTable, TableDefinition};
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 use zerocopy::IntoBytes;
 
-const TABLE: TableDefinition<[u8; 18], &[u8]> = TableDefinition::new("my_data");
-
 pub struct SequencerPublisher {
-    db: Database,
     input: spsc::Consumer<Event>,
 
     sequence_number: u64,
@@ -35,10 +31,8 @@ impl SequencerPublisher {
         packet.resize(20, 0);
 
         let flush_interval = Duration::from_micros(5);
-        let db = Database::create("my_db.redb").unwrap();
 
         Self {
-            db,
             input,
             sequence_number: 1,
             session_table: SessionTable::new(),
@@ -82,16 +76,6 @@ impl SequencerPublisher {
             if let Some(event) = self.input.pop() {
                 let sequence_number = self.sequence_number;
                 let session_id = self.session_table.get_current_session();
-                let write_txn = self.db.begin_write().unwrap();
-                {
-                    let mut key = [0u8; 18];
-
-                    key[..10].copy_from_slice(&session_id);
-                    key[10..].copy_from_slice(&sequence_number.to_be_bytes());
-                    let mut table = write_txn.open_table(TABLE).unwrap();
-                    table.insert(key, event.as_bytes()).unwrap();
-                }
-                write_txn.commit().unwrap();
 
                 self.sequence_number += 1;
 
@@ -122,24 +106,6 @@ impl SequencerPublisher {
             }
 
             std::hint::spin_loop();
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use redb::ReadableDatabase;
-
-    use super::*;
-    #[test]
-    fn read_db() {
-        let db = Database::open("my_db.redb").unwrap();
-        let txn = db.begin_read().unwrap();
-        let table = txn.open_table(TABLE).unwrap();
-
-        for entry in table.iter().unwrap() {
-            let (k, v) = entry.unwrap();
-            println!("{:?} -> {:?} bytes", k.value(), v.value());
         }
     }
 }
