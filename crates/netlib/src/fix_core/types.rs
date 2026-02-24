@@ -9,3 +9,8 @@ pub struct NewOrder {
     pub open_close: u8,
     pub security_type: String,
 }
+
+pub struct FixFrame {
+    pub msg_type: &'static [u8],
+    pub body: Vec<u8>,
+}

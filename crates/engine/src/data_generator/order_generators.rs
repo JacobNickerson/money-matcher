@@ -16,7 +16,7 @@ pub trait OrderGenerator {
     ) -> Order;
 }
 
-const QUANTITIES: [u32; 5] = [1, 2, 5, 10, 20];
+const QUANTITIES: [u64; 5] = [1, 2, 5, 10, 20];
 
 pub struct GaussianOrderGenerator {
     dist: Normal<f64>,

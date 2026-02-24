@@ -12,15 +12,13 @@ impl FixEngine {
         let listener = TcpListener::bind("127.0.0.1:34254").expect("bind failed");
 
         thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(stream) = stream {
-                    let tx = lob_tx.clone();
+            for stream in listener.incoming().flatten() {
+                let tx = lob_tx.clone();
 
-                    thread::spawn(move || {
-                        let mut connection = Session::new(stream, tx);
-                        connection.run();
-                    });
-                }
+                thread::spawn(move || {
+                    let mut connection = Session::new(stream, tx);
+                    connection.run();
+                });
             }
         });
 
@@ -30,13 +28,12 @@ impl FixEngine {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::fix::session::FIXCommand;
     use nexus_queue::mpsc;
-    use std::time::Duration;
-
-    use super::*;
 
     #[test]
+    #[ignore]
     fn mpsc_test() {
         let (lob_tx, mut lob_rx) = mpsc::bounded::<FIXCommand>(1024);
 

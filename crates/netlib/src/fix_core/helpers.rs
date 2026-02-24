@@ -88,3 +88,45 @@ pub fn get_maturity_month_year_day() -> String {
     let now = Local::now();
     now.format("%Y%m%d").to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_write_header_field_values() {
+        let mut buf = Vec::new();
+
+        write_header(&mut buf, b"D", &1, &"str1".to_string(), &"str2".to_string());
+
+        let s = String::from_utf8_lossy(&buf);
+
+        assert!(s.contains("35=D"));
+        assert!(s.contains("34=1"));
+        assert!(s.contains("49=str1"));
+        assert!(s.contains("52="));
+        assert!(s.contains("56=str2"));
+        assert!(buf.contains(&0x01));
+    }
+
+    #[test]
+    fn test_calculate_checksum() {
+        let b = b"ABC";
+        let c: u32 = (b'A' as u32 + b'B' as u32 + b'C' as u32) % 256;
+
+        assert_eq!(calculate_checksum(b), c);
+    }
+
+    #[test]
+    fn test_write_trailer_appends_checksum() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"35=D\x01");
+
+        write_trailer(&mut buf);
+
+        let s = String::from_utf8_lossy(&buf);
+
+        assert!(s.contains("10="));
+        assert!(buf.ends_with(&[0x01]));
+    }
+}

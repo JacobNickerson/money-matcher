@@ -1,19 +1,19 @@
-use netlib::fix_core::helpers::{calculate_checksum, convert_timestamp};
-use netlib::fix_core::iterator::FixIterator;
-use netlib::fix_core::types::NewOrder;
-use nexus_queue::mpsc::Producer;
-use std::{io::Read, net::TcpStream, str::from_utf8};
-
-use crate::lob::types::Timestamp;
 use crate::lob::{
     order::{Order, OrderSide, OrderType},
-    types::{OrderId, Price},
+    types::{OrderId, Price, Timestamp},
 };
+use netlib::fix_core::helpers::{calculate_checksum, convert_timestamp};
+use netlib::fix_core::iterator::FixIterator;
+use nexus_queue::mpsc::Producer;
+use std::{io::Read, net::TcpStream, str::from_utf8};
 
 pub struct Session {
     stream: TcpStream,
     lob_tx: Producer<FIXCommand>,
     buffer: Vec<u8>,
+}
+pub enum FIXCommand {
+    Order(Order),
 }
 
 impl Session {
@@ -134,7 +134,7 @@ impl Session {
             }
         }
 
-        let qty = qty.ok_or("Missing 38")?;
+        let qty: u64 = qty.ok_or("Missing 38")?.into();
         let kind = match ord_type.ok_or("Missing 40")? {
             1 => OrderType::Market { qty },
             2 => OrderType::Limit {
@@ -158,6 +158,79 @@ impl Session {
         Ok(())
     }
 }
-pub enum FIXCommand {
-    Order(Order),
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use netlib::fix_core::helpers::write_trailer;
+    use nexus_queue::mpsc;
+    use std::net::TcpListener;
+
+    fn make_session() -> (Session, mpsc::Consumer<FIXCommand>) {
+        let (tx, rx) = mpsc::bounded::<FIXCommand>(8);
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("err");
+        let addr = listener.local_addr().expect("err");
+
+        let _client = TcpStream::connect(addr).expect("err");
+        let (server, _) = listener.accept().expect("err");
+
+        (Session::new(server, tx), rx)
+    }
+
+    #[test]
+    fn test_handle_new_order_limit_bid() {
+        let (mut session, mut rx) = make_session();
+
+        let msg = b"8=FIX.4.2\x019=177\x0135=D\x0134=1\x0149=CLIENT01\x0152=20260223-16:56:36.513\x0156=ENGINE01\x0111=1\x0138=10\x0140=2\x0144=666\x0154=1\x0160=20260223-16:56:36.510\x0110=092\x01";
+
+        session.handle_new_order(msg).expect("err");
+
+        let cmd = rx.pop().expect("err");
+        match cmd {
+            FIXCommand::Order(o1) => {
+                assert_eq!(o1.order_id, 1);
+                assert_eq!(o1.side, OrderSide::Bid);
+                assert_eq!(
+                    o1.kind,
+                    OrderType::Limit {
+                        qty: 10,
+                        price: 666
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_extract_message_valid_checksum() {
+        let (mut session, _rx1) = make_session();
+
+        let body = b"35=D\x01";
+        let body_len = body.len();
+
+        let mut msg = Vec::new();
+        msg.extend_from_slice(b"8=FIX.4.2\x01");
+        msg.extend_from_slice(b"9=");
+        msg.extend_from_slice(body_len.to_string().as_bytes());
+        msg.push(0x01);
+        msg.extend_from_slice(body);
+
+        write_trailer(&mut msg);
+
+        session.buffer.extend_from_slice(&msg);
+
+        let out = session.extract_message().expect("err");
+        assert_eq!(out, msg);
+    }
+
+    #[test]
+    fn test_extract_message_checksum_mismatch() {
+        let (mut session, _rx1) = make_session();
+
+        let msg = b"8=FIX.4.2\x019=5\x0135=D\x0110=000\x01";
+        session.buffer.extend_from_slice(msg);
+
+        assert!(session.extract_message().is_none());
+    }
 }

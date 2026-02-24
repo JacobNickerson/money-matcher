@@ -1,14 +1,10 @@
 use crate::lob::order::{LimitOrder, Order, OrderSide, OrderStatus, OrderType};
 use crate::lob::types::{OrderId, Price};
-use crate::moldudp64_engine::engine::MoldEngine;
-use netlib::itch_core::types::AddOrder;
-use netlib::moldudp64_core::types::Event;
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use zerocopy::IntoBytes;
 
 #[derive(Debug, Default)]
 pub struct PriceLevel {
-    pub total_qty: u32,
+    pub total_qty: u64,
     orders: VecDeque<OrderId>,
 }
 impl PriceLevel {
@@ -49,25 +45,18 @@ impl PriceLevel {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct OrderBook {
     orders: HashMap<OrderId, LimitOrder>,
     bid_orders: BTreeMap<Price, PriceLevel>,
     ask_orders: BTreeMap<Price, PriceLevel>,
-    stock: [u8; 8],
-    moldudp_engine: MoldEngine,
 }
 impl OrderBook {
     pub fn new() -> Self {
-        let mut stock = [b' '; 8];
-        let st = "STOCK";
-        stock[..st.len()].copy_from_slice(st.as_bytes());
-
         Self {
             orders: HashMap::new(),
             bid_orders: BTreeMap::new(),
             ask_orders: BTreeMap::new(),
-            moldudp_engine: MoldEngine::start(),
-            stock,
         }
     }
     /// Accepts an Order and handles it according to its OrderType
@@ -154,23 +143,6 @@ impl OrderBook {
         };
         level.push(&order);
         self.orders.insert(order.order_id, order);
-
-        let ao = AddOrder::new(
-            1,
-            order.timestamp,
-            order.order_id,
-            match order.side {
-                OrderSide::Bid => b'B',
-                OrderSide::Ask => b'S',
-            },
-            order.qty,
-            self.stock,
-            order.price,
-        );
-        ao.print();
-
-        self.moldudp_engine.push_event(ao);
-
         order
     }
     /// Updates an existing order by cancelling it and replacing it with a new order. Executes
@@ -221,7 +193,7 @@ impl OrderBook {
             }
             OrderSide::Bid => {
                 // NOTE: This might be janky, maybe implement some additional verification of order prices to avoid having this cause issues
-                if self.best_ask().unwrap_or(u32::MAX) > order.price {
+                if self.best_ask().unwrap_or(u64::MAX) > order.price {
                     return;
                 }
                 for (price, level) in self.ask_orders.iter_mut() {
@@ -246,7 +218,7 @@ impl OrderBook {
         };
     }
 
-    fn market_order(&mut self, qty: &mut u32, side: OrderSide) {
+    fn market_order(&mut self, qty: &mut u64, side: OrderSide) {
         match side {
             OrderSide::Ask => {
                 for (price, level) in self.bid_orders.iter_mut().rev() {
@@ -290,8 +262,6 @@ impl OrderBook {
 /* UNIT TESTS */
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
-
     use super::*;
 
     #[test]
@@ -348,7 +318,7 @@ mod tests {
                 i,
                 OrderType::Limit {
                     qty: 5,
-                    price: 100 + 5 * (i as u32),
+                    price: 100 + 5 * i,
                 },
             ));
         }
@@ -387,7 +357,6 @@ mod tests {
                 price: 500,
             },
         ));
-        thread::sleep(Duration::from_secs(1));
         assert_eq!(book.best_bid(), Some(500));
     }
 
@@ -411,7 +380,6 @@ mod tests {
                 price: 500,
             },
         ));
-        thread::sleep(Duration::from_secs(1));
         assert_eq!(book.best_bid(), Some(100));
     }
 
@@ -426,11 +394,10 @@ mod tests {
                 i,
                 OrderType::Limit {
                     qty: 5,
-                    price: 100 + 5 * (i as u32),
+                    price: 100 + 5 * i,
                 },
             ));
         }
-        thread::sleep(Duration::from_secs(1));
         assert_eq!(book.best_bid(), Some(110));
     }
 
@@ -445,7 +412,7 @@ mod tests {
                 i,
                 OrderType::Limit {
                     qty: 10,
-                    price: 100 + ((i as u32) % 10),
+                    price: 100 + (i % 10),
                 },
             ));
         }
