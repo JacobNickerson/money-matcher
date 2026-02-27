@@ -88,6 +88,12 @@ impl OrderMerger {
             user_buffer: MergeBuffer::<Order>::new(vec![Order::default(); internal_buffer_size]),
         }
     }
+    pub fn run(&mut self) {
+        loop {
+            self.batch_read();
+            self.process_batch();
+        }
+    }
     /// Reads a batch of orders from both synthetic and user streams into internal buffers for processing
     pub fn batch_read(&mut self) {
         let synth_order_count = self
