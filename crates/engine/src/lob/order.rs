@@ -18,6 +18,16 @@ impl Order {
         }
     }
 }
+impl Default for Order {
+    fn default() -> Self {
+        Self {
+            order_id: 0,
+            side: OrderSide::Ask,
+            timestamp: 0,
+            kind: OrderType::Cancel,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrder {
