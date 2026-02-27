@@ -2,14 +2,16 @@ use crate::lob::order::Order;
 use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::mem::size_of;
 
-// Determines the batch size for processing orders based on the size of the struct
-// Batches are sized to fit within a certain byte size (e.g., 128 bytes) to optimize cache usage and reduce overhead
+/// Determines the batch size for processing orders based on the size of the struct
+/// Batches are sized to fit within a certain byte size (e.g., 128 bytes) to optimize cache usage and reduce overhead
 pub const fn batch_size<T>() -> usize {
     let elem_size = size_of::<T>();
     const BATCH_BYTE_SIZE: usize = 128;
     let n = BATCH_BYTE_SIZE / elem_size;
     if n == 0 { 1 } else { n }
 }
+
+/// Wrapper around a Vec to provide a simple interface for handling a FIFO buffer for orders
 struct MergeBuffer<T: Copy> {
     buf: Vec<T>,
     count: usize,
@@ -59,6 +61,8 @@ impl<T: Copy> MergeBuffer<T> {
         self.slide();
     }
 }
+
+/// Merges two streams of orders (synthetic and user) into a single output stream while maintaining chronological order based on timestamps
 pub struct OrderMerger {
     synthetic_orders: HeapCons<Order>,
     user_orders: HeapCons<Order>,
@@ -84,6 +88,7 @@ impl OrderMerger {
             user_buffer: MergeBuffer::<Order>::new(vec![Order::default(); internal_buffer_size]),
         }
     }
+    /// Reads a batch of orders from both synthetic and user streams into internal buffers for processing
     pub fn batch_read(&mut self) {
         let synth_order_count = self
             .synthetic_orders
@@ -97,6 +102,7 @@ impl OrderMerger {
         self.user_buffer.end += user_order_count;
     }
 
+    /// Merges the two internal buffers of orders into the output stream while maintaining chronological order based on timestamps
     pub fn process_batch(&mut self) {
         self.batch_read();
         if self.synthetic_buffer.empty() {
