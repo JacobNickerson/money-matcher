@@ -59,7 +59,7 @@ impl<T: Copy> MergeBuffer<T> {
         self.slide();
     }
 }
-struct OrderMerger {
+pub struct OrderMerger {
     synthetic_orders: HeapCons<Order>,
     user_orders: HeapCons<Order>,
     output: HeapProd<Order>,
