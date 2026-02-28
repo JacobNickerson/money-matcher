@@ -3,7 +3,6 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QGridLayout, QHBoxLayout,
     QSizePolicy, QStackedWidget, QVBoxLayout
 )
-
 from PyQt5.QtCore import (
     Qt
 )
@@ -11,9 +10,14 @@ from widgets.sidebar import SideBar
 from windows.dashboard import (
     MarketEvents, OrderBook, TradeHistory, OrderEntry, Strategies
 )
-
 from windows.strategies import (
     Header, ActionBar, CodeEditor
+)
+from windows.bots import (
+    Header as BotHeader, BotList
+)
+from windows.performance import (
+    Header as PerfHeader, Main as PerfMain
 )
 
 class Dashboard(QWidget):
@@ -51,6 +55,16 @@ class Bots(QWidget):
         super().__init__()
         self.setStyleSheet("background-color: #080808;")
 
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)
+
+        self.header = BotHeader()
+        self.table = BotList()
+
+        layout.addWidget(self.header)
+        layout.addWidget(self.table, 1)
+
 class Strats(QWidget):
     def __init__(self):
         super().__init__()
@@ -67,6 +81,21 @@ class Strats(QWidget):
         layout.addWidget(self.header)
         layout.addWidget(self.action_bar)
         layout.addWidget(self.editor, 1)
+
+class Performance(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #080808;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(0)
+
+        self.header = PerfHeader()
+        self.main = PerfMain()
+
+        layout.addWidget(self.header)
+        layout.addWidget(self.main, 1)
 
 class EngineWindow(QWidget):
     def __init__(self):
@@ -90,10 +119,12 @@ class EngineWindow(QWidget):
         self.dashboard_page = Dashboard()
         self.bots_page = Bots()
         self.strat_page = Strats()
+        self.perf_page = Performance()
 
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.bots_page)
         self.stack.addWidget(self.strat_page)
+        self.stack.addWidget(self.perf_page)
 
         main_layout.addWidget(self.sidebar)
         main_layout.addWidget(self.stack)
@@ -108,6 +139,9 @@ class EngineWindow(QWidget):
         )
         self.sidebar.strat_btn.clicked.connect(
             lambda: self.stack.setCurrentIndex(2)
+        )
+        self.sidebar.chart_btn.clicked.connect(
+            lambda: self.stack.setCurrentIndex(3)
         )
 
 

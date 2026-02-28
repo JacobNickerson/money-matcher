@@ -733,7 +733,7 @@ class Strategies(QWidget):
                 color: white;
             }
         """)
-        self.strategy_list.addItems(["Metatron", "Momentum", "Arbitrage", "Scalping"])
+        self.strategy_list.addItems(["Momentum", "Arbitrage", "Scalping"])
         layout.addWidget(self.strategy_list)
 
         self.log_card = LogCard()

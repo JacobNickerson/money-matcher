@@ -29,13 +29,13 @@ class SideBar(QWidget):
         self.dashboard_btn = self.create_button("dashboard")
         self.bot_btn = self.create_button("bot")
         self.strat_btn = self.create_button("strat")
-        self.stats_btn = self.create_button("chart")
+        self.chart_btn = self.create_button("chart")
 
         self.buttons = [
             self.dashboard_btn,
             self.bot_btn,
             self.strat_btn,
-            self.stats_btn
+            self.chart_btn
         ]
 
         for btn in self.buttons:

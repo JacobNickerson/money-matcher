@@ -1,13 +1,12 @@
 from PyQt5.QtWidgets import ( 
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
-    QSizePolicy, QTableView, QStyledItemDelegate, QTabBar, QHeaderView,
-    QFrame, QGridLayout, QComboBox, QScrollArea
+    QWidget, QHBoxLayout, QPushButton, QLabel,
+    QSizePolicy, QFrame, QComboBox
 )
 from PyQt5.QtGui import (
     QFont, QColor, QPainter, QLinearGradient, QIcon
 )
 from PyQt5.QtCore import (
-    Qt, QRect, QSize
+    Qt, QSize
 )
 from PyQt5.Qsci import (
     QsciScintilla, QsciLexerPython
@@ -76,7 +75,7 @@ class Header(QWidget):
         self.strategy_list = QComboBox()
         self.strategy_list.setFont(QFont("Inter", 10, QFont.Medium))
         self.strategy_list.setStyleSheet(combo_style)
-        self.strategy_list.addItems(["Metatron", "Momentum", "Arbitrage", "Scalping"])
+        self.strategy_list.addItems(["Momentum", "Arbitrage", "Scalping"])
         self.strategy_list.setMinimumWidth(400)
         layout.addWidget(self.strategy_list)
 
