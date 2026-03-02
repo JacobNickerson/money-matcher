@@ -50,7 +50,7 @@ impl MoldEngine {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use netlib::itch_core::types::{AddOrder, TestBenchmark};
+    use netlib::itch_core::messages::{add_order::AddOrder, test_benchmark::TestBenchmark};
     use std::{
         thread,
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -78,7 +78,7 @@ mod tests {
         stock[..s1.len()].copy_from_slice(s1.as_bytes());
 
         for _i in 0..1000000 {
-            let order = AddOrder::new(1, 123456, 1000, b'A', 100, stock, 1);
+            let order = AddOrder::new(1, 123456, 1000, b'A', 100, stock, 1.into());
 
             engine.push_event(order);
 

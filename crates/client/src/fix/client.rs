@@ -1,4 +1,4 @@
-use netlib::fix_core::{messages::FixMessage, types::FixFrame};
+use netlib::fix_core::messages::{FixFrame, FixMessage};
 use nexus_queue::{Full, spsc};
 use std::thread;
 
@@ -50,9 +50,8 @@ impl FixClient {
 
 #[cfg(test)]
 mod tests {
-    use netlib::fix_core::types::NewOrder;
-
     use super::*;
+    use netlib::fix_core::messages::new_order::NewOrder;
     use std::time::Duration;
 
     #[test]
