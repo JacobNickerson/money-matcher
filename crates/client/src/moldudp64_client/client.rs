@@ -1,5 +1,5 @@
 use crate::moldudp64_client::receiverhandler::ReceiverHandler;
-use netlib::itch_core::types::ItchEvent;
+use netlib::itch_core::messages::ItchEvent;
 use nexus_queue::spsc;
 use std::{net::UdpSocket, thread};
 pub struct MoldClient {
@@ -23,7 +23,7 @@ impl MoldClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     #[test]
     #[ignore]

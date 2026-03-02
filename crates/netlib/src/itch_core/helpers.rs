@@ -11,6 +11,14 @@ pub fn decode_u48(ts: [u8; 6]) -> u64 {
     u64::from_be_bytes(buf)
 }
 
+pub fn encode_price(price: f64) -> u32 {
+    (price * 10_000.0).round() as u32
+}
+
+pub fn decode_price(price: u32) -> f64 {
+    price as f64 / 10_000.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

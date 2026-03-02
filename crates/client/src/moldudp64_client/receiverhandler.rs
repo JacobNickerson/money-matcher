@@ -1,6 +1,15 @@
 use bytes::BytesMut;
-use netlib::itch_core::types::{AddOrder, ItchEvent, OrderExecutedMessage, TestBenchmark};
-use netlib::moldudp64_core::types::Header;
+use netlib::{
+    itch_core::messages::{
+        ItchEvent, MESSAGE_TYPE_ADD_ORDER, MESSAGE_TYPE_ORDER_CANCEL, MESSAGE_TYPE_ORDER_DELETE,
+        MESSAGE_TYPE_ORDER_EXECUTED, MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
+        MESSAGE_TYPE_ORDER_REPLACE, MESSAGE_TYPE_TEST_BENCHMARK, add_order::AddOrder,
+        order_cancel::OrderCancel, order_delete::OrderDelete, order_executed::OrderExecuted,
+        order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
+        test_benchmark::TestBenchmark,
+    },
+    moldudp64_core::types::Header,
+};
 use nexus_queue::{Full, spsc};
 use std::net::UdpSocket;
 use zerocopy::FromBytes;
@@ -8,6 +17,17 @@ use zerocopy::FromBytes;
 pub struct ReceiverHandler {
     socket: UdpSocket,
     output: spsc::Producer<ItchEvent>,
+}
+
+macro_rules! itch {
+    ($type:expr, $data:expr, { $($type_const:path => $enum:ident ($struct:ty)),* $(,)? }) => {
+        match $type {
+            $(
+                $type_const => <$struct>::read_from_prefix($data).ok().map(|(m, _)| ItchEvent::$enum(m)),
+            )*
+            _ => None,
+        }
+    };
 }
 
 impl ReceiverHandler {
@@ -87,30 +107,15 @@ impl ReceiverHandler {
 
         let message_type = message_data[0];
 
-        match message_type {
-            b'b' => {
-                let (msg, _) = match TestBenchmark::read_from_prefix(message_data) {
-                    Ok(v) => v,
-                    Err(_) => return None,
-                };
-                Some(ItchEvent::TestBenchmark(msg))
-            }
-            b'A' => {
-                let (msg, _) = match AddOrder::read_from_prefix(message_data) {
-                    Ok(v) => v,
-                    Err(_) => return None,
-                };
-                Some(ItchEvent::AddOrder(msg))
-            }
-            b'E' => {
-                let (msg, _) = match OrderExecutedMessage::read_from_prefix(message_data) {
-                    Ok(v) => v,
-                    Err(_) => return None,
-                };
-                Some(ItchEvent::OrderExecutedMessage(msg))
-            }
-            _ => None,
-        }
+        itch!(message_type, message_data, {
+            MESSAGE_TYPE_ADD_ORDER => AddOrder(AddOrder),
+            MESSAGE_TYPE_ORDER_CANCEL => OrderCancel(OrderCancel),
+            MESSAGE_TYPE_ORDER_DELETE => OrderDelete(OrderDelete),
+            MESSAGE_TYPE_ORDER_EXECUTED => OrderExecuted(OrderExecuted),
+            MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => OrderExecutedWithPrice(OrderExecutedWithPrice),
+            MESSAGE_TYPE_ORDER_REPLACE => OrderReplace(OrderReplace),
+            MESSAGE_TYPE_TEST_BENCHMARK => TestBenchmark(TestBenchmark),
+        })
     }
 
     fn push_event(&mut self, mut event: ItchEvent) {
@@ -157,7 +162,7 @@ mod tests {
         let mut stock = [b' '; 8];
         stock[..4].copy_from_slice(b"TEST");
 
-        let msg = AddOrder::new(1, 12, 123, b'B', 10, stock, 99);
+        let msg = AddOrder::new(1, 12, 123, b'B', 10, stock, 99.into());
         let bytes = msg.as_bytes();
 
         let event = ReceiverHandler::parse_event(bytes).expect("err");
@@ -165,7 +170,88 @@ mod tests {
         match event {
             ItchEvent::AddOrder(v) => {
                 assert_eq!(v.shares.get(), 10);
-                assert_eq!(v.price.get(), 99);
+                assert_eq!(v.price.get(), 990000);
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_event_order_cancel() {
+        let msg = OrderCancel::new(1, 1000, 5000, 10);
+        let bytes = msg.as_bytes();
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::OrderCancel(v) => {
+                assert_eq!(v.stock_locate.get(), 1);
+                assert_eq!(v.order_reference_number.get(), 5000);
+                assert_eq!(v.canceled_shares.get(), 10);
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_event_order_delete() {
+        let msg = OrderDelete::new(1, 1000, 5000);
+        let bytes = msg.as_bytes();
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::OrderDelete(v) => {
+                assert_eq!(v.stock_locate.get(), 1);
+                assert_eq!(v.order_reference_number.get(), 5000);
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_event_order_executed_with_price() {
+        let msg = OrderExecutedWithPrice::new(1, 1000, 5000, 10, 9999, b'Y', 100.0);
+        let bytes = msg.as_bytes();
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::OrderExecutedWithPrice(v) => {
+                assert_eq!(v.order_reference_number.get(), 5000);
+                assert_eq!(v.executed_shares.get(), 10);
+                assert_eq!(v.execution_price.get(), 1000000);
+                assert_eq!(v.printable, b'Y');
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_event_order_executed() {
+        let msg = OrderExecuted::new(1, 1000, 5000, 100, 9999);
+        let bytes = msg.as_bytes();
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::OrderExecuted(v) => {
+                assert_eq!(v.order_reference_number.get(), 5000);
+                assert_eq!(v.executed_shares.get(), 100);
+                assert_eq!(v.match_number.get(), 9999);
+            }
+            _ => panic!("wrong event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_event_order_replace() {
+        let msg = OrderReplace::new(1, 1000, 5000, 5001, 20, 100.0);
+        let bytes = msg.as_bytes();
+        let event = ReceiverHandler::parse_event(bytes).expect("err");
+
+        match event {
+            ItchEvent::OrderReplace(v) => {
+                assert_eq!(v.original_order_reference_number.get(), 5000);
+                assert_eq!(v.new_order_reference_number.get(), 5001);
+                assert_eq!(v.shares.get(), 20);
+                assert_eq!(v.price.get(), 1000000);
             }
             _ => panic!("wrong event"),
         }
