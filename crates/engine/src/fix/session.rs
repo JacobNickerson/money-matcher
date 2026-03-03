@@ -2,57 +2,68 @@ use crate::lob::{
     order::{Order, OrderSide, OrderType},
     types::{OrderId, Price, Timestamp},
 };
+use mio::net::TcpStream;
 use netlib::fix_core::helpers::{calculate_checksum, convert_timestamp};
 use netlib::fix_core::iterator::FixIterator;
-use nexus_queue::mpsc::Producer;
-use std::{io::Read, net::TcpStream, str::from_utf8};
+use ringbuf::{HeapProd, traits::*};
+use std::{io::Read, str::from_utf8};
 
 pub struct Session {
     stream: TcpStream,
-    lob_tx: Producer<FIXCommand>,
     buffer: Vec<u8>,
+    tmp: [u8; 4096],
+    tmp_end: usize,
 }
 pub enum FIXCommand {
     Order(Order),
 }
 
 impl Session {
-    pub fn new(stream: TcpStream, lob_tx: Producer<FIXCommand>) -> Self {
+    pub fn new(stream: TcpStream) -> Self {
         Self {
             stream,
-            lob_tx,
             buffer: Vec::new(),
+            tmp: [0u8; 4096],
+            tmp_end: 0,
         }
     }
 
-    pub fn run(&mut self) {
-        let mut tmp = [0u8; 4096];
-
+    pub fn poll(&mut self, tx: &mut HeapProd<FIXCommand>) -> Result<(), &'static str> {
         loop {
-            let n = match self.stream.read(&mut tmp) {
-                Ok(0) => break,
-                Ok(n) => n,
-                Err(_) => break,
-            };
-
-            self.buffer.extend_from_slice(&tmp[..n]);
-
-            while let Some(msg) = self.extract_message() {
-                let mut msg_type = None;
-
-                for (tag, value) in FixIterator::new(&msg) {
-                    if tag == b"35" {
-                        msg_type = Some(value);
-                        break;
-                    }
+            match self.stream.read(&mut self.tmp[self.tmp_end..]) {
+                Ok(0) => {
+                    return Err("Peer closed connection");
                 }
-
-                match msg_type {
-                    Some(b"D") => self.handle_new_order(&msg),
-                    _ => Ok(()),
-                };
+                Ok(n) => {
+                    self.tmp_end += n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(e) => {
+                    return Err("Error reading from stream");
+                }
             }
         }
+        self.buffer.extend_from_slice(&self.tmp[..self.tmp_end]);
+        self.tmp_end = 0;
+
+        while let Some(msg) = self.extract_message() {
+            let mut msg_type = None;
+
+            for (tag, value) in FixIterator::new(&msg) {
+                if tag == b"35" {
+                    msg_type = Some(value);
+                    break;
+                }
+            }
+
+            match msg_type {
+                Some(b"D") => self.handle_new_order(&msg, tx),
+                _ => Ok(()),
+            };
+        }
+        Ok(())
     }
 
     fn extract_message(&mut self) -> Option<Vec<u8>> {
@@ -98,7 +109,11 @@ impl Session {
         Some(self.buffer.drain(0..total_len).collect())
     }
 
-    fn handle_new_order(&mut self, msg: &[u8]) -> Result<(), &'static str> {
+    fn handle_new_order(
+        &mut self,
+        msg: &[u8],
+        tx: &mut HeapProd<FIXCommand>,
+    ) -> Result<(), &'static str> {
         let mut cl_ord_id: Option<OrderId> = None;
         let mut qty: Option<u32> = None;
         let mut price: Option<Price> = None;
@@ -151,8 +166,7 @@ impl Session {
             kind,
         );
 
-        self.lob_tx
-            .push(FIXCommand::Order(order))
+        tx.try_push(FIXCommand::Order(order))
             .map_err(|_| "LOB queue full")?;
 
         Ok(())
@@ -162,31 +176,33 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mio::net::TcpListener;
     use netlib::fix_core::helpers::write_trailer;
-    use nexus_queue::mpsc;
-    use std::net::TcpListener;
+    use ringbuf::{HeapCons, HeapRb, traits::*};
+    use std::net::SocketAddr;
 
-    fn make_session() -> (Session, mpsc::Consumer<FIXCommand>) {
-        let (tx, rx) = mpsc::bounded::<FIXCommand>(8);
-
-        let listener = TcpListener::bind("127.0.0.1:0").expect("err");
+    fn make_session() -> (Session, ringbuf::HeapRb<FIXCommand>) {
+        let queue = HeapRb::<FIXCommand>::new(8);
+        let listener_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let listener = TcpListener::bind(listener_addr).expect("err");
         let addr = listener.local_addr().expect("err");
 
         let _client = TcpStream::connect(addr).expect("err");
         let (server, _) = listener.accept().expect("err");
 
-        (Session::new(server, tx), rx)
+        (Session::new(server), queue)
     }
 
     #[test]
     fn test_handle_new_order_limit_bid() {
-        let (mut session, mut rx) = make_session();
+        let (mut session, q) = make_session();
+        let (mut tx, mut rx) = q.split();
 
         let msg = b"8=FIX.4.2\x019=177\x0135=D\x0134=1\x0149=CLIENT01\x0152=20260223-16:56:36.513\x0156=ENGINE01\x0111=1\x0138=10\x0140=2\x0144=666\x0154=1\x0160=20260223-16:56:36.510\x0110=092\x01";
 
-        session.handle_new_order(msg).expect("err");
+        session.handle_new_order(msg, &mut tx).expect("err");
 
-        let cmd = rx.pop().expect("err");
+        let cmd = rx.try_pop().expect("err");
         match cmd {
             FIXCommand::Order(o1) => {
                 assert_eq!(o1.order_id, 1);
