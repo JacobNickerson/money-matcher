@@ -22,3 +22,32 @@ impl OrderGateway {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{lob::order::Order};
+    
+    use std::net::SocketAddr;
+    use ringbuf::{HeapProd, HeapCons, HeapRb, traits::*};
+
+    #[test]
+    fn test_make_gateway() {
+        let (mut user_prod, mut user_cons) = HeapRb::<Order>::new(128).split();
+        let (mut synth_prod, mut synth_cons) = HeapRb::<Order>::new(128).split();
+        let (mut merge_prod, mut merge_cons) = HeapRb::<Order>::new(128).split();
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let gateway = OrderGateway::new(
+            FixEngine::new(
+                addr,
+                user_prod,
+            ).unwrap(),
+            OrderMerger::new(
+                synth_cons,
+                user_cons,
+                merge_prod,
+                1024
+            )
+        ); 
+    }
+}
