@@ -1,4 +1,5 @@
 use crate::fix::session::FIXCommand;
+use crate::lob::order::Order;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token};
 use ringbuf::{HeapProd, traits::*};
@@ -13,13 +14,13 @@ const SERVER: Token = Token(0);
 pub struct FixEngine {
     sessions: HashMap<Token, Session>,
     listener: TcpListener,
-    tx: HeapProd<FIXCommand>,
+    tx: HeapProd<Order>,
     poll: Poll,
     token_counter: usize,
 }
 
 impl FixEngine {
-    pub fn new(addr: SocketAddr, tx: HeapProd<FIXCommand>) -> io::Result<Self> {
+    pub fn new(addr: SocketAddr, tx: HeapProd<Order>) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
         let mut this = Self {
@@ -77,26 +78,21 @@ impl FixEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fix::session::FIXCommand;
     use std::thread;
 
     #[test]
     #[ignore]
     fn mpsc_test() {
-        let (mut prod, mut cons) = ringbuf::HeapRb::<FIXCommand>::new(256).split();
+        let (mut prod, mut cons) = ringbuf::HeapRb::<Order>::new(256).split();
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let engine_thread = thread::spawn(move || {
             let mut _engine = FixEngine::new(addr, prod).unwrap();
             _engine.run();
         });
         loop {
-            if let Some(cmd) = cons.try_pop() {
-                match cmd {
-                    FIXCommand::Order(order) => {
-                        println!("Read Order | {:?} |", order,);
-                        break;
-                    }
-                }
+            if let Some(order) = cons.try_pop() {
+                println!("Read Order | {:?} |", order,);
+                break;
             }
         }
         engine_thread.join().unwrap();

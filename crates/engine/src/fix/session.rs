@@ -28,7 +28,7 @@ impl Session {
         }
     }
 
-    pub fn poll(&mut self, tx: &mut HeapProd<FIXCommand>) -> Result<(), &'static str> {
+    pub fn poll(&mut self, tx: &mut HeapProd<Order>) -> Result<(), &'static str> {
         loop {
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
                 Ok(0) => {
@@ -112,7 +112,7 @@ impl Session {
     fn handle_new_order(
         &mut self,
         msg: &[u8],
-        tx: &mut HeapProd<FIXCommand>,
+        tx: &mut HeapProd<Order>,
     ) -> Result<(), &'static str> {
         let mut cl_ord_id: Option<OrderId> = None;
         let mut qty: Option<u32> = None;
@@ -166,7 +166,7 @@ impl Session {
             kind,
         );
 
-        tx.try_push(FIXCommand::Order(order))
+        tx.try_push(order)
             .map_err(|_| "LOB queue full")?;
 
         Ok(())
@@ -181,8 +181,8 @@ mod tests {
     use ringbuf::{HeapCons, HeapRb, traits::*};
     use std::net::SocketAddr;
 
-    fn make_session() -> (Session, ringbuf::HeapRb<FIXCommand>) {
-        let queue = HeapRb::<FIXCommand>::new(8);
+    fn make_session() -> (Session, ringbuf::HeapRb<Order>) {
+        let queue = HeapRb::<Order>::new(8);
         let listener_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let listener = TcpListener::bind(listener_addr).expect("err");
         let addr = listener.local_addr().expect("err");
@@ -202,20 +202,16 @@ mod tests {
 
         session.handle_new_order(msg, &mut tx).expect("err");
 
-        let cmd = rx.try_pop().expect("err");
-        match cmd {
-            FIXCommand::Order(o1) => {
-                assert_eq!(o1.order_id, 1);
-                assert_eq!(o1.side, OrderSide::Bid);
-                assert_eq!(
-                    o1.kind,
-                    OrderType::Limit {
-                        qty: 10,
-                        price: 666
-                    }
-                );
+        let o1 = rx.try_pop().expect("err");
+        assert_eq!(o1.order_id, 1);
+        assert_eq!(o1.side, OrderSide::Bid);
+        assert_eq!(
+            o1.kind,
+            OrderType::Limit {
+                qty: 10,
+                price: 666
             }
-        }
+        );
     }
 
     #[test]
