@@ -9,7 +9,7 @@ use netlib::fix_core::{
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
 };
 use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
-use ringbuf::{HeapProd, traits::*};
+use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::{
     io::{Read, Write},
     str::from_utf8,
@@ -26,6 +26,8 @@ pub struct Session {
     pub(crate) write_buffer: Vec<u8>,
     tmp: [u8; MAX_TMP_BUFFER_SIZE],
     tmp_end: usize,
+    tx: HeapProd<Vec<u8>>,
+    rx: HeapCons<Vec<u8>>,
 }
 pub enum FIXRequest {
     Order(Token, Order),
@@ -36,6 +38,8 @@ pub enum FIXReply {
 
 impl Session {
     pub fn new(token: Token, stream: TcpStream) -> Self {
+        let (tx, rx) = ringbuf::HeapRb::<Vec<u8>>::new(256).split();
+
         Self {
             token,
             stream,
@@ -43,6 +47,8 @@ impl Session {
             write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
             tmp: [0u8; MAX_TMP_BUFFER_SIZE],
             tmp_end: 0,
+            tx,
+            rx,
         }
     }
 
@@ -183,12 +189,23 @@ impl Session {
             &reply.as_bytes(),
         );
 
-        self.write_buffer.extend_from_slice(&msg);
+        self.tx.try_push(msg).ok();
     }
 
     pub fn send_replies(&mut self) {
-        let len: usize = self.stream.write(&self.write_buffer).unwrap();
-        self.write_buffer.drain(..len);
+        while let Some(msg) = self.rx.try_pop() {
+            if self.write_buffer.len() + msg.len() > MAX_BUFFER_SIZE {
+                break;
+            }
+            self.write_buffer.extend_from_slice(&msg);
+        }
+
+        match self.stream.write(&self.write_buffer) {
+            Ok(n) => {
+                self.write_buffer.drain(..n);
+            }
+            Err(e) => eprintln!("Write error: {}", e),
+        }
     }
 }
 

@@ -13,6 +13,7 @@ use crate::fix::session::Session;
 
 const LISTENER: Token = Token(0);
 const WAKE: Token = Token(1);
+const MAX_BUFFER_SIZE: usize = 1024;
 
 pub struct FixEngine {
     sessions: HashMap<Token, Session>,
@@ -100,16 +101,20 @@ impl FixEngine {
             };
 
             if let Some(session) = self.sessions.get_mut(&token) {
+                let was_empty = session.write_buffer.is_empty();
+
                 session.handle_reply(reply);
 
-                self.poll
-                    .registry()
-                    .reregister(
-                        &mut session.stream,
-                        token,
-                        Interest::READABLE | Interest::WRITABLE,
-                    )
-                    .unwrap();
+                if was_empty && !session.write_buffer.is_empty() {
+                    self.poll
+                        .registry()
+                        .reregister(
+                            &mut session.stream,
+                            token,
+                            Interest::READABLE | Interest::WRITABLE,
+                        )
+                        .unwrap();
+                }
             }
         }
     }
@@ -123,6 +128,8 @@ impl FixEngine {
                     .registry()
                     .reregister(&mut session.stream, token, Interest::READABLE)
                     .unwrap();
+
+                self.process_replies();
             }
         }
     }

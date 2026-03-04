@@ -4,7 +4,10 @@ use netlib::fix_core::{
     iterator::FixIterator,
     messages::FixFrame,
 };
-use ringbuf::{HeapCons, traits::Consumer};
+use ringbuf::{
+    HeapCons,
+    traits::{Consumer, Observer},
+};
 use std::{
     io::{self, Read, Result, Write},
     net::SocketAddr,
@@ -139,6 +142,7 @@ impl Session {
                         .registry()
                         .reregister(&mut self.stream, SERVER_CONN, Interest::READABLE)
                         .unwrap();
+                    self.process_requests();
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -147,7 +151,13 @@ impl Session {
     }
 
     fn process_requests(&mut self) {
+        let was_empty = self.session_rx.is_empty();
+
         while let Some(cmd) = self.session_rx.try_pop() {
+            if self.write_buffer.len() + cmd.body.len() + 64 > MAX_BUFFER_SIZE {
+                break;
+            }
+
             let msg = write_fix_message(
                 cmd.msg_type,
                 &self.outbound_sequence_number,
@@ -159,7 +169,9 @@ impl Session {
             self.write_buffer.extend_from_slice(&msg);
 
             self.outbound_sequence_number = self.outbound_sequence_number.wrapping_add(1);
+        }
 
+        if was_empty && !self.session_rx.is_empty() {
             self.poll
                 .registry()
                 .reregister(
