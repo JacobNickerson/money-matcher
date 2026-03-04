@@ -26,10 +26,8 @@ pub struct Session {
 pub enum FIXRequest {
     Order(Token, Order),
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FIXReply {
-    pub token: Token,
-    pub data: ExecutionReport,
+pub enum FIXReply {
+    ExecutionReport(Token, ExecutionReport),
 }
 
 const WAKE: Token = Token(1);
@@ -148,7 +146,7 @@ impl Session {
         Ok(())
     }
 
-    pub fn handle_reply(&mut self, report: ExecutionReport) {
+    pub fn handle_reply(&mut self, data: &Vec<u8>) {
         println!("IN HANDLE REPLY");
         let sender_comp_id = "ENGINE01".to_string();
         let target_comp_id = "CLIENT01".to_string();
@@ -158,7 +156,7 @@ impl Session {
             &1_u32,
             &sender_comp_id,
             &target_comp_id,
-            &report.as_bytes(),
+            data,
         );
     }
 
