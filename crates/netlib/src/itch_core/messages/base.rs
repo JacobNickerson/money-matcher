@@ -16,7 +16,7 @@ pub struct Base {
 impl Base {
     pub fn new() -> Self {
         Self {
-            message_type: MESSAGE_TYPE_,
+            message_type: ITCH_MESSAGE_TYPE_,
         }
     }
 

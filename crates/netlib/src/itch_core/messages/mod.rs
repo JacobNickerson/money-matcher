@@ -12,13 +12,13 @@ pub mod order_executed_with_price;
 pub mod order_replace;
 pub mod test_benchmark;
 
-pub const MESSAGE_TYPE_ADD_ORDER: u8 = b'A';
-pub const MESSAGE_TYPE_ORDER_CANCEL: u8 = b'X';
-pub const MESSAGE_TYPE_ORDER_DELETE: u8 = b'D';
-pub const MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE: u8 = b'C';
-pub const MESSAGE_TYPE_ORDER_EXECUTED: u8 = b'E';
-pub const MESSAGE_TYPE_ORDER_REPLACE: u8 = b'U';
-pub const MESSAGE_TYPE_TEST_BENCHMARK: u8 = b'b';
+pub const ITCH_MESSAGE_TYPE_ADD_ORDER: u8 = b'A';
+pub const ITCH_MESSAGE_TYPE_ORDER_CANCEL: u8 = b'X';
+pub const ITCH_MESSAGE_TYPE_ORDER_DELETE: u8 = b'D';
+pub const ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE: u8 = b'C';
+pub const ITCH_MESSAGE_TYPE_ORDER_EXECUTED: u8 = b'E';
+pub const ITCH_MESSAGE_TYPE_ORDER_REPLACE: u8 = b'U';
+pub const ITCH_MESSAGE_TYPE_TEST_BENCHMARK: u8 = b'b';
 
 pub trait ItchMessage {
     fn set_tracking_number(&mut self, n: u16);

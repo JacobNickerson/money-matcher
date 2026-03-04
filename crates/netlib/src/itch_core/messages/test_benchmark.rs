@@ -1,5 +1,5 @@
 use crate::itch_core::helpers::encode_u48;
-use crate::itch_core::messages::{ItchMessage, MESSAGE_TYPE_TEST_BENCHMARK};
+use crate::itch_core::messages::{ItchMessage, ITCH_MESSAGE_TYPE_TEST_BENCHMARK};
 use zerocopy::byteorder::{BigEndian, U16};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -15,7 +15,7 @@ pub struct TestBenchmark {
 impl TestBenchmark {
     pub fn new(timestamp: u64) -> Self {
         Self {
-            message_type: MESSAGE_TYPE_TEST_BENCHMARK,
+            message_type: ITCH_MESSAGE_TYPE_TEST_BENCHMARK,
             timestamp: encode_u48(timestamp),
             tracking_number: U16::new(0),
             stock_locate: U16::new(0),
@@ -41,7 +41,7 @@ mod tests {
     fn test_test_benchmark_initial_state() {
         let msg = TestBenchmark::new(1000);
 
-        assert_eq!(msg.message_type, MESSAGE_TYPE_TEST_BENCHMARK);
+        assert_eq!(msg.message_type, ITCH_MESSAGE_TYPE_TEST_BENCHMARK);
         assert_eq!(msg.tracking_number.get(), 0);
         assert_eq!(msg.stock_locate.get(), 0);
     }

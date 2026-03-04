@@ -1,5 +1,5 @@
 use crate::itch_core::helpers::{decode_u48, encode_u48};
-use crate::itch_core::messages::{ItchMessage, MESSAGE_TYPE_ORDER_EXECUTED};
+use crate::itch_core::messages::{ItchMessage, ITCH_MESSAGE_TYPE_ORDER_EXECUTED};
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -37,7 +37,7 @@ impl OrderExecuted {
         match_number: u64,
     ) -> Self {
         Self {
-            message_type: MESSAGE_TYPE_ORDER_EXECUTED,
+            message_type: ITCH_MESSAGE_TYPE_ORDER_EXECUTED,
             stock_locate: U16::new(stock_locate),
             tracking_number: U16::new(0),
             timestamp: encode_u48(timestamp),
@@ -78,7 +78,7 @@ mod tests {
     fn test_order_executed_initial_state() {
         let msg = OrderExecuted::new(1, 1000, 5000, 100, 9999);
 
-        assert_eq!(msg.message_type, MESSAGE_TYPE_ORDER_EXECUTED);
+        assert_eq!(msg.message_type, ITCH_MESSAGE_TYPE_ORDER_EXECUTED);
         assert_eq!(msg.stock_locate.get(), 1);
         assert_eq!(msg.tracking_number.get(), 0);
         assert_eq!(msg.order_reference_number.get(), 5000);

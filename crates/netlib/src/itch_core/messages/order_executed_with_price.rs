@@ -1,5 +1,5 @@
 use crate::itch_core::helpers::{decode_price, decode_u48, encode_price, encode_u48};
-use crate::itch_core::messages::{ItchMessage, MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE};
+use crate::itch_core::messages::{ItchMessage, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE};
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -45,7 +45,7 @@ impl OrderExecutedWithPrice {
         execution_price: f64,
     ) -> Self {
         Self {
-            message_type: MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
+            message_type: ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
             stock_locate: U16::new(stock_locate),
             tracking_number: U16::new(0),
             timestamp: encode_u48(timestamp),
@@ -91,7 +91,7 @@ mod tests {
         let price_val = 100.0;
         let msg = OrderExecutedWithPrice::new(1, 1000, 5000, 10, 9999, b'Y', price_val);
 
-        assert_eq!(msg.message_type, MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE);
+        assert_eq!(msg.message_type, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE);
         assert_eq!(msg.stock_locate.get(), 1);
         assert_eq!(msg.tracking_number.get(), 0);
         assert_eq!(msg.order_reference_number.get(), 5000);
