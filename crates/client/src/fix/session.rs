@@ -14,7 +14,8 @@ use mio::{Events, Interest, Poll, Token, Waker};
 use zerocopy::IntoBytes;
 const SERVER_CONN: Token = Token(0);
 const WAKE: Token = Token(1);
-const MAX_BUFFER_SIZE: usize = 2048;
+const MAX_BUFFER_SIZE: usize = 1024;
+const MAX_TMP_BUFFER_SIZE: usize = 512;
 
 pub struct Session {
     pub inbound_sequence_number: u32,
@@ -27,7 +28,7 @@ pub struct Session {
     pub read_buffer: Vec<u8>,
     pub session_rx: HeapCons<FixFrame>,
     pub poll: Poll,
-    tmp: [u8; MAX_BUFFER_SIZE],
+    tmp: [u8; MAX_TMP_BUFFER_SIZE],
     tmp_end: usize,
 }
 
@@ -51,7 +52,7 @@ impl Session {
             read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
             session_rx,
             poll,
-            tmp: [0u8; MAX_BUFFER_SIZE],
+            tmp: [0u8; MAX_TMP_BUFFER_SIZE],
             tmp_end: 0,
         })
     }
@@ -86,8 +87,10 @@ impl Session {
 
     fn handle_server_readable(&mut self) {
         loop {
-            if self.tmp_end >= self.tmp.len() {
-                break;
+            if self.tmp_end >= MAX_TMP_BUFFER_SIZE {
+                if !self.read() {
+                    break;
+                }
             }
 
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
@@ -98,24 +101,25 @@ impl Session {
                     self.tmp_end += n;
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    self.read();
                     break;
                 }
-                Err(e) => {
-                    panic!("Read error: {}", e);
-                }
+                Err(e) => break,
             }
         }
+    }
 
+    fn read(&mut self) -> bool {
         if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
-            self.tmp_end = 0;
-            return;
+            return false;
         }
 
         self.read_buffer
             .extend_from_slice(&self.tmp[..self.tmp_end]);
         self.tmp_end = 0;
-
         self.process_replies();
+
+        true
     }
 
     fn process_replies(&mut self) {

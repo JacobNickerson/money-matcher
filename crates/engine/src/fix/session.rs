@@ -16,14 +16,15 @@ use std::{
 };
 
 const WAKE: Token = Token(1);
-const MAX_BUFFER_SIZE: usize = 2048;
+const MAX_BUFFER_SIZE: usize = 1024;
+const MAX_TMP_BUFFER_SIZE: usize = 512;
 
 pub struct Session {
     token: Token,
     pub(crate) stream: TcpStream,
     read_buffer: Vec<u8>,
     pub(crate) write_buffer: Vec<u8>,
-    tmp: [u8; MAX_BUFFER_SIZE],
+    tmp: [u8; MAX_TMP_BUFFER_SIZE],
     tmp_end: usize,
 }
 pub enum FIXRequest {
@@ -40,15 +41,17 @@ impl Session {
             stream,
             read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
             write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
-            tmp: [0u8; MAX_BUFFER_SIZE],
+            tmp: [0u8; MAX_TMP_BUFFER_SIZE],
             tmp_end: 0,
         }
     }
 
     pub fn poll(&mut self, tx: &mut HeapProd<FIXRequest>) -> Result<(), &'static str> {
         loop {
-            if self.tmp_end >= self.tmp.len() {
-                break;
+            if self.tmp_end >= MAX_TMP_BUFFER_SIZE {
+                if !self.read(tx) {
+                    break;
+                }
             }
 
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
@@ -59,6 +62,7 @@ impl Session {
                     self.tmp_end += n;
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    self.read(tx);
                     break;
                 }
                 Err(e) => {
@@ -67,18 +71,20 @@ impl Session {
             }
         }
 
+        Ok(())
+    }
+
+    fn read(&mut self, tx: &mut HeapProd<FIXRequest>) -> bool {
         if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
-            self.tmp_end = 0;
-            return Err("message too large");
+            return false;
         }
 
         self.read_buffer
             .extend_from_slice(&self.tmp[..self.tmp_end]);
         self.tmp_end = 0;
-
         self.process_messages(tx);
 
-        Ok(())
+        true
     }
 
     fn process_messages(&mut self, tx: &mut HeapProd<FIXRequest>) {
