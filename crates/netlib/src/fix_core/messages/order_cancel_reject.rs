@@ -18,7 +18,6 @@ pub struct OrderCancelReject {
     pub orig_cl_ord_id: u64,
     /// Reject reason
     pub text: String,
-    /// `1` = Order Cancel Request, `2` = Order Cancel Replace Request
     pub cxl_rej_response_to: CxlRejResponseTo,
 }
 
@@ -45,7 +44,7 @@ impl FixMessage for OrderCancelReject {
 
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
 
         // 11 - ClOrdID
         buf.extend_from_slice(b"11=");
@@ -54,7 +53,7 @@ impl FixMessage for OrderCancelReject {
 
         // 39 - OrdStatus
         buf.extend_from_slice(b"39=");
-        buf.extend_from_slice(itoa_buf.format(self.ord_status as u8).as_bytes());
+        buf.push(self.ord_status as u8);
         buf.push(0x01);
 
         // 41 - OrigClOrdID
@@ -67,9 +66,9 @@ impl FixMessage for OrderCancelReject {
         buf.extend_from_slice(self.text.as_bytes());
         buf.push(0x01);
 
-        // 434 - CxlRejResponseTo: 1=Order Cancel Request, 2=Order Cancel Replace Request
+        // 434 - CxlRejResponseTo
         buf.extend_from_slice(b"434=");
-        buf.extend_from_slice(itoa_buf.format(self.cxl_rej_response_to as u8).as_bytes());
+        buf.push(self.cxl_rej_response_to as u8);
         buf.push(0x01);
 
         buf

@@ -2,8 +2,7 @@ use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
     messages::{
         FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE, FixMessage,
-        new_order::CustomerOrFirm,
-        types::{OpenClose, OrdType, PutOrCall, Side},
+        types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
     },
 };
 
@@ -16,7 +15,6 @@ pub struct OrderCancelReplace {
     /// Ignored by ISE.
     pub handl_inst: u8,
     pub qty: u32,
-    /// `1` = Market, `2` = Limit, `3` = Stop, `4` = Stop Limit
     pub ord_type: OrdType,
     /// ClOrdID of the order to be modified.
     pub orig_cl_ord_id: u64,
@@ -73,7 +71,7 @@ impl FixMessage for OrderCancelReplace {
 
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
 
         // 11 - ClOrdID
         buf.extend_from_slice(b"11=");
@@ -90,9 +88,9 @@ impl FixMessage for OrderCancelReplace {
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
-        // 40 - OrdType: 1=Market, 2=Limit, 3=Stop, 4=Stop Limit
+        // 40 - OrdType
         buf.extend_from_slice(b"40=");
-        buf.extend_from_slice(itoa_buf.format(self.ord_type as u8).as_bytes());
+        buf.push(self.ord_type as u8);
         buf.push(0x01);
 
         // 41 - OrigClOrdID
@@ -102,7 +100,7 @@ impl FixMessage for OrderCancelReplace {
 
         // 54 - Side: Must match the original order.
         buf.extend_from_slice(b"54=");
-        buf.extend_from_slice(itoa_buf.format(self.side as u8).as_bytes());
+        buf.push(self.side as u8);
         buf.push(0x01);
 
         // 55 - Symbol: Must match the original order.
@@ -117,7 +115,7 @@ impl FixMessage for OrderCancelReplace {
 
         // 77 - OpenClose: Must match the original order.
         buf.extend_from_slice(b"77=");
-        buf.extend_from_slice(itoa_buf.format(self.open_close as u8).as_bytes());
+        buf.push(self.open_close as u8);
         buf.push(0x01);
 
         // 167 - SecurityType: Must match the original order.
@@ -135,7 +133,7 @@ impl FixMessage for OrderCancelReplace {
 
         // 201 - PutOrCall: Must match the original order.
         buf.extend_from_slice(b"201=");
-        buf.extend_from_slice(itoa_buf.format(self.put_or_call as u8).as_bytes());
+        buf.push(self.put_or_call as u8);
         buf.push(0x01);
 
         // 202 - StrikePrice: Must match the original order.
@@ -145,7 +143,7 @@ impl FixMessage for OrderCancelReplace {
 
         // 204 - CustomerOrFirm: Must match the original order.
         buf.extend_from_slice(b"204=");
-        buf.extend_from_slice(itoa_buf.format(self.customer_or_firm as u8).as_bytes());
+        buf.push(self.customer_or_firm as u8);
         buf.push(0x01);
 
         buf

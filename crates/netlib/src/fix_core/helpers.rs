@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_write_header_field_values() {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
 
         write_header(
             &mut buf,
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_write_trailer_appends_checksum() {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
         buf.extend_from_slice(b"35=D\x01");
 
         write_trailer(&mut buf);

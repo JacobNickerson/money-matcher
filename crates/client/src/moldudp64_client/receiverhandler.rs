@@ -1,9 +1,10 @@
 use bytes::BytesMut;
 use netlib::{
     itch_core::messages::{
-        ItchEvent, ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL, ITCH_MESSAGE_TYPE_ORDER_DELETE,
-        ITCH_MESSAGE_TYPE_ORDER_EXECUTED, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
-        ITCH_MESSAGE_TYPE_ORDER_REPLACE, ITCH_MESSAGE_TYPE_TEST_BENCHMARK, add_order::AddOrder,
+        ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
+        ITCH_MESSAGE_TYPE_ORDER_DELETE, ITCH_MESSAGE_TYPE_ORDER_EXECUTED,
+        ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ITCH_MESSAGE_TYPE_ORDER_REPLACE,
+        ITCH_MESSAGE_TYPE_TEST_BENCHMARK, ItchEvent, add_order::AddOrder,
         order_cancel::OrderCancel, order_delete::OrderDelete, order_executed::OrderExecuted,
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
         test_benchmark::TestBenchmark,
@@ -264,7 +265,7 @@ mod tests {
         let msg = TestBenchmark::new(123);
         let bytes = msg.as_bytes();
 
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
         buf.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
         buf.extend_from_slice(bytes);
 

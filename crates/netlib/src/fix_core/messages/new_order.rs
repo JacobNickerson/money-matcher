@@ -6,34 +6,6 @@ use crate::fix_core::{
     },
 };
 
-/// `0` = Customer, `1` = Proprietary — Firm, `2` = Broker/Dealer — Firm,
-/// `3` = Broker/Dealer — Customer, `4` = ISE Market Maker, `5` = Far Market Maker,
-/// `6` = Retail Customer*, `7` = Proprietary — Customer*, `8` = Customer Professional*,
-/// `9` = JBO (Joint Back Office)*.
-/// * NON-STANDARD value (ISE). Note: 6 and 9 are not currently available.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CustomerOrFirm {
-    Customer = 0,
-    ProprietaryFirm = 1,
-    /// NON-STANDARD value (ISE)
-    BrokerDealerFirm = 2,
-    /// NON-STANDARD value (ISE)
-    BrokerDealerCustomer = 3,
-    /// NON-STANDARD value (ISE)
-    IseMarketMaker = 4,
-    /// NON-STANDARD value (ISE)
-    FarMarketMaker = 5,
-    /// NON-STANDARD value (ISE)
-    RetailCustomer = 6,
-    /// NON-STANDARD value (ISE)
-    ProprietaryCustomer = 7,
-    /// NON-STANDARD value (ISE)
-    CustomerProfessional = 8,
-    /// NON-STANDARD value (ISE)
-    JointBackOffice = 9,
-}
-
 /// New Order Single is used to send a regular or Block order.
 ///
 /// `MsgType = D`
@@ -43,15 +15,12 @@ pub struct NewOrder {
     /// Required by FIX protocol, but ignored by ISE.
     pub handl_inst: u8,
     pub qty: u32,
-    /// `1` = Market, `2` = Limit, `3` = Stop, `4` = Stop Limit
     pub ord_type: OrdType,
     /// Required if OrdType = 2 or 4.
     pub price: u32,
-    /// `1` = Buy, `2` = Sell
     pub side: Side,
     /// OSI symbol for a series.
     pub symbol: String,
-    /// `0` = Open, `C` = Close
     pub open_close: OpenClose,
     /// `OPT`
     pub security_type: String,
@@ -88,7 +57,7 @@ impl FixMessage for NewOrder {
 
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
 
         // 11 - ClOrdID
         buf.extend_from_slice(b"11=");
@@ -107,7 +76,7 @@ impl FixMessage for NewOrder {
 
         // 40 - OrdType
         buf.extend_from_slice(b"40=");
-        buf.extend_from_slice(itoa_buf.format(self.ord_type as u8).as_bytes());
+        buf.push(self.ord_type as u8);
         buf.push(0x01);
 
         // 44 - Price
@@ -117,7 +86,7 @@ impl FixMessage for NewOrder {
 
         // 54 - Side
         buf.extend_from_slice(b"54=");
-        buf.extend_from_slice(itoa_buf.format(self.side as u8).as_bytes());
+        buf.push(self.side as u8);
         buf.push(0x01);
 
         // 55 - Symbol
@@ -132,7 +101,7 @@ impl FixMessage for NewOrder {
 
         // 77 - OpenClose
         buf.extend_from_slice(b"77=");
-        buf.extend_from_slice(itoa_buf.format(self.open_close as u8).as_bytes());
+        buf.push(self.open_close as u8);
         buf.push(0x01);
 
         // 167 - SecurityType
@@ -147,7 +116,7 @@ impl FixMessage for NewOrder {
         buf.extend_from_slice(get_maturity_month_year().as_bytes());
         buf.push(0x01);
 
-        // 201 - PutOrCall: 0=Put, 1=Call
+        // 201 - PutOrCall
         buf.extend_from_slice(b"201=1\x01");
 
         // 202 - StrikePrice

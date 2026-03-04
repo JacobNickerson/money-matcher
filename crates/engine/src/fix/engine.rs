@@ -2,6 +2,7 @@ use crate::fix::session::{FIXReply, FIXRequest};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
+use netlib::fix_core::messages::FixMessage;
 use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -138,7 +139,10 @@ impl FixEngine {
 
 #[cfg(test)]
 mod tests {
-    use netlib::fix_core::messages::execution_report::ExecutionReport;
+    use netlib::fix_core::messages::{
+        execution_report::ExecutionReport,
+        types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
+    };
 
     use super::*;
     use crate::fix::session::FIXRequest;
@@ -164,10 +168,30 @@ mod tests {
                     FIXRequest::Order(token, order) => {
                         println!("Read Order | {:?} | {:?} |", token, order,);
 
-                        let report = ExecutionReport {};
-                        let reply = FIXReply::ExecutionReport(token, report);
+                        let report = ExecutionReport {
+                            cl_ord_id: 1,
+                            cum_qty: 0,
+                            exec_id: "EXEC12345".to_string(),
+                            exec_trans_type: ExecTransType::New,
+                            order_id: "ORDER123".to_string(),
+                            order_qty: 100,
+                            ord_status: OrdStatus::New,
+                            security_id: "AAAA".to_string(),
+                            side: Side::Buy,
+                            symbol: "AAAA".to_string(),
+                            open_close: OpenClose::Open,
+                            exec_type: ExecType::New,
+                            leaves_qty: 100,
+                            security_type: "ST".to_string(),
+                            put_or_call: PutOrCall::Put,
+                            strike_price: 150,
+                            customer_or_firm: CustomerOrFirm::Customer,
+                            maturity_date: "1".to_string(),
+                        };
 
-                        reply_prod.try_push(reply).ok();
+                        reply_prod
+                            .try_push(FIXReply::ExecutionReport(token, report))
+                            .ok();
                         waker.wake().unwrap();
 
                         break;

@@ -6,7 +6,7 @@ use mio::{Token, net::TcpStream};
 use netlib::fix_core::iterator::FixIterator;
 use netlib::fix_core::messages::execution_report::ExecutionReport;
 use netlib::fix_core::{
-    helpers::{convert_timestamp, extract_message, print_message, write_fix_message},
+    helpers::{convert_timestamp, extract_message, write_fix_message},
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
 };
 use ringbuf::{HeapProd, traits::*};
@@ -162,7 +162,6 @@ impl Session {
     }
 
     pub fn handle_reply(&mut self, data: &Vec<u8>) {
-        println!("IN HANDLE REPLY");
         let sender_comp_id = "ENGINE01".to_string();
         let target_comp_id = "CLIENT01".to_string();
         write_fix_message(

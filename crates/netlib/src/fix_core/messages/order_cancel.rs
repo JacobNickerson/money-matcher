@@ -30,7 +30,7 @@ impl FixMessage for OrderCancel {
 
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
 
         // 11 - ClOrdID
         buf.extend_from_slice(b"11=");
