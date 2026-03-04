@@ -1,8 +1,12 @@
 use mio::{Registry, net::TcpStream};
-use netlib::fix_core::{helpers::write_fix_message, messages::FixFrame};
+use netlib::fix_core::{
+    helpers::{extract_message, print_message, write_fix_message},
+    iterator::FixIterator,
+    messages::FixFrame,
+};
 use ringbuf::{HeapCons, traits::Consumer};
 use std::{
-    io::{self, Result, Write},
+    io::{self, Read, Result, Write},
     net::SocketAddr,
 };
 
@@ -18,10 +22,12 @@ pub struct Session {
     pub sender_comp_id: String,
     pub stream: TcpStream,
     pub target_comp_id: String,
-    pub write_buf: Vec<u8>,
-    pub read_buf: Vec<u8>,
+    pub write_buffer: Vec<u8>,
+    pub read_buffer: Vec<u8>,
     pub session_rx: HeapCons<FixFrame>,
     pub poll: Poll,
+    tmp: [u8; 4096],
+    tmp_end: usize,
 }
 
 impl Session {
@@ -40,14 +46,16 @@ impl Session {
             sender_comp_id: "CLIENT01".to_string(),
             stream,
             target_comp_id: "ENGINE01".to_string(),
-            write_buf: Vec::new(),
-            read_buf: Vec::new(),
+            write_buffer: Vec::new(),
+            read_buffer: Vec::new(),
             session_rx,
             poll,
+            tmp: [0u8; 4096],
+            tmp_end: 0,
         })
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<()> {
         let mut events = Events::with_capacity(1024);
         loop {
             self.poll.poll(&mut events, None).unwrap();
@@ -55,15 +63,40 @@ impl Session {
                 match event.token() {
                     NET => {
                         if event.is_readable() {
-                            //read
+                            println!("READING");
+                            loop {
+                                match self.stream.read(&mut self.tmp[self.tmp_end..]) {
+                                    Ok(0) => {
+                                        return panic!("");
+                                    }
+                                    Ok(n) => {
+                                        println!("RECEIVED BYTES: {:?}", n);
+                                        self.tmp_end += n;
+                                    }
+                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        return panic!("");
+                                    }
+                                }
+                            }
+
+                            self.read_buffer
+                                .extend_from_slice(&self.tmp[..self.tmp_end]);
+                            self.tmp_end = 0;
+
+                            while let Some(msg) = extract_message(&mut self.read_buffer) {
+                                print_message(&msg);
+                            }
                         }
 
                         if event.is_writable() {
-                            match self.stream.write(&self.write_buf) {
+                            match self.stream.write(&self.write_buffer) {
                                 Ok(n) => {
-                                    self.write_buf.drain(..n);
+                                    self.write_buffer.drain(..n);
 
-                                    if self.write_buf.is_empty() {
+                                    if self.write_buffer.is_empty() {
                                         let registry = self.poll.registry();
                                         registry
                                             .reregister(&mut self.stream, NET, Interest::READABLE)
@@ -76,9 +109,9 @@ impl Session {
                         };
                     }
                     WAKE => {
-                        if let Some(cmd) = self.session_rx.try_pop() {
+                        while let Some(cmd) = self.session_rx.try_pop() {
                             write_fix_message(
-                                &mut self.write_buf,
+                                &mut self.write_buffer,
                                 cmd.msg_type,
                                 &self.outbound_sequence_number,
                                 &self.sender_comp_id,
@@ -96,7 +129,6 @@ impl Session {
                                     Interest::READABLE | Interest::WRITABLE,
                                 )
                                 .unwrap();
-                            //stuff
                         }
                     }
 
@@ -120,7 +152,7 @@ mod tests {
     //
     //    let body = Vec::new();
     //    session.send_message(FIX_MESSAGE_TYPE_NEW_ORDER, body);
-    //    print_message(&session.write_buf);
+    //    print_message(&session.write_buffer);
     //}
     //
     //#[test]
@@ -138,13 +170,13 @@ mod tests {
     //        sender_comp_id: "CLIENT01".to_string(),
     //        target_comp_id: "ENGINE01".to_string(),
     //        stream: server,
-    //        write_buf: Vec::new(),
+    //        write_buffer: Vec::new(),
     //    };
     //
     //    let body = Vec::new();
     //
     //    write_fix_message(
-    //        &mut session.write_buf,
+    //        &mut session.write_buffer,
     //        &FIX_MESSAGE_TYPE_NEW_ORDER,
     //        &session.outbound_sequence_number,
     //        &session.sender_comp_id,
@@ -152,7 +184,7 @@ mod tests {
     //        &body,
     //    );
     //
-    //    let s = from_utf8(&session.write_buf).expect("err");
+    //    let s = from_utf8(&session.write_buffer).expect("err");
     //
     //    assert!(s.contains("8=FIX.4.2"));
     //    assert!(s.contains("35=D"));

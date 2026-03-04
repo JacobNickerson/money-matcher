@@ -19,10 +19,7 @@ impl FixClient {
         session_rx: HeapCons<FixFrame>,
     ) -> io::Result<(Self, Session)> {
         let poll = Poll::new()?;
-        let waker = {
-            let registry = poll.registry();
-            Waker::new(registry, WAKE)?
-        };
+        let waker = { Waker::new(poll.registry(), WAKE)? };
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let session = Session::connect(addr, poll, session_rx)?;

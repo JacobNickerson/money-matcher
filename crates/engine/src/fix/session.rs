@@ -2,27 +2,45 @@ use crate::lob::{
     order::{Order, OrderSide, OrderType},
     types::{OrderId, Price, Timestamp},
 };
-use mio::net::TcpStream;
-use netlib::fix_core::helpers::{calculate_checksum, convert_timestamp};
+use mio::{Token, net::TcpStream};
 use netlib::fix_core::iterator::FixIterator;
+use netlib::fix_core::messages::execution_report::ExecutionReport;
+use netlib::fix_core::{
+    helpers::{convert_timestamp, extract_message, print_message, write_fix_message},
+    messages::FIX_MESSAGE_TYPE_NEW_ORDER,
+};
 use ringbuf::{HeapProd, traits::*};
-use std::{io::Read, str::from_utf8};
+use std::{
+    io::{Read, Write},
+    str::from_utf8,
+};
 
 pub struct Session {
-    stream: TcpStream,
-    buffer: Vec<u8>,
+    token: Token,
+    pub(crate) stream: TcpStream,
+    read_buffer: Vec<u8>,
+    pub(crate) write_buffer: Vec<u8>,
     tmp: [u8; 4096],
     tmp_end: usize,
 }
 pub enum FIXCommand {
-    Order(Order),
+    Order(Token, Order),
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FIXReply {
+    pub token: Token,
+    pub data: ExecutionReport,
 }
 
+const WAKE: Token = Token(1);
+
 impl Session {
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(token: Token, stream: TcpStream) -> Self {
         Self {
+            token,
             stream,
-            buffer: Vec::new(),
+            read_buffer: Vec::new(),
+            write_buffer: Vec::new(),
             tmp: [0u8; 4096],
             tmp_end: 0,
         }
@@ -45,10 +63,11 @@ impl Session {
                 }
             }
         }
-        self.buffer.extend_from_slice(&self.tmp[..self.tmp_end]);
+        self.read_buffer
+            .extend_from_slice(&self.tmp[..self.tmp_end]);
         self.tmp_end = 0;
 
-        while let Some(msg) = self.extract_message() {
+        while let Some(msg) = extract_message(&mut self.read_buffer) {
             let mut msg_type = None;
 
             for (tag, value) in FixIterator::new(&msg) {
@@ -64,49 +83,6 @@ impl Session {
             };
         }
         Ok(())
-    }
-
-    fn extract_message(&mut self) -> Option<Vec<u8>> {
-        if !self.buffer.starts_with(b"8=FIX") {
-            if let Some(position) = self.buffer.windows(5).position(|f| f == b"8=FIX") {
-                self.buffer.drain(0..position);
-            } else {
-                self.buffer.clear();
-            }
-
-            return None;
-        };
-
-        let body_len_start = self.buffer.windows(2).position(|f| f == b"9=")?;
-        let body_len_end = self.buffer[body_len_start..]
-            .iter()
-            .position(|&f| f == b'\x01')?
-            + body_len_start;
-
-        let body_len: usize = from_utf8(&self.buffer[body_len_start + 2..body_len_end])
-            .ok()?
-            .parse()
-            .ok()?;
-
-        let body_start = body_len_end + 1;
-        let body_end = body_start + body_len;
-        let total_len = body_end + 7;
-        let recv_checksum: u32 = from_utf8(&self.buffer[body_end + 3..body_end + 6])
-            .ok()?
-            .parse()
-            .ok()?;
-        let checksum = calculate_checksum(&self.buffer[..body_end]);
-
-        if recv_checksum != checksum {
-            println!("Checksum mismatch {} {}", recv_checksum, checksum);
-            return None;
-        }
-
-        if self.buffer.len() < total_len {
-            return None;
-        }
-
-        Some(self.buffer.drain(0..total_len).collect())
     }
 
     fn handle_new_order(
@@ -166,10 +142,32 @@ impl Session {
             kind,
         );
 
-        tx.try_push(FIXCommand::Order(order))
+        tx.try_push(FIXCommand::Order(self.token, order))
             .map_err(|_| "LOB queue full")?;
 
         Ok(())
+    }
+
+    pub fn handle_reply(&mut self, report: ExecutionReport) {
+        println!("IN HANDLE REPLY");
+        let sender_comp_id = "ENGINE01".to_string();
+        let target_comp_id = "CLIENT01".to_string();
+        write_fix_message(
+            &mut self.write_buffer,
+            FIX_MESSAGE_TYPE_NEW_ORDER,
+            &1_u32,
+            &sender_comp_id,
+            &target_comp_id,
+            &report.as_bytes(),
+        );
+    }
+
+    pub fn flush(&mut self) {
+        println!("IN FLUSH");
+        let len = self.stream.write(&self.write_buffer).unwrap();
+        println!("SENT");
+        print_message(&self.write_buffer);
+        self.write_buffer.drain(..len);
     }
 }
 
@@ -190,7 +188,7 @@ mod tests {
         let _client = TcpStream::connect(addr).expect("err");
         let (server, _) = listener.accept().expect("err");
 
-        (Session::new(server), queue)
+        (Session::new(Token(0), server), queue)
     }
 
     #[test]
@@ -204,7 +202,7 @@ mod tests {
 
         let cmd = rx.try_pop().expect("err");
         match cmd {
-            FIXCommand::Order(o1) => {
+            FIXCommand::Order(token, o1) => {
                 assert_eq!(o1.order_id, 1);
                 assert_eq!(o1.side, OrderSide::Bid);
                 assert_eq!(
@@ -234,9 +232,9 @@ mod tests {
 
         write_trailer(&mut msg);
 
-        session.buffer.extend_from_slice(&msg);
+        session.read_buffer.extend_from_slice(&msg);
 
-        let out = session.extract_message().expect("err");
+        let out = extract_message(&mut session.read_buffer).expect("err");
         assert_eq!(out, msg);
     }
 
@@ -245,8 +243,8 @@ mod tests {
         let (mut session, _rx1) = make_session();
 
         let msg = b"8=FIX.4.2\x019=5\x0135=D\x0110=000\x01";
-        session.buffer.extend_from_slice(msg);
+        session.read_buffer.extend_from_slice(msg);
 
-        assert!(session.extract_message().is_none());
+        assert!(extract_message(&mut session.read_buffer).is_none());
     }
 }

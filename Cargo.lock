@@ -93,8 +93,10 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "itoa",
+ "mio",
  "netlib",
  "nexus-queue",
+ "ringbuf",
  "zerocopy",
 ]
 

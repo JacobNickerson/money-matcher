@@ -108,6 +108,48 @@ pub fn print_message(message: &Vec<u8>) {
     println!("{}", String::from_utf8_lossy(&output));
 }
 
+pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
+    if !read_buffer.starts_with(b"8=FIX") {
+        if let Some(position) = read_buffer.windows(5).position(|f| f == b"8=FIX") {
+            read_buffer.drain(0..position);
+        } else {
+            read_buffer.clear();
+        }
+        return None;
+    };
+
+    let body_len_start = read_buffer.windows(2).position(|f| f == b"9=")?;
+    let body_len_end = read_buffer[body_len_start..]
+        .iter()
+        .position(|&f| f == b'\x01')?
+        + body_len_start;
+
+    let body_len: usize = from_utf8(&read_buffer[body_len_start + 2..body_len_end])
+        .ok()?
+        .parse()
+        .ok()?;
+
+    let body_start = body_len_end + 1;
+    let body_end = body_start + body_len;
+    let total_len = body_end + 7;
+
+    if read_buffer.len() < total_len {
+        return None;
+    }
+
+    let recv_checksum: u32 = from_utf8(&read_buffer[body_end + 3..body_end + 6])
+        .ok()?
+        .parse()
+        .ok()?;
+    let checksum = calculate_checksum(&read_buffer[..body_end]);
+
+    if recv_checksum != checksum {
+        return None;
+    }
+
+    Some(read_buffer.drain(0..total_len).collect())
+}
+
 pub fn get_timestamp() -> String {
     let now = Local::now();
     now.format("%Y%m%d-%H:%M:%S.%3f").to_string()
