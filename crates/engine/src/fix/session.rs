@@ -104,9 +104,9 @@ impl Session {
                 }
             }
 
-            match msg_type {
+            let _ = match msg_type {
                 Some(FIX_MESSAGE_TYPE_NEW_ORDER) => self.handle_new_order(&msg, tx),
-                _ => continue,
+                _ => Ok(()),
             };
         }
     }
