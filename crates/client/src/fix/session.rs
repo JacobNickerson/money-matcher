@@ -1,4 +1,4 @@
-use mio::{Registry, net::TcpStream};
+use mio::{Registry, event::Event, net::TcpStream};
 use netlib::fix_core::{
     helpers::{extract_message, print_message, write_fix_message},
     iterator::FixIterator,
@@ -60,83 +60,98 @@ impl Session {
         loop {
             self.poll.poll(&mut events, None).unwrap();
             for event in events.iter() {
-                match event.token() {
-                    SERVER_CONN => {
-                        if event.is_readable() {
-                            loop {
-                                match self.stream.read(&mut self.tmp[self.tmp_end..]) {
-                                    Ok(0) => {
-                                        return panic!("");
-                                    }
-                                    Ok(n) => {
-                                        self.tmp_end += n;
-                                    }
-                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        return panic!("");
-                                    }
-                                }
-                            }
+                self.handle_event(event);
+            }
+        }
+    }
 
-                            self.read_buffer
-                                .extend_from_slice(&self.tmp[..self.tmp_end]);
-                            self.tmp_end = 0;
+    fn handle_event(&mut self, event: &Event) {
+        match event.token() {
+            SERVER_CONN => self.handle_server_event(event),
+            WAKE => self.process_requests(),
+            _ => (),
+        }
+    }
 
-                            while let Some(msg) = extract_message(&mut self.read_buffer) {
-                                print_message(&msg);
-                            }
-                        }
+    fn handle_server_event(&mut self, event: &Event) {
+        if event.is_readable() {
+            self.handle_server_readable();
+        }
 
-                        if event.is_writable() {
-                            match self.stream.write(&self.write_buffer) {
-                                Ok(n) => {
-                                    self.write_buffer.drain(..n);
+        if event.is_writable() {
+            self.handle_server_writable();
+        }
+    }
 
-                                    if self.write_buffer.is_empty() {
-                                        let registry = self.poll.registry();
-                                        registry
-                                            .reregister(
-                                                &mut self.stream,
-                                                SERVER_CONN,
-                                                Interest::READABLE,
-                                            )
-                                            .unwrap();
-                                    }
-                                }
-                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                                Err(e) => panic!("Error {}", e),
-                            }
-                        };
-                    }
-                    WAKE => {
-                        while let Some(cmd) = self.session_rx.try_pop() {
-                            write_fix_message(
-                                &mut self.write_buffer,
-                                cmd.msg_type,
-                                &self.outbound_sequence_number,
-                                &self.sender_comp_id,
-                                &self.target_comp_id,
-                                &cmd.body,
-                            );
-                            self.outbound_sequence_number =
-                                self.outbound_sequence_number.wrapping_add(1);
-
-                            let registry = self.poll.registry();
-                            registry
-                                .reregister(
-                                    &mut self.stream,
-                                    SERVER_CONN,
-                                    Interest::READABLE | Interest::WRITABLE,
-                                )
-                                .unwrap();
-                        }
-                    }
-
-                    _ => (),
+    fn handle_server_readable(&mut self) {
+        loop {
+            match self.stream.read(&mut self.tmp[self.tmp_end..]) {
+                Ok(0) => {
+                    panic!("Connection closed by server");
+                }
+                Ok(n) => {
+                    self.tmp_end += n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(e) => {
+                    panic!("Read error: {}", e);
                 }
             }
+        }
+
+        self.read_buffer
+            .extend_from_slice(&self.tmp[..self.tmp_end]);
+        self.tmp_end = 0;
+
+        self.process_replies();
+    }
+
+    fn process_replies(&mut self) {
+        while let Some(msg) = extract_message(&mut self.read_buffer) {
+            print_message(&msg);
+        }
+    }
+
+    fn handle_server_writable(&mut self) {
+        match self.stream.write(&self.write_buffer) {
+            Ok(n) => {
+                self.write_buffer.drain(..n);
+
+                if self.write_buffer.is_empty() {
+                    self.poll
+                        .registry()
+                        .reregister(&mut self.stream, SERVER_CONN, Interest::READABLE)
+                        .unwrap();
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => panic!("Write error: {}", e),
+        }
+    }
+
+    fn process_requests(&mut self) {
+        while let Some(cmd) = self.session_rx.try_pop() {
+            write_fix_message(
+                &mut self.write_buffer,
+                cmd.msg_type,
+                &self.outbound_sequence_number,
+                &self.sender_comp_id,
+                &self.target_comp_id,
+                &cmd.body,
+            );
+
+            self.outbound_sequence_number = self.outbound_sequence_number.wrapping_add(1);
+
+            self.poll
+                .registry()
+                .reregister(
+                    &mut self.stream,
+                    SERVER_CONN,
+                    Interest::READABLE | Interest::WRITABLE,
+                )
+                .unwrap();
         }
     }
 }
