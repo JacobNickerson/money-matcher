@@ -14,6 +14,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 use zerocopy::IntoBytes;
 const SERVER_CONN: Token = Token(0);
 const WAKE: Token = Token(1);
+const MAX_BUFFER_SIZE: usize = 2048;
 
 pub struct Session {
     pub inbound_sequence_number: u32,
@@ -26,7 +27,7 @@ pub struct Session {
     pub read_buffer: Vec<u8>,
     pub session_rx: HeapCons<FixFrame>,
     pub poll: Poll,
-    tmp: [u8; 4096],
+    tmp: [u8; MAX_BUFFER_SIZE],
     tmp_end: usize,
 }
 
@@ -46,11 +47,11 @@ impl Session {
             sender_comp_id: "CLIENT01".to_string(),
             stream,
             target_comp_id: "ENGINE01".to_string(),
-            write_buffer: Vec::new(),
-            read_buffer: Vec::new(),
+            write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
             session_rx,
             poll,
-            tmp: [0u8; 4096],
+            tmp: [0u8; MAX_BUFFER_SIZE],
             tmp_end: 0,
         })
     }
@@ -85,6 +86,10 @@ impl Session {
 
     fn handle_server_readable(&mut self) {
         loop {
+            if self.tmp_end >= self.tmp.len() {
+                break;
+            }
+
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
                 Ok(0) => {
                     panic!("Connection closed by server");
@@ -99,6 +104,10 @@ impl Session {
                     panic!("Read error: {}", e);
                 }
             }
+        }
+
+        if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
+            return;
         }
 
         self.read_buffer

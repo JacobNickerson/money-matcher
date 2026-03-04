@@ -15,12 +15,15 @@ use std::{
     str::from_utf8,
 };
 
+const WAKE: Token = Token(1);
+const MAX_BUFFER_SIZE: usize = 2048;
+
 pub struct Session {
     token: Token,
     pub(crate) stream: TcpStream,
     read_buffer: Vec<u8>,
     pub(crate) write_buffer: Vec<u8>,
-    tmp: [u8; 4096],
+    tmp: [u8; MAX_BUFFER_SIZE],
     tmp_end: usize,
 }
 pub enum FIXRequest {
@@ -30,22 +33,24 @@ pub enum FIXReply {
     ExecutionReport(Token, ExecutionReport),
 }
 
-const WAKE: Token = Token(1);
-
 impl Session {
     pub fn new(token: Token, stream: TcpStream) -> Self {
         Self {
             token,
             stream,
-            read_buffer: Vec::new(),
-            write_buffer: Vec::new(),
-            tmp: [0u8; 4096],
+            read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            tmp: [0u8; MAX_BUFFER_SIZE],
             tmp_end: 0,
         }
     }
 
     pub fn poll(&mut self, tx: &mut HeapProd<FIXRequest>) -> Result<(), &'static str> {
         loop {
+            if self.tmp_end >= self.tmp.len() {
+                break;
+            }
+
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
                 Ok(0) => {
                     return Err("Peer closed connection");
@@ -61,6 +66,11 @@ impl Session {
                 }
             }
         }
+
+        if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
+            return Err("message too large");
+        }
+
         self.read_buffer
             .extend_from_slice(&self.tmp[..self.tmp_end]);
         self.tmp_end = 0;
