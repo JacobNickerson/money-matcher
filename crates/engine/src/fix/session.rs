@@ -3,12 +3,12 @@ use crate::lob::{
     types::{OrderId, Price, Timestamp},
 };
 use mio::{Token, net::TcpStream};
-use netlib::fix_core::iterator::FixIterator;
 use netlib::fix_core::messages::execution_report::ExecutionReport;
 use netlib::fix_core::{
     helpers::{convert_timestamp, extract_message, write_fix_message},
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
 };
+use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
 use ringbuf::{HeapProd, traits::*};
 use std::{
     io::{Read, Write},
@@ -161,16 +161,19 @@ impl Session {
         Ok(())
     }
 
-    pub fn handle_reply(&mut self, data: &Vec<u8>) {
+    pub fn handle_reply<T>(&mut self, reply: T)
+    where
+        T: FixMessage,
+    {
         let sender_comp_id = "ENGINE01".to_string();
         let target_comp_id = "CLIENT01".to_string();
         write_fix_message(
             &mut self.write_buffer,
-            FIX_MESSAGE_TYPE_NEW_ORDER,
+            T::MESSAGE_TYPE,
             &1_u32,
             &sender_comp_id,
             &target_comp_id,
-            data,
+            &reply.as_bytes(),
         );
     }
 

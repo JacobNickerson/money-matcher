@@ -100,7 +100,7 @@ impl FixEngine {
             };
 
             if let Some(session) = self.sessions.get_mut(&token) {
-                session.handle_reply(&data.as_bytes());
+                session.handle_reply(reply);
 
                 self.poll
                     .registry()
