@@ -94,8 +94,8 @@ impl FixEngine {
     }
 
     fn process_replies(&mut self) {
-        while let Some(reply) = self.rx.try_pop() {
-            let (token, data) = match reply {
+        while let Some(msg) = self.rx.try_pop() {
+            let (token, reply) = match msg {
                 FIXReply::ExecutionReport(t, d) => (t, d),
             };
 
