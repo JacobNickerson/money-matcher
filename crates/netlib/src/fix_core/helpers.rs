@@ -2,26 +2,27 @@ use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use std::str::from_utf8;
 
 pub fn write_fix_message(
-    write_buf: &mut Vec<u8>,
     msg_type: &'static [u8],
     outbound_sequence_number: &u32,
     sender_comp_id: &String,
     target_comp_id: &String,
     body: &Vec<u8>,
-) {
-    write_buf.clear();
+) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(256);
 
     write_header(
-        write_buf,
+        &mut buf,
         msg_type,
         outbound_sequence_number,
         sender_comp_id,
         target_comp_id,
     );
 
-    write_buf.extend_from_slice(&body);
+    buf.extend_from_slice(body);
 
-    write_wrapper(write_buf);
+    write_wrapper(&mut buf);
+
+    buf
 }
 
 pub fn write_header(

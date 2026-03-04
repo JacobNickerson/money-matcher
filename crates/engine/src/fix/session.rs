@@ -167,14 +167,16 @@ impl Session {
     {
         let sender_comp_id = "ENGINE01".to_string();
         let target_comp_id = "CLIENT01".to_string();
-        write_fix_message(
-            &mut self.write_buffer,
+
+        let msg = write_fix_message(
             T::MESSAGE_TYPE,
             &1_u32,
             &sender_comp_id,
             &target_comp_id,
             &reply.as_bytes(),
         );
+
+        self.write_buffer.extend_from_slice(&msg);
     }
 
     pub fn send_replies(&mut self) {

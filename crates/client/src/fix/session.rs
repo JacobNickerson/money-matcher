@@ -143,14 +143,15 @@ impl Session {
 
     fn process_requests(&mut self) {
         while let Some(cmd) = self.session_rx.try_pop() {
-            write_fix_message(
-                &mut self.write_buffer,
+            let msg = write_fix_message(
                 cmd.msg_type,
                 &self.outbound_sequence_number,
                 &self.sender_comp_id,
                 &self.target_comp_id,
                 &cmd.body,
             );
+
+            self.write_buffer.extend_from_slice(&msg);
 
             self.outbound_sequence_number = self.outbound_sequence_number.wrapping_add(1);
 
