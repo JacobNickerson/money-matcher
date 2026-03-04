@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::fix::session::Session;
 
-const SERVER: Token = Token(0);
+const LISTENER: Token = Token(0);
 const WAKE: Token = Token(1);
 
 pub struct FixEngine {
@@ -43,7 +43,7 @@ impl FixEngine {
         };
         this.poll
             .registry()
-            .register(&mut this.listener, SERVER, Interest::READABLE)?;
+            .register(&mut this.listener, LISTENER, Interest::READABLE)?;
         Ok(this)
     }
 
@@ -64,7 +64,7 @@ impl FixEngine {
 
     fn handle_event(&mut self, event: &Event) {
         match event.token() {
-            SERVER => self.handle_server_accept(),
+            LISTENER => self.handle_server_accept(),
             WAKE => self.process_replies(),
             token if event.is_writable() => self.handle_writable(token),
             token if event.is_readable() => self.handle_readable(token),

@@ -12,7 +12,7 @@ use std::{
 
 use mio::{Events, Interest, Poll, Token, Waker};
 use zerocopy::IntoBytes;
-const NET: Token = Token(0);
+const SERVER_CONN: Token = Token(0);
 const WAKE: Token = Token(1);
 
 pub struct Session {
@@ -36,7 +36,7 @@ impl Session {
 
         {
             let registry = poll.registry();
-            registry.register(&mut stream, NET, Interest::READABLE)?;
+            registry.register(&mut stream, SERVER_CONN, Interest::READABLE)?;
         }
 
         Ok(Self {
@@ -61,7 +61,7 @@ impl Session {
             self.poll.poll(&mut events, None).unwrap();
             for event in events.iter() {
                 match event.token() {
-                    NET => {
+                    SERVER_CONN => {
                         if event.is_readable() {
                             loop {
                                 match self.stream.read(&mut self.tmp[self.tmp_end..]) {
@@ -97,7 +97,11 @@ impl Session {
                                     if self.write_buffer.is_empty() {
                                         let registry = self.poll.registry();
                                         registry
-                                            .reregister(&mut self.stream, NET, Interest::READABLE)
+                                            .reregister(
+                                                &mut self.stream,
+                                                SERVER_CONN,
+                                                Interest::READABLE,
+                                            )
                                             .unwrap();
                                     }
                                 }
@@ -123,7 +127,7 @@ impl Session {
                             registry
                                 .reregister(
                                     &mut self.stream,
-                                    NET,
+                                    SERVER_CONN,
                                     Interest::READABLE | Interest::WRITABLE,
                                 )
                                 .unwrap();
