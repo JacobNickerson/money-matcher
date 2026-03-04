@@ -1,4 +1,4 @@
-use crate::fix::session::{FIXCommand, FIXReply};
+use crate::fix::session::{FIXRequest, FIXReply};
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
 use ringbuf::{HeapCons, HeapProd, traits::*};
@@ -15,7 +15,7 @@ const WAKE: Token = Token(1);
 pub struct FixEngine {
     sessions: HashMap<Token, Session>,
     listener: TcpListener,
-    tx: HeapProd<FIXCommand>,
+    tx: HeapProd<FIXRequest>,
     rx: HeapCons<FIXReply>,
     waker: Arc<Waker>,
     poll: Poll,
@@ -25,7 +25,7 @@ pub struct FixEngine {
 impl FixEngine {
     pub fn new(
         addr: SocketAddr,
-        tx: HeapProd<FIXCommand>,
+        tx: HeapProd<FIXRequest>,
         rx: HeapCons<FIXReply>,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
@@ -125,13 +125,13 @@ mod tests {
     use netlib::fix_core::messages::execution_report::ExecutionReport;
 
     use super::*;
-    use crate::fix::session::FIXCommand;
+    use crate::fix::session::FIXRequest;
     use std::thread;
 
     #[test]
     #[ignore]
     fn mpsc_test() {
-        let (mut prod, mut cons) = ringbuf::HeapRb::<FIXCommand>::new(256).split();
+        let (mut prod, mut cons) = ringbuf::HeapRb::<FIXRequest>::new(256).split();
 
         let (mut reply_prod, mut reply_cons) = ringbuf::HeapRb::<FIXReply>::new(256).split();
 
@@ -145,7 +145,7 @@ mod tests {
         loop {
             if let Some(cmd) = cons.try_pop() {
                 match cmd {
-                    FIXCommand::Order(token, order) => {
+                    FIXRequest::Order(token, order) => {
                         println!("Read Order | {:?} | {:?} |", token, order,);
 
                         let report = ExecutionReport {};

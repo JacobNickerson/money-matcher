@@ -23,7 +23,7 @@ pub struct Session {
     tmp: [u8; 4096],
     tmp_end: usize,
 }
-pub enum FIXCommand {
+pub enum FIXRequest {
     Order(Token, Order),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +46,7 @@ impl Session {
         }
     }
 
-    pub fn poll(&mut self, tx: &mut HeapProd<FIXCommand>) -> Result<(), &'static str> {
+    pub fn poll(&mut self, tx: &mut HeapProd<FIXRequest>) -> Result<(), &'static str> {
         loop {
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
                 Ok(0) => {
@@ -88,7 +88,7 @@ impl Session {
     fn handle_new_order(
         &mut self,
         msg: &[u8],
-        tx: &mut HeapProd<FIXCommand>,
+        tx: &mut HeapProd<FIXRequest>,
     ) -> Result<(), &'static str> {
         let mut cl_ord_id: Option<OrderId> = None;
         let mut qty: Option<u32> = None;
@@ -142,7 +142,7 @@ impl Session {
             kind,
         );
 
-        tx.try_push(FIXCommand::Order(self.token, order))
+        tx.try_push(FIXRequest::Order(self.token, order))
             .map_err(|_| "LOB queue full")?;
 
         Ok(())
@@ -179,8 +179,8 @@ mod tests {
     use ringbuf::{HeapCons, HeapRb, traits::*};
     use std::net::SocketAddr;
 
-    fn make_session() -> (Session, ringbuf::HeapRb<FIXCommand>) {
-        let queue = HeapRb::<FIXCommand>::new(8);
+    fn make_session() -> (Session, ringbuf::HeapRb<FIXRequest>) {
+        let queue = HeapRb::<FIXRequest>::new(8);
         let listener_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let listener = TcpListener::bind(listener_addr).expect("err");
         let addr = listener.local_addr().expect("err");
@@ -202,7 +202,7 @@ mod tests {
 
         let cmd = rx.try_pop().expect("err");
         match cmd {
-            FIXCommand::Order(token, o1) => {
+            FIXRequest::Order(token, o1) => {
                 assert_eq!(o1.order_id, 1);
                 assert_eq!(o1.side, OrderSide::Bid);
                 assert_eq!(
