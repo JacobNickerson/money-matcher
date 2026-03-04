@@ -119,6 +119,7 @@ impl Session {
 
     fn process_replies(&mut self) {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
+            self.inbound_sequence_number = self.inbound_sequence_number.wrapping_add(1);
             print_message(&msg);
         }
     }
