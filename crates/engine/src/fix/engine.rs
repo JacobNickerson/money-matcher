@@ -115,7 +115,7 @@ impl FixEngine {
 
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
-            session.flush();
+            session.send_replies();
 
             if session.write_buffer.is_empty() {
                 self.poll

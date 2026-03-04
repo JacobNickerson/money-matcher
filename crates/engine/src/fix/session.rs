@@ -65,6 +65,12 @@ impl Session {
             .extend_from_slice(&self.tmp[..self.tmp_end]);
         self.tmp_end = 0;
 
+        self.process_messages(tx);
+
+        Ok(())
+    }
+
+    fn process_messages(&mut self, tx: &mut HeapProd<FIXRequest>) {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
             let mut msg_type = None;
 
@@ -80,7 +86,6 @@ impl Session {
                 _ => continue,
             };
         }
-        Ok(())
     }
 
     fn handle_new_order(
@@ -160,11 +165,8 @@ impl Session {
         );
     }
 
-    pub fn flush(&mut self) {
-        println!("IN FLUSH");
-        let len = self.stream.write(&self.write_buffer).unwrap();
-        println!("SENT");
-        print_message(&self.write_buffer);
+    pub fn send_replies(&mut self) {
+        let len: usize = self.stream.write(&self.write_buffer).unwrap();
         self.write_buffer.drain(..len);
     }
 }
