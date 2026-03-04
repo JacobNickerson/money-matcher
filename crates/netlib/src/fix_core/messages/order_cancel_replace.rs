@@ -1,90 +1,75 @@
 use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
     messages::{
-        FIX_MESSAGE_TYPE_NEW_ORDER, FixMessage,
-        types::{OpenClose, OrdType, Side},
+        FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE, FixMessage,
+        new_order::CustomerOrFirm,
+        types::{OpenClose, OrdType, PutOrCall, Side},
     },
 };
 
-/// `0` = Customer, `1` = Proprietary — Firm, `2` = Broker/Dealer — Firm,
-/// `3` = Broker/Dealer — Customer, `4` = ISE Market Maker, `5` = Far Market Maker,
-/// `6` = Retail Customer*, `7` = Proprietary — Customer*, `8` = Customer Professional*,
-/// `9` = JBO (Joint Back Office)*.
-/// * NON-STANDARD value (ISE). Note: 6 and 9 are not currently available.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CustomerOrFirm {
-    Customer = 0,
-    ProprietaryFirm = 1,
-    /// NON-STANDARD value (ISE)
-    BrokerDealerFirm = 2,
-    /// NON-STANDARD value (ISE)
-    BrokerDealerCustomer = 3,
-    /// NON-STANDARD value (ISE)
-    IseMarketMaker = 4,
-    /// NON-STANDARD value (ISE)
-    FarMarketMaker = 5,
-    /// NON-STANDARD value (ISE)
-    RetailCustomer = 6,
-    /// NON-STANDARD value (ISE)
-    ProprietaryCustomer = 7,
-    /// NON-STANDARD value (ISE)
-    CustomerProfessional = 8,
-    /// NON-STANDARD value (ISE)
-    JointBackOffice = 9,
-}
-
-/// New Order Single is used to send a regular or Block order.
+/// The Order Cancel Replace Request message is used to modify a regular order.
 ///
-/// `MsgType = D`
-pub struct NewOrder {
+/// `MsgType = G`
+pub struct OrderCancelReplace {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.
     pub cl_ord_id: u64,
-    /// Required by FIX protocol, but ignored by ISE.
+    /// Ignored by ISE.
     pub handl_inst: u8,
     pub qty: u32,
     /// `1` = Market, `2` = Limit, `3` = Stop, `4` = Stop Limit
     pub ord_type: OrdType,
-    /// Required if OrdType = 2 or 4.
-    pub price: u32,
-    /// `1` = Buy, `2` = Sell
+    /// ClOrdID of the order to be modified.
+    pub orig_cl_ord_id: u64,
+    /// Must match the original order.
     pub side: Side,
-    /// OSI symbol for a series.
+    /// Must match the original order.
     pub symbol: String,
-    /// `0` = Open, `C` = Close
+    /// Must match the original order.
     pub open_close: OpenClose,
-    /// `OPT`
+    /// Must match the original order.
     pub security_type: String,
+    /// Must match the original order.
+    pub put_or_call: PutOrCall,
+    /// Must match the original order.
+    pub strike_price: u32,
+    /// Must match the original order.
+    pub customer_or_firm: CustomerOrFirm,
 }
 
-impl NewOrder {
+impl OrderCancelReplace {
     pub fn new(
         cl_ord_id: u64,
         handl_inst: u8,
         qty: u32,
         ord_type: OrdType,
-        price: u32,
+        orig_cl_ord_id: u64,
         side: Side,
         symbol: String,
         open_close: OpenClose,
         security_type: String,
+        put_or_call: PutOrCall,
+        strike_price: u32,
+        customer_or_firm: CustomerOrFirm,
     ) -> Self {
         Self {
             cl_ord_id,
             handl_inst,
             qty,
             ord_type,
-            price,
+            orig_cl_ord_id,
             side,
             symbol,
             open_close,
             security_type,
+            put_or_call,
+            strike_price,
+            customer_or_firm,
         }
     }
 }
 
-impl FixMessage for NewOrder {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_NEW_ORDER;
+impl FixMessage for OrderCancelReplace {
+    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE;
 
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
@@ -95,7 +80,7 @@ impl FixMessage for NewOrder {
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 21 - HandlInst
+        // 21 - HandlInst: Ignored by ISE.
         buf.extend_from_slice(b"21=");
         buf.extend_from_slice(itoa_buf.format(self.handl_inst).as_bytes());
         buf.push(0x01);
@@ -105,22 +90,22 @@ impl FixMessage for NewOrder {
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
-        // 40 - OrdType
+        // 40 - OrdType: 1=Market, 2=Limit, 3=Stop, 4=Stop Limit
         buf.extend_from_slice(b"40=");
         buf.extend_from_slice(itoa_buf.format(self.ord_type as u8).as_bytes());
         buf.push(0x01);
 
-        // 44 - Price
-        buf.extend_from_slice(b"44=");
-        buf.extend_from_slice(itoa_buf.format(self.price).as_bytes());
+        // 41 - OrigClOrdID
+        buf.extend_from_slice(b"41=");
+        buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 54 - Side
+        // 54 - Side: Must match the original order.
         buf.extend_from_slice(b"54=");
         buf.extend_from_slice(itoa_buf.format(self.side as u8).as_bytes());
         buf.push(0x01);
 
-        // 55 - Symbol
+        // 55 - Symbol: Must match the original order.
         buf.extend_from_slice(b"55=");
         buf.extend_from_slice(self.symbol.as_bytes());
         buf.push(0x01);
@@ -130,36 +115,38 @@ impl FixMessage for NewOrder {
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);
 
-        // 77 - OpenClose
+        // 77 - OpenClose: Must match the original order.
         buf.extend_from_slice(b"77=");
         buf.extend_from_slice(itoa_buf.format(self.open_close as u8).as_bytes());
         buf.push(0x01);
 
-        // 167 - SecurityType
+        // 167 - SecurityType: Must match the original order.
         buf.extend_from_slice(b"167=");
         buf.extend_from_slice(self.security_type.as_bytes());
         buf.push(0x01);
 
-        // 200 - MaturityMonthYear: Required unless Maturity Date (tag 541) is specified.
+        // 200 - MaturityMonthYear: Must match the original order.
         // If this tag and Maturity Date is specified the year and month must match,
         // otherwise the order will be rejected.
+        // Required unless Maturity Date (tag 541) is specified.
         buf.extend_from_slice(b"200=");
         buf.extend_from_slice(get_maturity_month_year().as_bytes());
         buf.push(0x01);
 
-        // 201 - PutOrCall: 0=Put, 1=Call
-        buf.extend_from_slice(b"201=1\x01");
+        // 201 - PutOrCall: Must match the original order.
+        buf.extend_from_slice(b"201=");
+        buf.extend_from_slice(itoa_buf.format(self.put_or_call as u8).as_bytes());
+        buf.push(0x01);
 
-        // 202 - StrikePrice
-        buf.extend_from_slice(b"202=10\x01");
+        // 202 - StrikePrice: Must match the original order.
+        buf.extend_from_slice(b"202=");
+        buf.extend_from_slice(itoa_buf.format(self.strike_price).as_bytes());
+        buf.push(0x01);
 
-        // 204 - CustomerOrFirm
-        buf.extend_from_slice(b"204=0\x01");
-
-        // 205 - MaturityDay: 1 ≤ n ≤ 31. Required unless Maturity Date (tag 541) is specified.
-        // If this tag and Maturity Date is specified the day must match, otherwise the order will
-        // be rejected. Note, Days 1-9 require a leading 0 (e.g. 01).
-        buf.extend_from_slice(b"205=10\x01");
+        // 204 - CustomerOrFirm: Must match the original order.
+        buf.extend_from_slice(b"204=");
+        buf.extend_from_slice(itoa_buf.format(self.customer_or_firm as u8).as_bytes());
+        buf.push(0x01);
 
         buf
     }
@@ -170,42 +157,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_order_initial_state() {
-        let o = NewOrder::new(
+    fn test_order_cancel_replace_initial_state() {
+        let o = OrderCancelReplace::new(
             1,
             1,
             123,
             OrdType::Limit,
-            12345,
+            456,
             Side::Buy,
             "str1".to_string(),
             OpenClose::Open,
             "OPT".to_string(),
+            PutOrCall::Call,
+            10,
+            CustomerOrFirm::Customer,
         );
 
         assert_eq!(o.cl_ord_id, 1);
         assert_eq!(o.handl_inst, 1);
         assert_eq!(o.qty, 123);
         assert_eq!(o.ord_type, OrdType::Limit);
-        assert_eq!(o.price, 12345);
+        assert_eq!(o.orig_cl_ord_id, 456);
         assert_eq!(o.side, Side::Buy);
         assert_eq!(o.symbol, "str1");
         assert_eq!(o.open_close, OpenClose::Open);
         assert_eq!(o.security_type, "OPT");
+        assert_eq!(o.put_or_call, PutOrCall::Call);
+        assert_eq!(o.strike_price, 10);
+        assert_eq!(o.customer_or_firm, CustomerOrFirm::Customer);
     }
 
     #[test]
     fn test_into_bytes_field_values() {
-        let o = NewOrder::new(
+        let o = OrderCancelReplace::new(
             1,
             1,
             123,
             OrdType::Limit,
-            12345,
+            456,
             Side::Buy,
             "str1".to_string(),
             OpenClose::Open,
             "OPT".to_string(),
+            PutOrCall::Call,
+            10,
+            CustomerOrFirm::Customer,
         );
 
         let b = o.as_bytes();
@@ -215,12 +211,13 @@ mod tests {
         assert!(s.contains("21=1"));
         assert!(s.contains("38=123"));
         assert!(s.contains("40=2"));
-        assert!(s.contains("44=12345"));
+        assert!(s.contains("41=456"));
         assert!(s.contains("54=1"));
         assert!(s.contains("55=str1"));
+        assert!(s.contains("77="));
+        assert!(s.contains("167=OPT"));
         assert!(s.contains("201=1"));
         assert!(s.contains("202=10"));
         assert!(s.contains("204=0"));
-        assert!(s.contains("205=10"));
     }
 }

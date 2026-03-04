@@ -1,10 +1,32 @@
+use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use std::str::from_utf8;
 
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
+pub fn write_fix_message(
+    write_buf: &mut Vec<u8>,
+    msg_type: &'static [u8],
+    outbound_sequence_number: &u32,
+    sender_comp_id: &String,
+    target_comp_id: &String,
+    body: &Vec<u8>,
+) {
+    write_buf.clear();
+
+    write_header(
+        write_buf,
+        msg_type,
+        outbound_sequence_number,
+        sender_comp_id,
+        target_comp_id,
+    );
+
+    write_buf.extend_from_slice(&body);
+
+    write_wrapper(write_buf);
+}
 
 pub fn write_header(
     write_buf: &mut Vec<u8>,
-    msg_type: &[u8],
+    msg_type: &'static [u8],
     outbound_sequence_number: &u32,
     sender_comp_id: &String,
     target_comp_id: &String,
@@ -35,6 +57,24 @@ pub fn write_header(
     write_buf.extend_from_slice(b"56=");
     write_buf.extend_from_slice(target_comp_id.as_bytes());
     write_buf.push(0x01);
+}
+
+pub fn write_wrapper(write_buf: &mut Vec<u8>) {
+    let body_length = write_buf.len();
+    let mut itoa_buf = itoa::Buffer::new();
+    let mut final_buf: Vec<u8> = Vec::with_capacity(body_length + 64);
+
+    final_buf.extend_from_slice(b"8=FIX.4.2\x01");
+
+    final_buf.extend_from_slice(b"9=");
+    final_buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
+    final_buf.push(0x01);
+
+    final_buf.extend_from_slice(write_buf);
+    *write_buf = final_buf;
+
+    write_trailer(write_buf);
+    print_message(write_buf);
 }
 
 pub fn calculate_checksum(message: &[u8]) -> u32 {
@@ -92,12 +132,19 @@ pub fn get_maturity_month_year_day() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fix_core::messages::FIX_MESSAGE_TYPE_NEW_ORDER;
 
     #[test]
     fn test_write_header_field_values() {
         let mut buf = Vec::new();
 
-        write_header(&mut buf, b"D", &1, &"str1".to_string(), &"str2".to_string());
+        write_header(
+            &mut buf,
+            &FIX_MESSAGE_TYPE_NEW_ORDER,
+            &1,
+            &"str1".to_string(),
+            &"str2".to_string(),
+        );
 
         let s = String::from_utf8_lossy(&buf);
 
