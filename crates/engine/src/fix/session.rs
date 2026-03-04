@@ -76,8 +76,8 @@ impl Session {
             }
 
             match msg_type {
-                Some(b"D") => self.handle_new_order(&msg, tx),
-                _ => Ok(()),
+                Some(FIX_MESSAGE_TYPE_NEW_ORDER) => self.handle_new_order(&msg, tx),
+                _ => continue,
             };
         }
         Ok(())

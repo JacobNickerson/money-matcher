@@ -63,14 +63,12 @@ impl Session {
                 match event.token() {
                     NET => {
                         if event.is_readable() {
-                            println!("READING");
                             loop {
                                 match self.stream.read(&mut self.tmp[self.tmp_end..]) {
                                     Ok(0) => {
                                         return panic!("");
                                     }
                                     Ok(n) => {
-                                        println!("RECEIVED BYTES: {:?}", n);
                                         self.tmp_end += n;
                                     }
                                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {

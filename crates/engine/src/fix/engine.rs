@@ -99,7 +99,6 @@ impl FixEngine {
             };
 
             if let Some(session) = self.sessions.get_mut(&token) {
-                println!("CALLING HANDLE REPLY");
                 session.handle_reply(&data.as_bytes());
 
                 self.poll
@@ -116,7 +115,6 @@ impl FixEngine {
 
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
-            println!("CALLING FLUSH");
             session.flush();
 
             if session.write_buffer.is_empty() {
