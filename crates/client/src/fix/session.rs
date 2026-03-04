@@ -107,6 +107,7 @@ impl Session {
         }
 
         if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
+            self.tmp_end = 0;
             return;
         }
 
