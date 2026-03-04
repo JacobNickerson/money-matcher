@@ -1,9 +1,7 @@
-use crate::fix_core::{
-    helpers::{get_maturity_month_year, get_timestamp},
-    messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT, FixMessage,
-        types::{CxlRejResponseTo, OrdStatus},
-    },
+use crate::fix_core::messages::{
+    FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT, FixMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO,
+    TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID, TAG_TEXT,
+    types::{CxlRejResponseTo, OrdStatus},
 };
 
 /// An Order Cancel Reject message is returned by the exchange in the event of an invalid cancel
@@ -47,27 +45,32 @@ impl FixMessage for OrderCancelReject {
         let mut buf = Vec::with_capacity(256);
 
         // 11 - ClOrdID
-        buf.extend_from_slice(b"11=");
+        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
         // 39 - OrdStatus
-        buf.extend_from_slice(b"39=");
+        buf.extend_from_slice(TAG_ORD_STATUS);
+        buf.push(b'=');
         buf.push(self.ord_status as u8);
         buf.push(0x01);
 
         // 41 - OrigClOrdID
-        buf.extend_from_slice(b"41=");
+        buf.extend_from_slice(TAG_ORIG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 58 - Text: Reject reason
-        buf.extend_from_slice(b"58=");
+        // 58 - Text
+        buf.extend_from_slice(TAG_TEXT);
+        buf.push(b'=');
         buf.extend_from_slice(self.text.as_bytes());
         buf.push(0x01);
 
         // 434 - CxlRejResponseTo
-        buf.extend_from_slice(b"434=");
+        buf.extend_from_slice(TAG_CXL_REJ_RESPONSE_TO);
+        buf.push(b'=');
         buf.push(self.cxl_rej_response_to as u8);
         buf.push(0x01);
 

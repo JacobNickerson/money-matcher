@@ -1,7 +1,14 @@
 use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
     messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE, FixMessage,
+        FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE, FixMessage, TAG_BEGIN_STRING, TAG_BODY_LENGTH,
+        TAG_CHECKSUM, TAG_CL_ORD_ID, TAG_CUM_QTY, TAG_CUSTOMER_OR_FIRM, TAG_CXL_REJ_RESPONSE_TO,
+        TAG_EXEC_ID, TAG_EXEC_TRANS_TYPE, TAG_EXEC_TYPE, TAG_HANDL_INST, TAG_LEAVES_QTY,
+        TAG_MATURITY_DATE, TAG_MATURITY_DAY, TAG_MATURITY_MONTH_YEAR, TAG_MSG_SEQ_NUM,
+        TAG_MSG_TYPE, TAG_OPEN_CLOSE, TAG_ORD_STATUS, TAG_ORD_TYPE, TAG_ORDER_ID, TAG_ORDER_QTY,
+        TAG_ORIG_CL_ORD_ID, TAG_PRICE, TAG_PUT_OR_CALL, TAG_SECURITY_ID, TAG_SECURITY_TYPE,
+        TAG_SENDER_COMP_ID, TAG_SENDING_TIME, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL,
+        TAG_TARGET_COMP_ID, TAG_TEXT, TAG_TRANSACT_TIME,
         types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
     },
 };
@@ -73,76 +80,73 @@ impl FixMessage for OrderCancelReplace {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);
 
-        // 11 - ClOrdID
-        buf.extend_from_slice(b"11=");
+        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 21 - HandlInst: Ignored by ISE.
-        buf.extend_from_slice(b"21=");
+        buf.extend_from_slice(TAG_HANDL_INST);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.handl_inst).as_bytes());
         buf.push(0x01);
 
-        // 38 - OrderQty
-        buf.extend_from_slice(b"38=");
+        buf.extend_from_slice(TAG_ORDER_QTY);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
-        // 40 - OrdType
-        buf.extend_from_slice(b"40=");
+        buf.extend_from_slice(TAG_ORD_TYPE);
+        buf.push(b'=');
         buf.push(self.ord_type as u8);
         buf.push(0x01);
 
-        // 41 - OrigClOrdID
-        buf.extend_from_slice(b"41=");
+        buf.extend_from_slice(TAG_ORIG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 54 - Side: Must match the original order.
-        buf.extend_from_slice(b"54=");
+        buf.extend_from_slice(TAG_SIDE);
+        buf.push(b'=');
         buf.push(self.side as u8);
         buf.push(0x01);
 
-        // 55 - Symbol: Must match the original order.
-        buf.extend_from_slice(b"55=");
+        buf.extend_from_slice(TAG_SYMBOL);
+        buf.push(b'=');
         buf.extend_from_slice(self.symbol.as_bytes());
         buf.push(0x01);
 
-        // 60 - TransactTime: YYYYMMDD-HH:MM:SS.sss (milliseconds)
-        buf.extend_from_slice(b"60=");
+        buf.extend_from_slice(TAG_TRANSACT_TIME);
+        buf.push(b'=');
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);
 
-        // 77 - OpenClose: Must match the original order.
-        buf.extend_from_slice(b"77=");
+        buf.extend_from_slice(TAG_OPEN_CLOSE);
+        buf.push(b'=');
         buf.push(self.open_close as u8);
         buf.push(0x01);
 
-        // 167 - SecurityType: Must match the original order.
-        buf.extend_from_slice(b"167=");
+        buf.extend_from_slice(TAG_SECURITY_TYPE);
+        buf.push(b'=');
         buf.extend_from_slice(self.security_type.as_bytes());
         buf.push(0x01);
 
-        // 200 - MaturityMonthYear: Must match the original order.
-        // If this tag and Maturity Date is specified the year and month must match,
-        // otherwise the order will be rejected.
-        // Required unless Maturity Date (tag 541) is specified.
-        buf.extend_from_slice(b"200=");
+        buf.extend_from_slice(TAG_MATURITY_MONTH_YEAR);
+        buf.push(b'=');
         buf.extend_from_slice(get_maturity_month_year().as_bytes());
         buf.push(0x01);
 
-        // 201 - PutOrCall: Must match the original order.
-        buf.extend_from_slice(b"201=");
+        buf.extend_from_slice(TAG_PUT_OR_CALL);
+        buf.push(b'=');
         buf.push(self.put_or_call as u8);
         buf.push(0x01);
 
-        // 202 - StrikePrice: Must match the original order.
-        buf.extend_from_slice(b"202=");
+        buf.extend_from_slice(TAG_STRIKE_PRICE);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.strike_price).as_bytes());
         buf.push(0x01);
 
-        // 204 - CustomerOrFirm: Must match the original order.
-        buf.extend_from_slice(b"204=");
+        buf.extend_from_slice(TAG_CUSTOMER_OR_FIRM);
+        buf.push(b'=');
         buf.push(self.customer_or_firm as u8);
         buf.push(0x01);
 

@@ -1,7 +1,10 @@
 use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
     messages::{
-        FIX_MESSAGE_TYPE_NEW_ORDER, FixMessage,
+        FIX_MESSAGE_TYPE_NEW_ORDER, FixMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM,
+        TAG_HANDL_INST, TAG_MATURITY_DAY, TAG_MATURITY_MONTH_YEAR, TAG_OPEN_CLOSE, TAG_ORD_TYPE,
+        TAG_ORDER_QTY, TAG_PRICE, TAG_PUT_OR_CALL, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE,
+        TAG_SYMBOL, TAG_TRANSACT_TIME,
         types::{OpenClose, OrdType, Side},
     },
 };
@@ -60,75 +63,94 @@ impl FixMessage for NewOrder {
         let mut buf = Vec::with_capacity(256);
 
         // 11 - ClOrdID
-        buf.extend_from_slice(b"11=");
+        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
         // 21 - HandlInst
-        buf.extend_from_slice(b"21=");
+        buf.extend_from_slice(TAG_HANDL_INST);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.handl_inst).as_bytes());
         buf.push(0x01);
 
         // 38 - OrderQty
-        buf.extend_from_slice(b"38=");
+        buf.extend_from_slice(TAG_ORDER_QTY);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
         // 40 - OrdType
-        buf.extend_from_slice(b"40=");
+        buf.extend_from_slice(TAG_ORD_TYPE);
+        buf.push(b'=');
         buf.push(self.ord_type as u8);
         buf.push(0x01);
 
         // 44 - Price
-        buf.extend_from_slice(b"44=");
+        buf.extend_from_slice(TAG_PRICE);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.price).as_bytes());
         buf.push(0x01);
 
         // 54 - Side
-        buf.extend_from_slice(b"54=");
+        buf.extend_from_slice(TAG_SIDE);
+        buf.push(b'=');
         buf.push(self.side as u8);
         buf.push(0x01);
 
         // 55 - Symbol
-        buf.extend_from_slice(b"55=");
+        buf.extend_from_slice(TAG_SYMBOL);
+        buf.push(b'=');
         buf.extend_from_slice(self.symbol.as_bytes());
         buf.push(0x01);
 
-        // 60 - TransactTime: YYYYMMDD-HH:MM:SS.sss (milliseconds)
-        buf.extend_from_slice(b"60=");
+        // 60 - TransactTime
+        buf.extend_from_slice(TAG_TRANSACT_TIME);
+        buf.push(b'=');
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);
 
         // 77 - OpenClose
-        buf.extend_from_slice(b"77=");
+        buf.extend_from_slice(TAG_OPEN_CLOSE);
+        buf.push(b'=');
         buf.push(self.open_close as u8);
         buf.push(0x01);
 
         // 167 - SecurityType
-        buf.extend_from_slice(b"167=");
+        buf.extend_from_slice(TAG_SECURITY_TYPE);
+        buf.push(b'=');
         buf.extend_from_slice(self.security_type.as_bytes());
         buf.push(0x01);
 
-        // 200 - MaturityMonthYear: Required unless Maturity Date (tag 541) is specified.
-        // If this tag and Maturity Date is specified the year and month must match,
-        // otherwise the order will be rejected.
-        buf.extend_from_slice(b"200=");
+        // 200 - MaturityMonthYear
+        buf.extend_from_slice(TAG_MATURITY_MONTH_YEAR);
+        buf.push(b'=');
         buf.extend_from_slice(get_maturity_month_year().as_bytes());
         buf.push(0x01);
 
         // 201 - PutOrCall
-        buf.extend_from_slice(b"201=1\x01");
+        buf.extend_from_slice(TAG_PUT_OR_CALL);
+        buf.push(b'=');
+        buf.push(b'1');
+        buf.push(0x01);
 
         // 202 - StrikePrice
-        buf.extend_from_slice(b"202=10\x01");
+        buf.extend_from_slice(TAG_STRIKE_PRICE);
+        buf.push(b'=');
+        buf.extend_from_slice(b"10");
+        buf.push(0x01);
 
         // 204 - CustomerOrFirm
-        buf.extend_from_slice(b"204=0\x01");
+        buf.extend_from_slice(TAG_CUSTOMER_OR_FIRM);
+        buf.push(b'=');
+        buf.push(b'0');
+        buf.push(0x01);
 
-        // 205 - MaturityDay: 1 ≤ n ≤ 31. Required unless Maturity Date (tag 541) is specified.
-        // If this tag and Maturity Date is specified the day must match, otherwise the order will
-        // be rejected. Note, Days 1-9 require a leading 0 (e.g. 01).
-        buf.extend_from_slice(b"205=10\x01");
+        // 205 - MaturityDay
+        buf.extend_from_slice(TAG_MATURITY_DAY);
+        buf.push(b'=');
+        buf.extend_from_slice(b"10");
+        buf.push(0x01);
 
         buf
     }

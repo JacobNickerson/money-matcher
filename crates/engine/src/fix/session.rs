@@ -3,7 +3,10 @@ use crate::lob::{
     types::{OrderId, Price, Timestamp},
 };
 use mio::{Token, net::TcpStream};
-use netlib::fix_core::messages::execution_report::ExecutionReport;
+use netlib::fix_core::messages::{
+    TAG_CL_ORD_ID, TAG_MSG_TYPE, TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE, TAG_SIDE,
+    TAG_TRANSACT_TIME, execution_report::ExecutionReport,
+};
 use netlib::fix_core::{
     helpers::{convert_timestamp, extract_message, write_fix_message},
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
@@ -98,7 +101,7 @@ impl Session {
             let mut msg_type = None;
 
             for (tag, value) in FixIterator::new(&msg) {
-                if tag == b"35" {
+                if tag == TAG_MSG_TYPE {
                     msg_type = Some(value);
                     break;
                 }
@@ -125,26 +128,26 @@ impl Session {
 
         for (tag, value) in FixIterator::new(msg) {
             match tag {
-                b"11" => {
+                TAG_CL_ORD_ID => {
                     cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
-                b"38" => {
+                TAG_ORDER_QTY => {
                     qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
-                b"44" => {
+                TAG_PRICE => {
                     price = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
-                b"54" => {
+                TAG_SIDE => {
                     side = match value {
                         b"1" => Some(OrderSide::Bid),
                         b"2" => Some(OrderSide::Ask),
                         _ => return Err("Invalid 54"),
                     };
                 }
-                b"40" => {
+                TAG_ORD_TYPE => {
                     ord_type = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
-                b"60" => {
+                TAG_TRANSACT_TIME => {
                     timestamp = convert_timestamp(value);
                 }
                 _ => {}

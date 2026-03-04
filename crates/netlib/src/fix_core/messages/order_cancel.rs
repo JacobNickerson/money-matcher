@@ -1,8 +1,10 @@
 use crate::fix_core::{
-    helpers::{get_maturity_month_year, get_timestamp},
-    messages::{FIX_MESSAGE_TYPE_ORDER_CANCEL, FixMessage},
+    helpers::get_timestamp,
+    messages::{
+        FIX_MESSAGE_TYPE_ORDER_CANCEL, FixMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY,
+        TAG_ORIG_CL_ORD_ID, TAG_TRANSACT_TIME,
+    },
 };
-
 /// The Order Cancel Request message is used to cancel a regular or multi-leg order.
 ///
 /// `MsgType = F`
@@ -32,23 +34,23 @@ impl FixMessage for OrderCancel {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);
 
-        // 11 - ClOrdID
-        buf.extend_from_slice(b"11=");
+        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 38 - OrderQty
-        buf.extend_from_slice(b"38=");
+        buf.extend_from_slice(TAG_ORDER_QTY);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
-        // 41 - OrigClOrdID
-        buf.extend_from_slice(b"41=");
+        buf.extend_from_slice(TAG_ORIG_CL_ORD_ID);
+        buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        // 60 - TransactTime: YYYYMMDD-HH:MM:SS.sss (milliseconds)
-        buf.extend_from_slice(b"60=");
+        buf.extend_from_slice(TAG_TRANSACT_TIME);
+        buf.push(b'=');
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);
 
