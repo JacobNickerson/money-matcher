@@ -202,15 +202,22 @@ impl Session {
             }
             self.write_buffer.extend_from_slice(&msg);
         }
-
-        match self.stream.write(&self.write_buffer) {
-            Ok(n) => {
-                self.write_buffer.drain(..n);
-                Ok(())
+    
+        loop {
+            if self.write_buffer.is_empty() {
+                break;
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
-            Err(_) => Err("Write error"),
+            
+            match self.stream.write(&self.write_buffer) {
+                Ok(n) => {
+                    self.write_buffer.drain(..n);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(_) => return Err("Write error"),
+            }
         }
+
+        Ok(())
     }
 }
 
