@@ -133,20 +133,23 @@ impl Session {
     }
 
     fn handle_server_writable(&mut self) {
-        match self.stream.write(&self.write_buffer) {
-            Ok(n) => {
-                self.write_buffer.drain(..n);
-
-                if self.write_buffer.is_empty() {
-                    self.poll
-                        .registry()
-                        .reregister(&mut self.stream, SERVER_CONN, Interest::READABLE)
-                        .unwrap();
-                    self.process_requests();
-                }
+        loop {
+            if self.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(&mut self.stream, SERVER_CONN, Interest::READABLE)
+                    .unwrap();
+                self.process_requests();
+                break;
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(e) => panic!("Write error: {}", e),
+            
+            match self.stream.write(&self.write_buffer) {
+                Ok(n) => {
+                    self.write_buffer.drain(..n);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => panic!("Write error: {}", e),
+            }
         }
     }
 
