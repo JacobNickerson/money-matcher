@@ -43,9 +43,11 @@ impl FixEngine {
             poll,
             token_counter: 100,
         };
+
         this.poll
             .registry()
             .register(&mut this.listener, LISTENER, Interest::READABLE)?;
+
         Ok(this)
     }
 
@@ -56,8 +58,10 @@ impl FixEngine {
     pub fn run(&mut self) {
         let mut events = Events::with_capacity(1024);
         println!("Server running on {}", self.listener.local_addr().unwrap());
+
         loop {
             self.poll.poll(&mut events, None).unwrap();
+
             for event in events.iter() {
                 self.handle_event(event);
             }
@@ -68,8 +72,14 @@ impl FixEngine {
         match event.token() {
             LISTENER => self.handle_server_accept(),
             WAKE => self.process_replies(),
-            token if event.is_writable() => self.handle_writable(token),
-            token if event.is_readable() => self.handle_readable(token),
+            token => {
+                if event.is_writable() {
+                    self.handle_writable(token);
+                }
+                if event.is_readable() {
+                    self.handle_readable(token);
+                }
+            }
             _ => (),
         }
     }
@@ -86,10 +96,12 @@ impl FixEngine {
             Token(self.token_counter),
             Interest::READABLE,
         )?;
+
         self.sessions.insert(
             Token(self.token_counter),
             Session::new(Token(self.token_counter), stream),
         );
+
         self.token_counter += 1;
         Ok(())
     }
@@ -101,11 +113,11 @@ impl FixEngine {
             };
 
             if let Some(session) = self.sessions.get_mut(&token) {
-                let was_empty = session.write_buffer.is_empty();
+                let was_empty = session.tx.is_empty();
 
                 session.handle_reply(reply);
 
-                if was_empty && !session.write_buffer.is_empty() {
+                if was_empty && !session.tx.is_empty() {
                     self.poll
                         .registry()
                         .reregister(
@@ -119,16 +131,27 @@ impl FixEngine {
         }
     }
 
+    fn close_session(&mut self, token: Token) {
+        if let Some(mut session) = self.sessions.remove(&token) {
+            self.poll
+                .registry()
+                .reregister(&mut self.listener, LISTENER, Interest::READABLE)
+                .ok();
+        }
+    }
+
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
-            session.send_replies();
+            if session.send_replies().is_err() {
+                self.close_session(token);
+                return;
+            }
 
             if session.write_buffer.is_empty() {
                 self.poll
                     .registry()
                     .reregister(&mut session.stream, token, Interest::READABLE)
                     .unwrap();
-
                 self.process_replies();
             }
         }
@@ -136,9 +159,8 @@ impl FixEngine {
 
     fn handle_readable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
-            if let Err(e) = session.poll(&mut self.tx) {
-                eprintln!("Error polling session: {}", e);
-                self.sessions.remove(&token);
+            if session.poll(&mut self.tx).is_err() {
+                self.close_session(token);
             }
         }
     }
@@ -200,8 +222,6 @@ mod tests {
                             .try_push(FIXReply::ExecutionReport(token, report))
                             .ok();
                         waker.wake().unwrap();
-
-                        break;
                     }
                 }
             }

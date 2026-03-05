@@ -151,7 +151,7 @@ impl Session {
     }
 
     fn process_requests(&mut self) {
-        let was_empty = self.session_rx.is_empty();
+        let was_empty = self.write_buffer.is_empty();
 
         while let Some(cmd) = self.session_rx.try_pop() {
             if self.write_buffer.len() + cmd.body.len() + 64 > MAX_BUFFER_SIZE {
@@ -171,7 +171,7 @@ impl Session {
             self.outbound_sequence_number = self.outbound_sequence_number.wrapping_add(1);
         }
 
-        if was_empty && !self.session_rx.is_empty() {
+        if was_empty && !self.write_buffer.is_empty() {
             self.poll
                 .registry()
                 .reregister(

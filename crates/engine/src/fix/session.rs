@@ -29,7 +29,7 @@ pub struct Session {
     pub(crate) write_buffer: Vec<u8>,
     tmp: [u8; MAX_TMP_BUFFER_SIZE],
     tmp_end: usize,
-    tx: HeapProd<Vec<u8>>,
+    pub(crate) tx: HeapProd<Vec<u8>>,
     rx: HeapCons<Vec<u8>>,
 }
 pub enum FIXRequest {
@@ -195,7 +195,7 @@ impl Session {
         self.tx.try_push(msg).ok();
     }
 
-    pub fn send_replies(&mut self) {
+    pub fn send_replies(&mut self) -> Result<(), &'static str> {
         while let Some(msg) = self.rx.try_pop() {
             if self.write_buffer.len() + msg.len() > MAX_BUFFER_SIZE {
                 break;
@@ -206,8 +206,10 @@ impl Session {
         match self.stream.write(&self.write_buffer) {
             Ok(n) => {
                 self.write_buffer.drain(..n);
+                Ok(())
             }
-            Err(e) => eprintln!("Write error: {}", e),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
+            Err(_) => Err("Write error"),
         }
     }
 }
