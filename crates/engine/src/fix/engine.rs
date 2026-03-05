@@ -85,8 +85,17 @@ impl FixEngine {
     }
 
     fn handle_server_accept(&mut self) {
-        if let Ok((new_stream, _)) = self.listener.accept() {
-            self.register_session(new_stream).unwrap();
+        loop {
+            match self.listener.accept() {
+                Ok((new_stream, _)) => {
+                    self.register_session(new_stream).unwrap();
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => {
+                    eprintln!("Accept error: {}", e);
+                    break;
+                }
+            }
         }
     }
 
@@ -131,19 +140,10 @@ impl FixEngine {
         }
     }
 
-    fn close_session(&mut self, token: Token) {
-        if let Some(mut session) = self.sessions.remove(&token) {
-            self.poll
-                .registry()
-                .reregister(&mut self.listener, LISTENER, Interest::READABLE)
-                .ok();
-        }
-    }
-
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
             if session.send_replies().is_err() {
-                self.close_session(token);
+                self.sessions.remove(&token);
                 return;
             }
 
@@ -160,7 +160,7 @@ impl FixEngine {
     fn handle_readable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
             if session.poll(&mut self.tx).is_err() {
-                self.close_session(token);
+                self.sessions.remove(&token);
             }
         }
     }
