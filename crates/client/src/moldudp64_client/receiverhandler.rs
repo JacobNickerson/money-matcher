@@ -1,9 +1,10 @@
 use bytes::BytesMut;
 use netlib::{
     itch_core::messages::{
-        ItchEvent, MESSAGE_TYPE_ADD_ORDER, MESSAGE_TYPE_ORDER_CANCEL, MESSAGE_TYPE_ORDER_DELETE,
-        MESSAGE_TYPE_ORDER_EXECUTED, MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
-        MESSAGE_TYPE_ORDER_REPLACE, MESSAGE_TYPE_TEST_BENCHMARK, add_order::AddOrder,
+        ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
+        ITCH_MESSAGE_TYPE_ORDER_DELETE, ITCH_MESSAGE_TYPE_ORDER_EXECUTED,
+        ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ITCH_MESSAGE_TYPE_ORDER_REPLACE,
+        ITCH_MESSAGE_TYPE_TEST_BENCHMARK, ItchEvent, add_order::AddOrder,
         order_cancel::OrderCancel, order_delete::OrderDelete, order_executed::OrderExecuted,
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
         test_benchmark::TestBenchmark,
@@ -108,13 +109,13 @@ impl ReceiverHandler {
         let message_type = message_data[0];
 
         itch!(message_type, message_data, {
-            MESSAGE_TYPE_ADD_ORDER => AddOrder(AddOrder),
-            MESSAGE_TYPE_ORDER_CANCEL => OrderCancel(OrderCancel),
-            MESSAGE_TYPE_ORDER_DELETE => OrderDelete(OrderDelete),
-            MESSAGE_TYPE_ORDER_EXECUTED => OrderExecuted(OrderExecuted),
-            MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => OrderExecutedWithPrice(OrderExecutedWithPrice),
-            MESSAGE_TYPE_ORDER_REPLACE => OrderReplace(OrderReplace),
-            MESSAGE_TYPE_TEST_BENCHMARK => TestBenchmark(TestBenchmark),
+            ITCH_MESSAGE_TYPE_ADD_ORDER => AddOrder(AddOrder),
+            ITCH_MESSAGE_TYPE_ORDER_CANCEL => OrderCancel(OrderCancel),
+            ITCH_MESSAGE_TYPE_ORDER_DELETE => OrderDelete(OrderDelete),
+            ITCH_MESSAGE_TYPE_ORDER_EXECUTED => OrderExecuted(OrderExecuted),
+            ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => OrderExecutedWithPrice(OrderExecutedWithPrice),
+            ITCH_MESSAGE_TYPE_ORDER_REPLACE => OrderReplace(OrderReplace),
+            ITCH_MESSAGE_TYPE_TEST_BENCHMARK => TestBenchmark(TestBenchmark),
         })
     }
 
@@ -264,7 +265,7 @@ mod tests {
         let msg = TestBenchmark::new(123);
         let bytes = msg.as_bytes();
 
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
         buf.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
         buf.extend_from_slice(bytes);
 

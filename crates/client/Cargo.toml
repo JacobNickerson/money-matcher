@@ -9,3 +9,5 @@ netlib = {path = "../netlib"}
 nexus-queue = "1.0.0"
 zerocopy = { version = "0.8.39", features = ["derive"] }
 itoa = "1.0.17"
+mio = { version = "1.1.1", features = ["net", "os-poll"] }
+ringbuf = "0.4.8"

@@ -1,5 +1,5 @@
 use crate::itch_core::helpers::{decode_u48, encode_u48};
-use crate::itch_core::messages::{ItchMessage, MESSAGE_TYPE_ORDER_CANCEL};
+use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_ORDER_CANCEL, ItchMessage};
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -29,7 +29,7 @@ impl OrderCancel {
         canceled_shares: u32,
     ) -> Self {
         Self {
-            message_type: MESSAGE_TYPE_ORDER_CANCEL,
+            message_type: ITCH_MESSAGE_TYPE_ORDER_CANCEL,
             stock_locate: U16::new(stock_locate),
             tracking_number: U16::new(0),
             timestamp: encode_u48(timestamp),
@@ -68,7 +68,7 @@ mod tests {
     fn test_order_cancel_initial_state() {
         let msg = OrderCancel::new(1, 1000, 5000, 10);
 
-        assert_eq!(msg.message_type, MESSAGE_TYPE_ORDER_CANCEL);
+        assert_eq!(msg.message_type, ITCH_MESSAGE_TYPE_ORDER_CANCEL);
         assert_eq!(msg.stock_locate.get(), 1);
         assert_eq!(msg.tracking_number.get(), 0);
         assert_eq!(msg.order_reference_number.get(), 5000);

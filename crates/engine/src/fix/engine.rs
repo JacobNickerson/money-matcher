@@ -1,38 +1,101 @@
-use crate::fix::session::FIXCommand;
+use crate::fix::session::{FIXReply, FIXRequest};
+use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
-use mio::{Events, Interest, Poll, Token};
-use ringbuf::{HeapProd, traits::*};
+use mio::{Events, Interest, Poll, Token, Waker};
+use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
+use std::io::{self};
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use crate::fix::session::Session;
 
-const SERVER: Token = Token(0);
+const LISTENER: Token = Token(0);
+const WAKE: Token = Token(1);
+const MAX_BUFFER_SIZE: usize = 1024;
 
 pub struct FixEngine {
     sessions: HashMap<Token, Session>,
     listener: TcpListener,
-    tx: HeapProd<FIXCommand>,
+    tx: HeapProd<FIXRequest>,
+    rx: HeapCons<FIXReply>,
+    waker: Arc<Waker>,
     poll: Poll,
     token_counter: usize,
 }
 
 impl FixEngine {
-    pub fn new(addr: SocketAddr, tx: HeapProd<FIXCommand>) -> io::Result<Self> {
+    pub fn new(
+        addr: SocketAddr,
+        tx: HeapProd<FIXRequest>,
+        rx: HeapCons<FIXReply>,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
+        let waker = { Arc::new(Waker::new(poll.registry(), WAKE)?) };
         let mut this = Self {
             sessions: HashMap::new(),
             listener,
             tx,
+            rx,
+            waker,
             poll,
-            token_counter: 2,
+            token_counter: 100,
         };
+
         this.poll
             .registry()
-            .register(&mut this.listener, SERVER, Interest::READABLE)?;
+            .register(&mut this.listener, LISTENER, Interest::READABLE)?;
+
         Ok(this)
+    }
+
+    pub fn get_waker(&self) -> Arc<Waker> {
+        self.waker.clone()
+    }
+
+    pub fn run(&mut self) {
+        let mut events = Events::with_capacity(1024);
+        println!("Server running on {}", self.listener.local_addr().unwrap());
+
+        loop {
+            self.poll.poll(&mut events, None).unwrap();
+
+            for event in events.iter() {
+                self.handle_event(event);
+            }
+        }
+    }
+
+    fn handle_event(&mut self, event: &Event) {
+        match event.token() {
+            LISTENER => self.handle_server_accept(),
+            WAKE => self.process_replies(),
+            token => {
+                if event.is_writable() {
+                    self.handle_writable(token);
+                }
+                if event.is_readable() {
+                    self.handle_readable(token);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn handle_server_accept(&mut self) {
+        loop {
+            match self.listener.accept() {
+                Ok((new_stream, _)) => {
+                    self.register_session(new_stream).unwrap();
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => {
+                    eprintln!("Accept error: {}", e);
+                    break;
+                }
+            }
+        }
     }
 
     fn register_session(&mut self, mut stream: TcpStream) -> io::Result<()> {
@@ -41,60 +104,125 @@ impl FixEngine {
             Token(self.token_counter),
             Interest::READABLE,
         )?;
-        self.sessions
-            .insert(Token(self.token_counter), Session::new(stream));
+
+        self.sessions.insert(
+            Token(self.token_counter),
+            Session::new(Token(self.token_counter), stream),
+        );
+
         self.token_counter += 1;
         Ok(())
     }
 
-    pub fn run(&mut self) {
-        let mut events = Events::with_capacity(1024);
-        println!("Server running on {}", self.listener.local_addr().unwrap());
-        loop {
-            self.poll.poll(&mut events, None).unwrap();
-            for event in events.iter() {
-                match event.token() {
-                    SERVER => {
-                        if let Ok((new_stream, _)) = self.listener.accept() {
-                            self.register_session(new_stream).unwrap();
-                        }
-                    }
-                    token if event.is_readable() => {
-                        if let Some(session) = self.sessions.get_mut(&token)
-                            && let Err(e) = session.poll(&mut self.tx)
-                        {
-                            eprintln!("Error polling session: {}", e);
-                            self.sessions.remove(&token);
-                        }
-                    }
-                    _ => (),
+    fn process_replies(&mut self) {
+        while let Some(msg) = self.rx.try_pop() {
+            let (token, reply) = match msg {
+                FIXReply::ExecutionReport(t, d) => (t, d),
+            };
+
+            if let Some(session) = self.sessions.get_mut(&token) {
+                let was_empty = session.tx.is_empty();
+
+                session.handle_reply(reply);
+
+                if was_empty && !session.tx.is_empty() {
+                    self.poll
+                        .registry()
+                        .reregister(
+                            &mut session.stream,
+                            token,
+                            Interest::READABLE | Interest::WRITABLE,
+                        )
+                        .unwrap();
                 }
             }
+        }
+    }
+
+    fn handle_writable(&mut self, token: Token) {
+        if let Some(session) = self.sessions.get_mut(&token) {
+            if session.send_replies().is_err() {
+                self.poll.registry().deregister(&mut session.stream).ok();
+                self.sessions.remove(&token);
+                return;
+            }
+
+            if session.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(&mut session.stream, token, Interest::READABLE)
+                    .unwrap();
+                self.process_replies();
+            }
+        }
+    }
+
+    fn handle_readable(&mut self, token: Token) {
+        if let Some(session) = self.sessions.get_mut(&token)
+            && session.poll(&mut self.tx).is_err()
+        {
+            self.poll.registry().deregister(&mut session.stream).ok();
+            self.sessions.remove(&token);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use netlib::fix_core::messages::{
+        execution_report::ExecutionReport,
+        types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
+    };
+
     use super::*;
-    use crate::fix::session::FIXCommand;
+    use crate::fix::session::FIXRequest;
     use std::thread;
 
     #[test]
     #[ignore]
     fn mpsc_test() {
-        let (mut prod, mut cons) = ringbuf::HeapRb::<FIXCommand>::new(256).split();
+        let (mut prod, mut cons) = ringbuf::HeapRb::<FIXRequest>::new(256).split();
+
+        let (mut reply_prod, mut reply_cons) = ringbuf::HeapRb::<FIXReply>::new(256).split();
+
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
+        let mut engine = FixEngine::new(addr, prod, reply_cons).unwrap();
+        let waker = engine.get_waker();
         let engine_thread = thread::spawn(move || {
-            let mut _engine = FixEngine::new(addr, prod).unwrap();
-            _engine.run();
+            engine.run();
         });
+
         loop {
             if let Some(cmd) = cons.try_pop() {
                 match cmd {
-                    FIXCommand::Order(order) => {
-                        println!("Read Order | {:?} |", order,);
-                        break;
+                    FIXRequest::Order(token, order) => {
+                        println!("Read Order | {:?} | {:?} |", token, order,);
+
+                        let report = ExecutionReport {
+                            cl_ord_id: 1,
+                            cum_qty: 0,
+                            exec_id: "EXEC12345".to_string(),
+                            exec_trans_type: ExecTransType::New,
+                            order_id: "ORDER123".to_string(),
+                            order_qty: 100,
+                            ord_status: OrdStatus::New,
+                            security_id: "AAAA".to_string(),
+                            side: Side::Buy,
+                            symbol: "AAAA".to_string(),
+                            open_close: OpenClose::Open,
+                            exec_type: ExecType::New,
+                            leaves_qty: 100,
+                            security_type: "ST".to_string(),
+                            put_or_call: PutOrCall::Put,
+                            strike_price: 150,
+                            customer_or_firm: CustomerOrFirm::Customer,
+                            maturity_date: "1".to_string(),
+                        };
+
+                        reply_prod
+                            .try_push(FIXReply::ExecutionReport(token, report))
+                            .ok();
+                        waker.wake().unwrap();
                     }
                 }
             }

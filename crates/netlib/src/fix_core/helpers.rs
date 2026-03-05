@@ -1,10 +1,33 @@
+use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use std::str::from_utf8;
 
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
+pub fn write_fix_message(
+    msg_type: &'static [u8],
+    outbound_sequence_number: &u32,
+    sender_comp_id: &String,
+    target_comp_id: &String,
+    body: &Vec<u8>,
+) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(256);
+
+    write_header(
+        &mut buf,
+        msg_type,
+        outbound_sequence_number,
+        sender_comp_id,
+        target_comp_id,
+    );
+
+    buf.extend_from_slice(body);
+
+    write_wrapper(&mut buf);
+
+    buf
+}
 
 pub fn write_header(
     write_buf: &mut Vec<u8>,
-    msg_type: &[u8],
+    msg_type: &'static [u8],
     outbound_sequence_number: &u32,
     sender_comp_id: &String,
     target_comp_id: &String,
@@ -35,6 +58,24 @@ pub fn write_header(
     write_buf.extend_from_slice(b"56=");
     write_buf.extend_from_slice(target_comp_id.as_bytes());
     write_buf.push(0x01);
+}
+
+pub fn write_wrapper(write_buf: &mut Vec<u8>) {
+    let body_length = write_buf.len();
+    let mut itoa_buf = itoa::Buffer::new();
+    let mut final_buf: Vec<u8> = Vec::with_capacity(body_length + 64);
+
+    final_buf.extend_from_slice(b"8=FIX.4.2\x01");
+
+    final_buf.extend_from_slice(b"9=");
+    final_buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
+    final_buf.push(0x01);
+
+    final_buf.extend_from_slice(write_buf);
+    *write_buf = final_buf;
+
+    write_trailer(write_buf);
+    print_message(write_buf);
 }
 
 pub fn calculate_checksum(message: &[u8]) -> u32 {
@@ -68,6 +109,75 @@ pub fn print_message(message: &Vec<u8>) {
     println!("{}", String::from_utf8_lossy(&output));
 }
 
+fn invalidate_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
+    read_buffer.drain(0..1);
+    None
+}
+
+pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
+    if !read_buffer.starts_with(b"8=FIX") {
+        if let Some(position) = read_buffer.windows(5).position(|f| f == b"8=FIX") {
+            read_buffer.drain(0..position);
+        } else {
+            read_buffer.clear();
+        }
+        return None;
+    };
+
+    let first_delimiter = read_buffer.windows(1).position(|f| f == b"\x01")?;
+    if !read_buffer[first_delimiter + 1..].starts_with(b"9=") {
+        return invalidate_message(read_buffer);
+    }
+    let body_len_start = first_delimiter + 1;
+    let body_len_end = read_buffer[body_len_start..]
+        .iter()
+        .position(|&f| f == b'\x01')?
+        + body_len_start;
+
+    let body_len: usize = match from_utf8(&read_buffer[body_len_start + 2..body_len_end])
+        .ok()
+        .and_then(|s| s.parse().ok())
+    {
+        Some(n) => n,
+        None => return invalidate_message(read_buffer),
+    };
+
+    if body_len == 0 {
+        return invalidate_message(read_buffer);
+    }
+
+    let body_start = body_len_end + 1;
+    let body_end = body_start + body_len;
+
+    let recv_checksum_start = body_end + 3;
+    let recv_checksum_end = body_end + 6;
+    let total_len = body_end + 7;
+
+    if read_buffer.len() < total_len {
+        return None;
+    }
+
+    if !read_buffer[body_end..].starts_with(b"10=") {
+        return invalidate_message(read_buffer);
+    }
+
+    let recv_checksum: u32 = match from_utf8(&read_buffer[recv_checksum_start..recv_checksum_end])
+        .ok()
+        .and_then(|s| s.parse().ok())
+    {
+        Some(n) => n,
+        None => return invalidate_message(read_buffer),
+    };
+
+    let checksum = calculate_checksum(&read_buffer[..body_end]);
+
+    if recv_checksum != checksum {
+        return invalidate_message(read_buffer);
+    }
+
+    Some(read_buffer.drain(0..total_len).collect())
+}
+
 pub fn get_timestamp() -> String {
     let now = Local::now();
     now.format("%Y%m%d-%H:%M:%S.%3f").to_string()
@@ -92,12 +202,19 @@ pub fn get_maturity_month_year_day() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fix_core::messages::FIX_MESSAGE_TYPE_NEW_ORDER;
 
     #[test]
     fn test_write_header_field_values() {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
 
-        write_header(&mut buf, b"D", &1, &"str1".to_string(), &"str2".to_string());
+        write_header(
+            &mut buf,
+            &FIX_MESSAGE_TYPE_NEW_ORDER,
+            &1,
+            &"str1".to_string(),
+            &"str2".to_string(),
+        );
 
         let s = String::from_utf8_lossy(&buf);
 
@@ -119,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_write_trailer_appends_checksum() {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(256);
         buf.extend_from_slice(b"35=D\x01");
 
         write_trailer(&mut buf);

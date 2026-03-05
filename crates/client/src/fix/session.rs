@@ -1,7 +1,19 @@
-use netlib::fix_core::helpers::{print_message, write_header, write_trailer};
-use std::io::{Result, Write};
-use std::net::TcpStream;
-use zerocopy::IntoBytes;
+use mio::{event::Event, net::TcpStream};
+use netlib::fix_core::{
+    helpers::{extract_message, print_message, write_fix_message},
+    messages::FixFrame,
+};
+use ringbuf::{HeapCons, traits::Consumer};
+use std::{
+    io::{Read, Result, Write},
+    net::SocketAddr,
+};
+
+use mio::{Events, Interest, Poll, Token};
+const SERVER_CONN: Token = Token(0);
+const WAKE: Token = Token(1);
+const MAX_BUFFER_SIZE: usize = 1024;
+const MAX_TMP_BUFFER_SIZE: usize = 512;
 
 pub struct Session {
     pub inbound_sequence_number: u32,
@@ -10,115 +22,160 @@ pub struct Session {
     pub sender_comp_id: String,
     pub stream: TcpStream,
     pub target_comp_id: String,
-    pub write_buf: Vec<u8>,
+    pub write_buffer: Vec<u8>,
+    pub read_buffer: Vec<u8>,
+    pub session_rx: HeapCons<FixFrame>,
+    pub poll: Poll,
+    tmp: [u8; MAX_TMP_BUFFER_SIZE],
+    tmp_end: usize,
 }
 
 impl Session {
-    pub fn connect() -> Result<Self> {
-        let stream = TcpStream::connect("127.0.0.1:34254")?;
+    pub fn connect(addr: SocketAddr, poll: Poll, session_rx: HeapCons<FixFrame>) -> Result<Self> {
+        let mut stream = TcpStream::connect(addr)?;
 
-        Ok(Session {
+        {
+            let registry = poll.registry();
+            registry.register(&mut stream, SERVER_CONN, Interest::READABLE)?;
+        }
+
+        Ok(Self {
             inbound_sequence_number: 1,
             logged_in: false,
             outbound_sequence_number: 1,
             sender_comp_id: "CLIENT01".to_string(),
             stream,
             target_comp_id: "ENGINE01".to_string(),
-            write_buf: Vec::new(),
+            write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            session_rx,
+            poll,
+            tmp: [0u8; MAX_TMP_BUFFER_SIZE],
+            tmp_end: 0,
         })
     }
 
-    pub fn send_message(&mut self, msg_type: &[u8], body: Vec<u8>) {
-        let body_length = self.encode_fix_body(msg_type, body);
-        self.encode_fix_wrapper(body_length);
-        self.send_fix_message();
+    pub fn run(&mut self) -> Result<()> {
+        let mut events = Events::with_capacity(1024);
+        loop {
+            self.poll.poll(&mut events, None).unwrap();
+            for event in events.iter() {
+                self.handle_event(event);
+            }
+        }
     }
 
-    fn encode_fix_body(&mut self, msg_type: &[u8], body: Vec<u8>) -> usize {
-        self.write_buf.clear();
-
-        write_header(
-            &mut self.write_buf,
-            msg_type,
-            &self.outbound_sequence_number,
-            &self.sender_comp_id,
-            &self.target_comp_id,
-        );
-
-        self.write_buf.extend_from_slice(&body);
-        self.write_buf.len()
+    fn handle_event(&mut self, event: &Event) {
+        match event.token() {
+            SERVER_CONN => self.handle_server_event(event),
+            WAKE => self.process_requests(),
+            _ => (),
+        }
     }
 
-    fn encode_fix_wrapper(&mut self, body_length: usize) {
-        let mut itoa_buf = itoa::Buffer::new();
-        let mut final_buf = Vec::with_capacity(body_length + 64);
+    fn handle_server_event(&mut self, event: &Event) {
+        if event.is_readable() {
+            self.handle_server_readable();
+        }
 
-        final_buf.extend_from_slice(b"8=FIX.4.2\x01");
-
-        final_buf.extend_from_slice(b"9=");
-        final_buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
-        final_buf.push(0x01);
-
-        final_buf.extend_from_slice(&self.write_buf);
-        self.write_buf = final_buf;
-
-        write_trailer(&mut self.write_buf);
-        print_message(&self.write_buf);
+        if event.is_writable() {
+            self.handle_server_writable();
+        }
     }
 
-    fn send_fix_message(&mut self) {
-        self.stream.write_all(&self.write_buf).expect("err");
-        self.outbound_sequence_number = self.outbound_sequence_number.wrapping_add(1);
+    fn handle_server_readable(&mut self) {
+        loop {
+            if self.tmp_end >= MAX_TMP_BUFFER_SIZE && !self.read() {
+                break;
+            }
+
+            match self.stream.read(&mut self.tmp[self.tmp_end..]) {
+                Ok(0) => {
+                    panic!("Connection closed by server");
+                }
+                Ok(n) => {
+                    self.tmp_end += n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    self.read();
+                    break;
+                }
+                Err(_e) => break,
+            }
+        }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::{net::TcpListener, str::from_utf8};
+    fn read(&mut self) -> bool {
+        if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
+            return false;
+        }
 
-    #[test]
-    #[ignore]
-    fn test_header() {
-        let mut session = Session::connect().expect("err");
+        self.read_buffer
+            .extend_from_slice(&self.tmp[..self.tmp_end]);
+        self.tmp_end = 0;
+        self.process_replies();
 
-        let body = Vec::new();
-        session.send_message("D".as_bytes(), body);
-        print_message(&session.write_buf);
+        true
     }
 
-    #[test]
-    fn test_fix_fields() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("err");
-        let addr = listener.local_addr().expect("err");
+    fn process_replies(&mut self) {
+        while let Some(msg) = extract_message(&mut self.read_buffer) {
+            self.inbound_sequence_number = self.inbound_sequence_number.wrapping_add(1);
+            print_message(&msg);
+        }
+    }
 
-        let client = TcpStream::connect(addr).expect("err");
-        let (server, _) = listener.accept().expect("err");
+    fn handle_server_writable(&mut self) {
+        loop {
+            if self.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(&mut self.stream, SERVER_CONN, Interest::READABLE)
+                    .unwrap();
+                self.process_requests();
+                break;
+            }
 
-        let mut session = Session {
-            inbound_sequence_number: 1,
-            logged_in: false,
-            outbound_sequence_number: 1,
-            sender_comp_id: "CLIENT01".to_string(),
-            target_comp_id: "ENGINE01".to_string(),
-            stream: server,
-            write_buf: Vec::new(),
-        };
+            match self.stream.write(&self.write_buffer) {
+                Ok(n) => {
+                    self.write_buffer.drain(..n);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => panic!("Write error: {}", e),
+            }
+        }
+    }
 
-        let body = Vec::new();
+    fn process_requests(&mut self) {
+        let was_empty = self.write_buffer.is_empty();
 
-        let body_len = session.encode_fix_body(b"D", body);
-        session.encode_fix_wrapper(body_len);
+        while let Some(cmd) = self.session_rx.try_pop() {
+            if self.write_buffer.len() + cmd.body.len() + 64 > MAX_BUFFER_SIZE {
+                break;
+            }
 
-        let s = from_utf8(&session.write_buf).expect("err");
+            let msg = write_fix_message(
+                cmd.msg_type,
+                &self.outbound_sequence_number,
+                &self.sender_comp_id,
+                &self.target_comp_id,
+                &cmd.body,
+            );
 
-        assert!(s.contains("8=FIX.4.2"));
-        assert!(s.contains("35=D"));
-        assert!(s.contains("34=1"));
-        assert!(s.contains("49=CLIENT01"));
-        assert!(s.contains("56=ENGINE01"));
-        assert!(s.contains("10="));
+            self.write_buffer.extend_from_slice(&msg);
 
-        drop(client);
+            self.outbound_sequence_number = self.outbound_sequence_number.wrapping_add(1);
+        }
+
+        if was_empty && !self.write_buffer.is_empty() {
+            self.poll
+                .registry()
+                .reregister(
+                    &mut self.stream,
+                    SERVER_CONN,
+                    Interest::READABLE | Interest::WRITABLE,
+                )
+                .unwrap();
+        }
     }
 }
