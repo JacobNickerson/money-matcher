@@ -1,20 +1,15 @@
-use mio::{Registry, event::Event, net::TcpStream};
+use mio::{event::Event, net::TcpStream};
 use netlib::fix_core::{
     helpers::{extract_message, print_message, write_fix_message},
-    iterator::FixIterator,
     messages::FixFrame,
 };
-use ringbuf::{
-    HeapCons,
-    traits::{Consumer, Observer},
-};
+use ringbuf::{HeapCons, traits::Consumer};
 use std::{
-    io::{self, Read, Result, Write},
+    io::{Read, Result, Write},
     net::SocketAddr,
 };
 
-use mio::{Events, Interest, Poll, Token, Waker};
-use zerocopy::IntoBytes;
+use mio::{Events, Interest, Poll, Token};
 const SERVER_CONN: Token = Token(0);
 const WAKE: Token = Token(1);
 const MAX_BUFFER_SIZE: usize = 1024;

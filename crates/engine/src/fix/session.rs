@@ -202,12 +202,12 @@ impl Session {
             }
             self.write_buffer.extend_from_slice(&msg);
         }
-    
+
         loop {
             if self.write_buffer.is_empty() {
                 break;
             }
-            
+
             match self.stream.write(&self.write_buffer) {
                 Ok(n) => {
                     self.write_buffer.drain(..n);
@@ -226,7 +226,7 @@ mod tests {
     use super::*;
     use mio::net::TcpListener;
     use netlib::fix_core::helpers::write_trailer;
-    use ringbuf::{HeapCons, HeapRb, traits::*};
+    use ringbuf::HeapRb;
     use std::net::SocketAddr;
 
     fn make_session() -> (Session, ringbuf::HeapRb<FIXRequest>) {

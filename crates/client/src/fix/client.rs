@@ -1,11 +1,10 @@
 use crate::fix::session::Session;
-use mio::net::TcpStream;
-use mio::{Events, Interest, Poll, Token, Waker};
+use mio::{Poll, Token, Waker};
 use netlib::fix_core::messages::{FixFrame, FixMessage};
-use nexus_queue::{Full, spsc};
-use ringbuf::{HeapCons, HeapProd, traits::*};
+use ringbuf::traits::Producer;
+use ringbuf::{HeapCons, HeapProd};
+use std::io;
 use std::net::SocketAddr;
-use std::{io, thread};
 
 pub struct FixClient {
     session_tx: HeapProd<FixFrame>,
@@ -53,7 +52,8 @@ mod tests {
         new_order::NewOrder,
         types::{OpenClose, OrdType, Side},
     };
-    use std::time::Duration;
+    use ringbuf::traits::Split;
+    use std::thread;
 
     #[test]
     #[ignore]

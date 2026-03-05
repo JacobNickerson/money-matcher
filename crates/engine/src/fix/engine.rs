@@ -2,7 +2,6 @@ use crate::fix::session::{FIXReply, FIXRequest};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
-use netlib::fix_core::messages::FixMessage;
 use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
