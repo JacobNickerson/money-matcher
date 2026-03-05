@@ -4,7 +4,7 @@ use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
 use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
+use std::io::{self};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -158,11 +158,11 @@ impl FixEngine {
     }
 
     fn handle_readable(&mut self, token: Token) {
-        if let Some(session) = self.sessions.get_mut(&token) {
-            if session.poll(&mut self.tx).is_err() {
-                self.poll.registry().deregister(&mut session.stream).ok();
-                self.sessions.remove(&token);
-            }
+        if let Some(session) = self.sessions.get_mut(&token)
+            && session.poll(&mut self.tx).is_err()
+        {
+            self.poll.registry().deregister(&mut session.stream).ok();
+            self.sessions.remove(&token);
         }
     }
 }

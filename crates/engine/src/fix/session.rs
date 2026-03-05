@@ -57,10 +57,8 @@ impl Session {
 
     pub fn poll(&mut self, tx: &mut HeapProd<FIXRequest>) -> Result<(), &'static str> {
         loop {
-            if self.tmp_end >= MAX_TMP_BUFFER_SIZE {
-                if !self.read(tx) {
-                    break;
-                }
+            if self.tmp_end >= MAX_TMP_BUFFER_SIZE && !self.read(tx) {
+                break;
             }
 
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
@@ -74,7 +72,7 @@ impl Session {
                     self.read(tx);
                     break;
                 }
-                Err(e) => {
+                Err(_e) => {
                     return Err("Error reading from stream");
                 }
             }

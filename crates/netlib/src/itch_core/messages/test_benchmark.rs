@@ -1,5 +1,5 @@
 use crate::itch_core::helpers::encode_u48;
-use crate::itch_core::messages::{ItchMessage, ITCH_MESSAGE_TYPE_TEST_BENCHMARK};
+use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_TEST_BENCHMARK, ItchMessage};
 use zerocopy::byteorder::{BigEndian, U16};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 

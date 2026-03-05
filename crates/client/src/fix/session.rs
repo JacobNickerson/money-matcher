@@ -85,10 +85,8 @@ impl Session {
 
     fn handle_server_readable(&mut self) {
         loop {
-            if self.tmp_end >= MAX_TMP_BUFFER_SIZE {
-                if !self.read() {
-                    break;
-                }
+            if self.tmp_end >= MAX_TMP_BUFFER_SIZE && !self.read() {
+                break;
             }
 
             match self.stream.read(&mut self.tmp[self.tmp_end..]) {
@@ -102,7 +100,7 @@ impl Session {
                     self.read();
                     break;
                 }
-                Err(e) => break,
+                Err(_e) => break,
             }
         }
     }

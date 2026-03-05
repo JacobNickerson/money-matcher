@@ -1,5 +1,5 @@
 use crate::itch_core::helpers::{decode_price, decode_u48, encode_price, encode_u48};
-use crate::itch_core::messages::{ItchMessage, ITCH_MESSAGE_TYPE_ORDER_REPLACE};
+use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_ORDER_REPLACE, ItchMessage};
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 

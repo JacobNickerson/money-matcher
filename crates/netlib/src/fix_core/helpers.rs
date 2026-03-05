@@ -171,7 +171,7 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
 
     let checksum = calculate_checksum(&read_buffer[..body_end]);
 
-    if (recv_checksum != checksum) {
+    if recv_checksum != checksum {
         return invalidate_message(read_buffer);
     }
 
