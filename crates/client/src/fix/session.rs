@@ -142,7 +142,7 @@ impl Session {
                 self.process_requests();
                 break;
             }
-            
+
             match self.stream.write(&self.write_buffer) {
                 Ok(n) => {
                     self.write_buffer.drain(..n);
@@ -185,62 +185,4 @@ impl Session {
                 .unwrap();
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use netlib::fix_core::{helpers::print_message, messages::FIX_MESSAGE_TYPE_NEW_ORDER};
-    use std::{net::TcpListener, str::from_utf8};
-
-    //#[test]
-    //#[ignore]
-    //fn test_header() {
-    //    let mut session = Session::connect().expect("err");
-    //
-    //    let body = Vec::new();
-    //    session.send_message(FIX_MESSAGE_TYPE_NEW_ORDER, body);
-    //    print_message(&session.write_buffer);
-    //}
-    //
-    //#[test]
-    //fn test_fix_fields() {
-    //    let listener = TcpListener::bind("127.0.0.1:0").expect("err");
-    //    let addr = listener.local_addr().expect("err");
-    //
-    //    let client = TcpStream::connect(addr).expect("err");
-    //    let (server, _) = listener.accept().expect("err");
-    //
-    //    let mut session = Session {
-    //        inbound_sequence_number: 1,
-    //        logged_in: false,
-    //        outbound_sequence_number: 1,
-    //        sender_comp_id: "CLIENT01".to_string(),
-    //        target_comp_id: "ENGINE01".to_string(),
-    //        stream: server,
-    //        write_buffer: Vec::new(),
-    //    };
-    //
-    //    let body = Vec::new();
-    //
-    //    write_fix_message(
-    //        &mut session.write_buffer,
-    //        &FIX_MESSAGE_TYPE_NEW_ORDER,
-    //        &session.outbound_sequence_number,
-    //        &session.sender_comp_id,
-    //        &session.target_comp_id,
-    //        &body,
-    //    );
-    //
-    //    let s = from_utf8(&session.write_buffer).expect("err");
-    //
-    //    assert!(s.contains("8=FIX.4.2"));
-    //    assert!(s.contains("35=D"));
-    //    assert!(s.contains("34=1"));
-    //    assert!(s.contains("49=CLIENT01"));
-    //    assert!(s.contains("56=ENGINE01"));
-    //    assert!(s.contains("10="));
-    //
-    //    drop(client);
-    //}
 }

@@ -143,6 +143,7 @@ impl FixEngine {
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
             if session.send_replies().is_err() {
+                self.poll.registry().deregister(&mut session.stream).ok();
                 self.sessions.remove(&token);
                 return;
             }
@@ -160,6 +161,7 @@ impl FixEngine {
     fn handle_readable(&mut self, token: Token) {
         if let Some(session) = self.sessions.get_mut(&token) {
             if session.poll(&mut self.tx).is_err() {
+                self.poll.registry().deregister(&mut session.stream).ok();
                 self.sessions.remove(&token);
             }
         }
