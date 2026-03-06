@@ -1,16 +1,101 @@
 import sys
 from PyQt5.QtWidgets import ( 
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QSizePolicy
+    QApplication, QWidget, QGridLayout, QHBoxLayout,
+    QSizePolicy, QStackedWidget, QVBoxLayout
 )
-
 from PyQt5.QtCore import (
     Qt
 )
 from widgets.sidebar import SideBar
 from windows.dashboard import (
-    MarketEvents, OrderBook, TradeHistory, OrderEntry
+    MarketEvents, OrderBook, TradeHistory, OrderEntry, Strategies
 )
+from windows.strategies import (
+    Header, ActionBar, CodeEditor
+)
+from windows.bots import (
+    Header as BotHeader, BotList
+)
+from windows.performance import (
+    Header as PerfHeader, Main as PerfMain
+)
+
+class Dashboard(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #080808;")
+
+        layout = QGridLayout(self)
+        layout.setContentsMargins(20, 64, 20, 20)
+        layout.setHorizontalSpacing(20)
+        layout.setVerticalSpacing(20)
+
+        self.market_events = MarketEvents()
+        self.order_book = OrderBook()
+        self.order_entry = OrderEntry()
+        self.trade_history = TradeHistory()
+        self.strategies = Strategies()
+
+        layout.addWidget(self.market_events, 0, 0)
+        layout.addWidget(self.order_book, 0, 1)
+        layout.addWidget(self.order_entry, 0, 2)
+
+        layout.addWidget(self.trade_history, 1, 0, 1, 2)
+        layout.addWidget(self.strategies, 1, 2)
+
+        layout.setColumnStretch(0, 6)
+        layout.setColumnStretch(1, 2)
+        layout.setColumnStretch(2, 3)
+
+        layout.setRowStretch(0, 5)
+        layout.setRowStretch(1, 3)
+
+class Bots(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #080808;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)
+
+        self.header = BotHeader()
+        self.table = BotList()
+
+        layout.addWidget(self.header)
+        layout.addWidget(self.table, 1)
+
+class Strats(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #080808;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(0)
+
+        self.header = Header()
+        self.action_bar = ActionBar()
+        self.editor = CodeEditor()
+
+        layout.addWidget(self.header)
+        layout.addWidget(self.action_bar)
+        layout.addWidget(self.editor, 1)
+
+class Performance(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #080808;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(0)
+
+        self.header = PerfHeader()
+        self.main = PerfMain()
+
+        layout.addWidget(self.header)
+        layout.addWidget(self.main, 1)
 
 class EngineWindow(QWidget):
     def __init__(self):
@@ -26,46 +111,38 @@ class EngineWindow(QWidget):
 
         # Sidebar
         self.sidebar = SideBar()
-        self.sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.sidebar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
-        # Content Area
-        content_widget = QWidget()
-        content_widget.setStyleSheet("background-color: #080808;")
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(0,0,0,0)
-        content_layout.setContentsMargins(20, 64, 20, 20)
-        content_layout.setSpacing(20)
-        content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.stack = QStackedWidget()
+        self.stack.setStyleSheet("background-color: #080808;")
 
-        row_layout_1 = QHBoxLayout()
-        row_layout_1.setSpacing(20)
-        row_layout_2 = QHBoxLayout()
-        row_layout_2.setSpacing(20)
+        self.dashboard_page = Dashboard()
+        self.bots_page = Bots()
+        self.strat_page = Strats()
+        self.perf_page = Performance()
 
-        # MarketEvents
-        self.market_events = MarketEvents()
-        row_layout_1.addWidget(self.market_events)
-
-        # OrderBook
-        self.order_book = OrderBook()
-        row_layout_1.addWidget(self.order_book)
-
-        # OrderEntry
-        self.order_entry = OrderEntry()
-        row_layout_1.addWidget(self.order_entry)
-
-        # TradeHistory
-        self.trade_history = TradeHistory()
-        row_layout_2.addWidget(self.trade_history)
-
-        content_layout.addLayout(row_layout_1)
-        content_layout.addLayout(row_layout_2, 2)
-        content_layout.addStretch()
+        self.stack.addWidget(self.dashboard_page)
+        self.stack.addWidget(self.bots_page)
+        self.stack.addWidget(self.strat_page)
+        self.stack.addWidget(self.perf_page)
 
         main_layout.addWidget(self.sidebar)
-        main_layout.addWidget(content_widget)
+        main_layout.addWidget(self.stack)
 
         self.setLayout(main_layout)
+
+        self.sidebar.dashboard_btn.clicked.connect(
+            lambda: self.stack.setCurrentIndex(0)
+        )
+        self.sidebar.bot_btn.clicked.connect(
+            lambda: self.stack.setCurrentIndex(1)
+        )
+        self.sidebar.strat_btn.clicked.connect(
+            lambda: self.stack.setCurrentIndex(2)
+        )
+        self.sidebar.chart_btn.clicked.connect(
+            lambda: self.stack.setCurrentIndex(3)
+        )
 
 
 if __name__ == "__main__":

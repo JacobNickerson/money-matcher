@@ -70,7 +70,7 @@ class OrderBookModel(QAbstractTableModel):
                 return QColor("#27AE60")
             elif side == "mid":
                 if self.mid_direction > 0:
-                    return QColor("#27AE60")
+                    return QColor("#00C278")
                 elif self.mid_direction < 0:
                     return QColor("#EB5757")
                 else:

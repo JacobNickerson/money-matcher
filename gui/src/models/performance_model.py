@@ -5,10 +5,9 @@ from PyQt5.QtCore import (
     Qt, QAbstractTableModel, QModelIndex
 )
 
-class TradeHistoryModel(QAbstractTableModel):
+class PerformanceModel(QAbstractTableModel):
     headers = [
-        "Symbol", "Date", "Type", "Side",
-        "Price", "Amount", "Filled", "Total", "Status", "Action"
+        "Date", "Strategy", "Symbol", "Type", "Profit/Loss", "% Gain/Loss", "Entry Price", "Exit Price"
     ]
 
     def __init__(self, rows):
@@ -36,8 +35,11 @@ class TradeHistoryModel(QAbstractTableModel):
             font.setWeight(QFont.Medium)
             return font
 
-        if role == Qt.ForegroundRole and col == "Side":
-            return QColor("#00C278") if row["Side"] == "Buy" else QColor("#EB5757")
+        if role == Qt.ForegroundRole:
+            if col == "Profit/Loss":
+                return QColor("#EB5757") if row["Profit/Loss"][0] == "-" else QColor("#00C278")
+            elif col == "% Gain/Loss":
+                return QColor("#EB5757") if row["Profit/Loss"][0] == "-" else QColor("#00C278")
 
         if role == Qt.TextAlignmentRole:
             return Qt.AlignLeft | Qt.AlignVCenter
