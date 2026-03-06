@@ -73,16 +73,28 @@ class OrderFillCard(QFrame):
             il.setSpacing(24)
             col = QVBoxLayout()
             col.setSpacing(2)
-            n = QLabel(name); 
+            n = QLabel(name) 
             n.setStyleSheet("color: #FFFFFF; background:transparent; border:none;")
             n.setFont(QFont("Inter", 12, QFont.Medium))
-            s = QLabel(sub);  
+            s = QLabel(sub) 
             s.setStyleSheet("color: #707070; background:transparent; border:none;")
             s.setFont(QFont("Inter", 10, QFont.Medium))
-            col.addWidget(n); col.addWidget(s)
+            col.addWidget(n)
+            col.addWidget(s)
             il.addLayout(col)
-            p = QLabel(pct); p.setStyleSheet("color: #00C278; background:transparent; border:none;")
+            p = QLabel(pct) 
             p.setFont(QFont("Inter", 10, QFont.Medium))
+            delta_color = "#00C277" if pct[0] == "+" else "#EB5757"
+            bg_color = "#0B1811" if pct[0] == "+" else "#1E1010"
+            p.setStyleSheet(f"""
+                color: {delta_color};
+                background-color: {bg_color};
+                border-radius: 4px;
+                padding: 1px 6px;
+                border: none;
+            """)
+            p.setAlignment(Qt.AlignCenter)
+            p.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             il.addWidget(p, Qt.AlignRight)
             rbox.addWidget(item)
         body.addLayout(rbox)
@@ -94,7 +106,7 @@ class OrderFillCard(QFrame):
         lay.addStretch()
 
 class MetricCard(QFrame):
-    def __init__(self, title, value, delta, positive, line_color, y_data):
+    def __init__(self, title, value, delta, positive, y_data):
         super().__init__()
         self.setStyleSheet("""
             MetricCard { 
@@ -127,10 +139,20 @@ class MetricCard(QFrame):
         row.addWidget(val_lbl)
 
         delta_color = "#00C277" if positive else "#EB5757"
+        bg_color = "#0B1811" if positive else "#1E1010"
         delta_lbl = QLabel(delta)
-        delta_lbl.setStyleSheet(f"color:{delta_color}; font-size:12px; background:transparent; border:none;")
-        delta_lbl.setAlignment(Qt.AlignBottom)
-        row.addWidget(delta_lbl)
+        delta_lbl.setFont(QFont("Inter", 10))
+        delta_lbl.setStyleSheet(f"""
+            color: {delta_color};
+            background-color: {bg_color};
+            border-radius: 4px;
+            padding: 1px 6px;
+        """)
+
+        delta_lbl.setAlignment(Qt.AlignCenter)
+        delta_lbl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        row.addWidget(delta_lbl, alignment=Qt.AlignBottom)
         row.addStretch()
         label_lay.addLayout(row)
 
@@ -153,8 +175,8 @@ class MetricCard(QFrame):
         x = np.arange(len(y_data))
         grad = QLinearGradient(0, 1, 0, 0)
         grad.setCoordinateMode(QLinearGradient.ObjectBoundingMode)
-        c_top = QColor(line_color); c_top.setAlpha(80)
-        c_bot = QColor(line_color); c_bot.setAlpha(0)
+        c_top = QColor("#00C277" if positive else "#EB5757"); c_top.setAlpha(80)
+        c_bot = QColor("#00C277" if positive else "#EB5757"); c_bot.setAlpha(0)
         grad.setColorAt(0.0, c_top)
         grad.setColorAt(1.0, c_bot)
         fill = pg.FillBetweenItem(
@@ -163,7 +185,7 @@ class MetricCard(QFrame):
             brush=QBrush(grad)
         )
         pw.addItem(fill)
-        pw.plot(x, y_data, pen=pg.mkPen(color=line_color, width=2))
+        pw.plot(x, y_data, pen=pg.mkPen(color="#00C277" if positive else "#EB5757", width=2))
         pw.setRange(xRange=(0, len(y_data)-1), yRange=(y_data.min()-2, y_data.max()+2), padding=0)
         lay.addWidget(pw, stretch=1)
 
@@ -179,7 +201,7 @@ class MetricCard(QFrame):
         self.setMask(region)
 
 class BalanceCard(QFrame):
-    def __init__(self, y_data):
+    def __init__(self, value, delta, positive, y_data):
         super().__init__()
         self.setStyleSheet("QFrame#balanceCard { background: #101010; border:1px solid #363636; border-radius: 16px; }")
         self.setObjectName("balanceCard")
@@ -201,23 +223,43 @@ class BalanceCard(QFrame):
         tl.setFont(QFont("Inter", 12, QFont.Medium))
         top.addWidget(tl)
         top.addStretch()
-        btn = QPushButton("+ Add to Balance")
+        btn = QPushButton("Add to Balance")
+        btn.setIcon(QIcon("../../resources/images/plus_normal.svg"))
+        btn.setIconSize(QSize(16, 16))
         btn.setFont(QFont("Inter", 10, QFont.Medium))
+        btn.setCursor(Qt.PointingHandCursor)
         btn.setStyleSheet("""
-            QPushButton { background: #080808; color: #FFFFFF; border: 1px solid #363636;
-                          border-radius: 6px; padding: 5px 12px; }
+            QPushButton { 
+                background: #080808; 
+                color: #FFFFFF; 
+                border: 1px solid #363636;
+                border-radius: 6px; 
+                padding: 5px 12px; }
             QPushButton:hover { background:#2a2b30; }
         """)
         top.addWidget(btn)
         label_lay.addLayout(top)
 
+        delta_color = "#00C277" if positive else "#EB5757"
+        bg_color = "#0B1811" if positive else "#1E1010"
+
         mid = QHBoxLayout()
         mid.setSpacing(8)
-        vl = QLabel("$10,000.20"); vl.setStyleSheet("color:#ffffff; background:transparent; border:none;")
+        vl = QLabel(value)
+        vl.setStyleSheet("color:#ffffff; background:transparent; border:none;")
         vl.setFont(QFont("Inter", 20, QFont.DemiBold))
-        dl = QLabel("+4.22 (4.23%)"); dl.setStyleSheet("color:#00C277; font-size:12px; background:transparent; border:none;"); dl.setAlignment(Qt.AlignBottom)
+        dl = QLabel(delta)
+        dl.setFont(QFont("Inter", 10))
+        dl.setStyleSheet(f"""
+            color: {delta_color};
+            background-color: {bg_color};
+            border-radius: 4px;
+            padding: 1px 6px;
+        """)
+        dl.setAlignment(Qt.AlignCenter)
+        dl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         mid.addWidget(vl); 
-        mid.addWidget(dl); 
+        mid.addWidget(dl, alignment=Qt.AlignBottom); 
         mid.addStretch()
         label_lay.addLayout(mid)
 
@@ -328,9 +370,8 @@ class StatsPanel(QFrame):
                 vl.setFont(QFont("Inter", 10, QFont.Normal))
                 rl.addWidget(kl); rl.addStretch(); rl.addWidget(vl)
 
-                vbox.addWidget(row_w)
+                vbox.addWidget(row_w, stretch=1)
 
-            vbox.addStretch()
             outer_lay.addWidget(col_frame, stretch=1)
 
 class Header(QWidget):
@@ -389,6 +430,7 @@ class Header(QWidget):
         self.strategy_list = QComboBox()
         self.strategy_list.setFont(QFont("Inter", 10, QFont.Medium))
         self.strategy_list.setStyleSheet(combo_style)
+        self.strategy_list.setCursor(Qt.PointingHandCursor)
         self.strategy_list.addItems(["Momentum", "Arbitrage", "Scalping"])
         self.strategy_list.setMinimumWidth(400)
         layout.addWidget(self.strategy_list)
@@ -396,6 +438,7 @@ class Header(QWidget):
         self.date_list = QComboBox()
         self.date_list.setFont(QFont("Inter", 10, QFont.Medium))
         self.date_list.setStyleSheet(combo_style)
+        self.date_list.setCursor(Qt.PointingHandCursor)
         self.date_list.addItems(["1 Day", "1 Week", "1 Month", "1 Year"])
         self.date_list.setMinimumWidth(200)
         layout.addWidget(self.date_list)
@@ -508,7 +551,7 @@ class Main(QWidget):
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(2, 1)
         grid.setSpacing(24)
-        grid.setContentsMargins(24, 24, 24, 24)
+        grid.setContentsMargins(0, 24, 0, 0)
 
         top_frame = QFrame()
         top_frame.setStyleSheet("""
@@ -523,8 +566,8 @@ class Main(QWidget):
         top_layout.setContentsMargins(24, 24, 24, 24)
         top_layout.setSpacing(24)
 
-        profit_card = MetricCard("Profit/Loss", "$1000.20", "+4.22 (4.23%)", True,  "#00C278", smooth(120,  3))
-        volume_card = MetricCard("Volume",      "$41.99",   "-1.54 (1.09%)", False, "#EB5757", smooth(120, -1))
+        profit_card = MetricCard("Profit/Loss", "$1000.20", "+4.22 (4.23%)", True, smooth(120,  3))
+        volume_card = MetricCard("Volume", "$41.99", "-1.54 (1.09%)", False, smooth(120, -1))
         fill_card   = OrderFillCard()
 
         for card in (profit_card, volume_card, fill_card):
@@ -532,7 +575,7 @@ class Main(QWidget):
 
         grid.addWidget(top_frame, 0, 0, 1, 3)
 
-        balance_card = BalanceCard(smooth(200, 8))
+        balance_card = BalanceCard("$10,000.20", "+4.22 (4.23%)", True, smooth(200, 8))
         grid.addWidget(balance_card, 1, 0)
 
         stats_card = StatsPanel()

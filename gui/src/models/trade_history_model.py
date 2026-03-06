@@ -37,7 +37,7 @@ class TradeHistoryModel(QAbstractTableModel):
             return font
 
         if role == Qt.ForegroundRole and col == "Side":
-            return QColor("#27AE60") if row["Side"] == "Buy" else QColor("#EB5757")
+            return QColor("#00C278") if row["Side"] == "Buy" else QColor("#EB5757")
 
         if role == Qt.TextAlignmentRole:
             return Qt.AlignLeft | Qt.AlignVCenter

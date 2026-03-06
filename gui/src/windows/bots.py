@@ -5,10 +5,10 @@ from PyQt5.QtWidgets import (
     QStyleOptionButton
 )
 from PyQt5.QtGui import (
-    QFont, QColor, QPainter, QIcon, QPen
+    QFont, QColor, QPainter, QIcon, QPen, QCursor
 )
 from PyQt5.QtCore import (
-    Qt, QRect, QSize, pyqtSignal
+    Qt, QRect, QSize, pyqtSignal, QEvent
 )
 import models.bot_model as bot_model
 
@@ -33,27 +33,29 @@ class Header(QWidget):
         title.setStyleSheet("color: #FFFFFF; background: transparent;")
         layout.addWidget(title)
 
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        spacer.setStyleSheet("background-color: transparent")
-        layout.addWidget(spacer)
+        layout.addStretch()
 
-        self.new_btn = QPushButton("  Create New Bot")
+        self.new_btn = QPushButton("Create New Bot")
         self.new_btn.setIcon(QIcon("../../resources/images/plus.svg"))
 
         self.new_btn.setCursor(Qt.PointingHandCursor)
         self.new_btn.setFixedHeight(40)
-        self.new_btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.new_btn.setFixedWidth(190)
+        self.new_btn.setIcon(QIcon("../../resources/images/plus_white.svg"))
+        self.new_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.new_btn.setFont(QFont("Inter", 12, QFont.DemiBold))
         self.new_btn.setStyleSheet("""
             QPushButton {
                 background-color: #FFFFFF;
                 color: #080808;
                 border: none;
+                text-align: center;
                 border-radius: 8px;
+                padding: 0px 12px 0px 12px;
+                spacing: 12px;
             }
         """)
-        self.new_btn.setIconSize(QSize(16, 16))
+        self.new_btn.setIconSize(QSize(20, 20))
 
         layout.addWidget(self.new_btn)
 
@@ -87,27 +89,47 @@ class StatusDelegate(QStyledItemDelegate):
         painter.restore()
 
 class ActionsDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.pause_icon = QIcon("../../resources/images/pause.svg")
+        self.settings_icon = QIcon("../../resources/images/settings.svg")
+        self.copy_icon = QIcon("../../resources/images/copy.svg")
+        self.delete_icon = QIcon("../../resources/images/delete_white.svg")
+
     def paint(self, painter, option, index):
         painter.save()
 
         rect = option.rect
-        icon_size = 16
-        spacing = 10
+        icon_size = 20
+        spacing = 12
 
-        style = QApplication.style()
+        icons = [self.pause_icon, self.copy_icon, self.settings_icon, self.delete_icon]
 
-        pause_icon = style.standardIcon(QStyle.SP_MediaPause)
-        settings_icon = style.standardIcon(QStyle.SP_FileDialogDetailedView)
-        delete_icon = style.standardIcon(QStyle.SP_TrashIcon)
+        total_width = (
+            len(icons) * icon_size
+            + (len(icons) - 1) * spacing
+        )
 
-        icons = [pause_icon, settings_icon, delete_icon]
-
-        total_width = len(icons) * icon_size + (len(icons) - 1) * spacing
         x = rect.center().x() - total_width // 2
         y = rect.center().y() - icon_size // 2
 
-        for icon in icons:
+        pen = QPen(QColor("#363636"))
+        pen.setWidth(1)
+        painter.setPen(pen)
+
+        for i, icon in enumerate(icons):
             icon.paint(painter, QRect(x, y, icon_size, icon_size))
+
+            if i < len(icons) - 1:
+                divider_x = x + icon_size + spacing // 2
+                painter.drawLine(
+                    divider_x,
+                    y - 2,
+                    divider_x,
+                    y + icon_size + 2
+                )
+
             x += icon_size + spacing
 
         painter.restore()
@@ -118,70 +140,115 @@ class CheckBoxHeader(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self._state = 0
+        self.size = 16
+        
         self.setSectionsClickable(True)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
 
-    def setCheckState(self, state):
+        self.unchecked_icon = QIcon("../../resources/images/checkbox.svg")
+        self.checked_icon = QIcon("../../resources/images/checkbox_checked.svg")
+
+    def setCheckState(self, state: int):
         self._state = state
-        self.updateSection(0)
+        self.viewport().update()
+
+    def sectionRect(self, logicalIndex: int) -> QRect:
+        x = self.sectionPosition(logicalIndex)
+        w = self.sectionSize(logicalIndex)
+        return QRect(x, 0, w, self.height())
+
+    def iconRect(self, logicalIndex: int) -> QRect:
+        r = self.sectionRect(logicalIndex)
+        return QRect(
+            r.center().x() - self.size // 2,
+            r.center().y() - self.size // 2,
+            self.size,
+            self.size
+        )
+
+    def hitRect(self, logicalIndex: int) -> QRect:
+        r = self.iconRect(logicalIndex)
+        shrink = 4
+        return r.adjusted(shrink, shrink, -shrink, -shrink)
 
     def paintSection(self, painter, rect, logicalIndex):
-        super().paintSection(painter, rect, logicalIndex)
-
         if logicalIndex != 0:
+            super().paintSection(painter, rect, logicalIndex)
             return
 
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        size = 16
-        x = rect.center().x() - size // 2
-        y = rect.center().y() - size // 2
-        box_rect = QRect(x, y, size, size)
-
-        painter.setBrush(QColor("#ffffff"))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(box_rect, 4, 4)
-
-        if self._state == 2:
-            pen = QPen(QColor("#080808"), 2)
-            painter.setPen(pen)
-            painter.drawLine(x + 4, y + 8, x + 7, y + 11)
-            painter.drawLine(x + 7, y + 11, x + 12, y + 5)
-
+        super().paintSection(painter, rect, logicalIndex)
         painter.restore()
-
-    def mousePressEvent(self, event):
-        index = self.logicalIndexAt(event.pos())
-        if index == 0:
-            checked = self._state != 2
-            self._state = 2 if checked else 0
-            self.clicked.emit(checked)
-            self.updateSection(0)
-        super().mousePressEvent(event)
-
-class CheckBoxDelegate(QStyledItemDelegate):
-    def paint(self, painter, option, index):
-        checked = index.data(Qt.CheckStateRole) == Qt.Checked
 
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
+        icon = self.checked_icon if self._state == 2 else self.unchecked_icon
 
-        size = 16
-        x = option.rect.center().x() - size // 2
-        y = option.rect.center().y() - size // 2
-        box_rect = QRect(x, y, size, size)
-
-        painter.setBrush(QColor("#ffffff"))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(box_rect, 4, 4)
-
-        if checked:
-            pen = QPen(QColor("#080808"), 2)
-            painter.setPen(pen)
-            painter.drawLine(x + 4, y + 8, x + 7, y + 11)
-            painter.drawLine(x + 7, y + 11, x + 12, y + 5)
-
+        icon_rect = self.iconRect(0)
+        painter.drawPixmap(icon_rect, icon.pixmap(self.size, self.size))
         painter.restore()
+
+    def mouseMoveEvent(self, event):
+        if self.logicalIndexAt(event.pos()) == 0 and self.hitRect(0).contains(event.pos()):
+            self.viewport().setCursor(Qt.PointingHandCursor)
+        else:
+            self.viewport().unsetCursor()
+
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self.viewport().unsetCursor()
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self.logicalIndexAt(event.pos()) == 0 and self.hitRect(0).contains(event.pos()):
+                checked = self._state != 2
+                self._state = 2 if checked else 0
+                self.clicked.emit(checked)
+                self.viewport().update()
+                return
+
+        super().mouseReleaseEvent(event)
+
+
+class CheckBoxDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.unchecked_icon = QIcon("../../resources/images/checkbox.svg")
+        self.checked_icon = QIcon("../../resources/images/checkbox_checked.svg")
+        self.size = 16
+
+    def iconRect(self, option):
+        x = option.rect.center().x() - self.size // 2
+        y = option.rect.center().y() - self.size // 2
+        return QRect(x, y, self.size, self.size)
+
+    def paint(self, painter, option, index):
+        checked = index.data(Qt.CheckStateRole) == Qt.Checked
+        icon_rect = self.iconRect(option)
+        icon = self.checked_icon if checked else self.unchecked_icon
+
+        painter.save()
+        icon.paint(painter, icon_rect, Qt.AlignCenter)
+        painter.restore()
+
+    def editorEvent(self, event, model, option, index):
+        view = option.widget
+
+        if event.type() == QEvent.MouseMove:
+            if self.iconRect(option).contains(event.pos()):
+                view.setCursor(Qt.PointingHandCursor)
+            else:
+                view.unsetCursor()
+
+        if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+            if self.iconRect(option).contains(event.pos()):
+                current = index.data(Qt.CheckStateRole)
+                new_state = Qt.Unchecked if current == Qt.Checked else Qt.Checked
+                return model.setData(index, new_state, Qt.CheckStateRole)
+
+        return False
 
 class BotList(QWidget):
     def __init__(self):
@@ -225,6 +292,8 @@ class BotList(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setFocusPolicy(Qt.NoFocus)
+        self.table.setMouseTracking(True)
+        self.table.horizontalHeader().setMouseTracking(True)
 
         scroll_bar_style = """
             QScrollBar:vertical {

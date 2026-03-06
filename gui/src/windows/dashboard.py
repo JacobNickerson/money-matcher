@@ -45,7 +45,7 @@ class MarketEvents(QWidget):
         symbol = "SOL/USD" # TODO: add symbol selector and update chart based on selection
         self.chart.set(test_data)
         self.chart.layout(background_color="#101010", text_color="#999999", font_family="Inter")
-        self.chart.candle_style(up_color="#27AE60", down_color="#EB5757", wick_up_color="#27AE60", wick_down_color="#EB5757", border_visible=False)
+        self.chart.candle_style(up_color="#00C278", down_color="#EB5757", wick_up_color="#00C278", wick_down_color="#EB5757", border_visible=False)
         self.chart.grid(color="#080808")
         self.chart.legend(visible=True, font_size=14, font_family="Inter", color="#999999", color_based_on_candle=True, text=symbol, lines=False)
         self.chart.price_scale(border_visible=False)
@@ -706,6 +706,7 @@ class Strategies(QWidget):
         layout.addWidget(title)
 
         self.strategy_list = QComboBox()
+        self.strategy_list.setCursor(Qt.PointingHandCursor)
         self.strategy_list.setFont(QFont("Inter", 10))
         self.strategy_list.setStyleSheet("""
             QComboBox {
@@ -739,7 +740,7 @@ class Strategies(QWidget):
         self.log_card = LogCard()
         layout.addWidget(self.log_card, stretch=2)
 
-        self.log_card.add_log("Target profit set $744.12 (+5%)", "#27AE60", "03:14")
+        self.log_card.add_log("Target profit set $744.12 (+5%)", "#00C278", "03:14")
         self.log_card.add_log("Entry Conditions Triggered!", "white", "03:14")
         self.log_card.add_log("Metatron was activated!", "white", "03:14")
 
@@ -753,7 +754,7 @@ class Strategies(QWidget):
         """)
         open_layout = QVBoxLayout(open_card)
         open_layout.setContentsMargins(8, 8, 8, 8)
-        open_layout.addLayout(self.row("Open $ Profit/Loss", "+10.00", "#999999", "#27AE60"))
+        open_layout.addLayout(self.row("Open $ Profit/Loss", "+10.00", "#999999", "#00C278"))
         open_layout.addLayout(self.row("Open Trade", "1", "#999999", "white"))
         layout.addWidget(open_card)
 
@@ -767,8 +768,8 @@ class Strategies(QWidget):
         """)
         risk_layout = QVBoxLayout(risk_card)
         risk_layout.setContentsMargins(8, 8, 8, 8)
-        risk_layout.addLayout(self.row("Risk/Reward", "1.74","#27AE60", "white"))
-        risk_layout.addLayout(self.row("Avg. Win", "$236","#27AE60", "white"))
+        risk_layout.addLayout(self.row("Risk/Reward", "1.74","#00C278", "white"))
+        risk_layout.addLayout(self.row("Avg. Win", "$236","#00C278", "white"))
         risk_layout.addLayout(self.row("Avg. Loss", "$126","#EB5757", "white"))
         risk_layout.addLayout(self.row("Max Drawdown", "9%","#EB5757", "white"))
         layout.addWidget(risk_card)

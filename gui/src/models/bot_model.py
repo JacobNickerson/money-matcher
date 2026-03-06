@@ -60,6 +60,8 @@ class BotModel(QAbstractTableModel):
                 return self.headers[section]
 
         if role == Qt.TextAlignmentRole:
+            if self.headers[section] == "Status" or self.headers[section] == "Actions":
+                return Qt.AlignCenter | Qt.AlignVCenter
             return Qt.AlignLeft | Qt.AlignVCenter
         
         if role == Qt.FontRole:
