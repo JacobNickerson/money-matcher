@@ -1,11 +1,14 @@
+use crate::fix::{FIXReply, FIXReplyMessage, FIXRequest, FIXRequestMessage};
 use crate::lob::{
     order::{Order, OrderSide, OrderType},
     types::{OrderId, Price, Timestamp},
 };
 use mio::{Token, net::TcpStream};
+use netlib::fix_core::messages::logon::Logon;
+use netlib::fix_core::messages::types::EncryptMethod;
 use netlib::fix_core::messages::{
-    FIX_MESSAGE_TYPE_LOGON, TAG_CL_ORD_ID, TAG_MSG_TYPE, TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE,
-    TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TRANSACT_TIME, execution_report::ExecutionReport,
+    FIX_MESSAGE_TYPE_LOGON, TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_TYPE,
+    TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TRANSACT_TIME,
 };
 use netlib::fix_core::{
     helpers::{convert_timestamp, extract_message, write_fix_message},
@@ -17,7 +20,6 @@ use std::{
     io::{Read, Write},
     str::from_utf8,
 };
-
 const WAKE: Token = Token(1);
 const MAX_BUFFER_SIZE: usize = 1024;
 const MAX_TMP_BUFFER_SIZE: usize = 512;
@@ -40,14 +42,21 @@ pub struct SessionState {
     pub inbound_seq_num: u32,
     pub outbound_seq_num: u32,
     pub logged_in: bool,
+    pub encrypt_method: EncryptMethod,
+    pub heart_bt_int: u16,
 }
 
-pub enum FIXRequest {
-    Order(String, Order),
-    Logon(Token, String),
-}
-pub enum FIXReply {
-    ExecutionReport(String, ExecutionReport),
+impl Default for SessionState {
+    fn default() -> Self {
+        Self {
+            comp_id: String::new(),
+            inbound_seq_num: 0,
+            outbound_seq_num: 1,
+            encrypt_method: EncryptMethod::None,
+            heart_bt_int: 30,
+            logged_in: false,
+        }
+    }
 }
 
 impl Session {
@@ -135,17 +144,45 @@ impl Session {
         }
 
         let mut comp_id: Option<String> = None;
+        let mut encrypt_method: Option<EncryptMethod> = None;
+        let mut heart_bt_int: Option<u16> = None;
 
         for (tag, value) in FixIterator::new(msg) {
             match tag {
                 TAG_SENDER_COMP_ID => {
                     comp_id = from_utf8(value).ok().map(str::to_owned);
                 }
+                TAG_ENCRYPT_METHOD => {
+                    encrypt_method = from_utf8(value)
+                        .ok()
+                        .and_then(|v| v.parse::<u8>().ok())
+                        .and_then(|v| match v {
+                            0 => Some(EncryptMethod::None),
+                            1 => Some(EncryptMethod::PKCS),
+                            2 => Some(EncryptMethod::DES),
+                            3 => Some(EncryptMethod::PKCS_DES),
+                            4 => Some(EncryptMethod::PGP_DES),
+                            5 => Some(EncryptMethod::PGP_DES_MD5),
+                            6 => Some(EncryptMethod::PEM_DES_MD5),
+                            _ => None,
+                        });
+                }
+                TAG_HEART_BT_INT => {
+                    heart_bt_int = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
                 _ => {}
             }
         }
 
-        Some(FIXRequest::Logon(self.token, comp_id?))
+        let comp_id = comp_id?;
+
+        Some(FIXRequest {
+            comp_id: comp_id.clone(),
+            message: FIXRequestMessage::Logon(Logon {
+                encrypt_method: encrypt_method.unwrap_or_default(),
+                heart_bt_int: heart_bt_int.unwrap_or(30),
+            }),
+        })
     }
 
     fn handle_new_order(&mut self, msg: &[u8]) -> Result<FIXRequest, &'static str> {
@@ -207,13 +244,13 @@ impl Session {
             kind,
         );
 
-        Ok(FIXRequest::Order(comp_id, order))
+        Ok(FIXRequest {
+            comp_id,
+            message: FIXRequestMessage::Order(order),
+        })
     }
 
-    pub fn handle_reply<T>(&mut self, reply: T) -> Result<(), &'static str>
-    where
-        T: FixMessage,
-    {
+    pub fn handle_reply(&mut self, reply: FIXReplyMessage) -> Result<(), &'static str> {
         let sender_comp_id = "ENGINE01".to_string();
         let target_comp_id = self
             .state
@@ -222,7 +259,7 @@ impl Session {
             .ok_or("Can't find comp_id")?;
 
         let msg = write_fix_message(
-            T::MESSAGE_TYPE,
+            reply.message_type(),
             &1_u32,
             &sender_comp_id,
             &target_comp_id,

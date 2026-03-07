@@ -1,7 +1,9 @@
-use crate::fix::session::{FIXReply, FIXRequest, SessionState};
+use crate::fix::session::SessionState;
+use crate::fix::{FIXReply, FIXReplyMessage, FIXRequest, FIXRequestMessage};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
+use netlib::fix_core::messages::logon::{self, Logon};
 use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::collections::HashMap;
 use std::io::{self};
@@ -18,8 +20,9 @@ pub struct FixEngine {
     connections: HashMap<Token, Session>,
     sessions: HashMap<String, (Token, SessionState)>,
     listener: TcpListener,
-    tx: HeapProd<FIXRequest>,
-    rx: HeapCons<FIXReply>,
+    lob_tx: HeapProd<FIXRequest>,
+    reply_tx: HeapProd<FIXReply>,
+    reply_rx: HeapCons<FIXReply>,
     waker: Arc<Waker>,
     poll: Poll,
     token_counter: usize,
@@ -28,8 +31,9 @@ pub struct FixEngine {
 impl FixEngine {
     pub fn new(
         addr: SocketAddr,
-        tx: HeapProd<FIXRequest>,
-        rx: HeapCons<FIXReply>,
+        lob_tx: HeapProd<FIXRequest>,
+        reply_tx: HeapProd<FIXReply>,
+        reply_rx: HeapCons<FIXReply>,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
@@ -38,8 +42,9 @@ impl FixEngine {
             connections: HashMap::new(),
             sessions: HashMap::new(),
             listener,
-            tx,
-            rx,
+            lob_tx,
+            reply_tx,
+            reply_rx,
             waker,
             poll,
             token_counter: 100,
@@ -67,6 +72,12 @@ impl FixEngine {
                 self.handle_event(event);
             }
         }
+    }
+
+    pub fn send_reply(&mut self, reply: FIXReply) {
+        println!("Sending reply | {:?}", reply.message);
+        self.reply_tx.try_push(reply).ok();
+        self.waker.wake().unwrap();
     }
 
     fn handle_event(&mut self, event: &Event) {
@@ -117,20 +128,14 @@ impl FixEngine {
     }
 
     fn process_replies(&mut self) {
-        while let Some(msg) = self.rx.try_pop() {
-            let (comp_id, reply) = match msg {
-                FIXReply::ExecutionReport(c, d) => (c, d),
-            };
-
-            let Some(token) = self.sessions.get(&comp_id).map(|(t, _)| *t) else {
+        while let Some(msg) = self.reply_rx.try_pop() {
+            let Some(token) = self.sessions.get(&msg.comp_id).map(|(t, _)| *t) else {
                 continue;
             };
 
             if let Some(session) = self.connections.get_mut(&token) {
                 let was_empty = session.tx.is_empty();
-
-                session.handle_reply(reply);
-
+                session.handle_reply(msg.message);
                 if was_empty && !session.tx.is_empty() {
                     self.poll
                         .registry()
@@ -175,13 +180,12 @@ impl FixEngine {
         };
 
         for event in events {
-            match event {
-                FIXRequest::Logon(token, comp_id) => self.finalize_logon(token, comp_id),
-
+            match event.message {
+                FIXRequestMessage::Logon(logon) => self.finalize_logon(token, event.comp_id, logon),
                 _ => {
                     if let Some(session) = self.connections.get_mut(&token) {
                         if session.state.is_some() {
-                            self.tx.try_push(event).ok();
+                            self.lob_tx.try_push(event).ok();
                         } else {
                             self.close_session(token);
                             return;
@@ -205,15 +209,15 @@ impl FixEngine {
         }
     }
 
-    fn finalize_logon(&mut self, token: Token, comp_id: String) {
+    fn finalize_logon(&mut self, token: Token, comp_id: String, logon: Logon) {
         let stored = self.sessions.entry(comp_id.clone()).or_insert_with(|| {
             (
                 token,
                 SessionState {
                     comp_id: comp_id.clone(),
-                    inbound_seq_num: 0,
-                    outbound_seq_num: 0,
-                    logged_in: false,
+                    encrypt_method: logon.encrypt_method,
+                    heart_bt_int: logon.heart_bt_int,
+                    ..Default::default()
                 },
             )
         });
@@ -229,46 +233,50 @@ impl FixEngine {
         stored_state.logged_in = true;
 
         if let Some(session) = self.connections.get_mut(&token) {
-            session.state = Some(SessionState {
-                comp_id: comp_id,
-                inbound_seq_num: stored_state.inbound_seq_num,
-                outbound_seq_num: stored_state.outbound_seq_num,
-                logged_in: true,
-            });
+            let state = session.state.insert(stored_state.clone());
+            state.comp_id = comp_id.clone();
+            state.logged_in = true;
         }
+
+        let logon_confirmation = Logon::new(stored_state.encrypt_method, stored_state.heart_bt_int);
+        self.send_reply(FIXReply {
+            comp_id,
+            message: FIXReplyMessage::Logon(logon_confirmation),
+        });
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use netlib::fix_core::messages::{
         execution_report::ExecutionReport,
         types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
     };
-
-    use super::*;
-    use crate::fix::session::FIXRequest;
-    use std::thread;
+    use std::{sync::Mutex, thread};
 
     #[test]
     #[ignore]
     fn mpsc_test() {
         let (mut prod, mut cons) = ringbuf::HeapRb::<FIXRequest>::new(256).split();
-
         let (mut reply_prod, mut reply_cons) = ringbuf::HeapRb::<FIXReply>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
-        let mut engine = FixEngine::new(addr, prod, reply_cons).unwrap();
-        let waker = engine.get_waker();
-        let engine_thread = thread::spawn(move || {
-            engine.run();
-        });
+        let engine: FixEngine = FixEngine::new(addr, prod, reply_prod, reply_cons).unwrap();
+        let engine = Arc::new(Mutex::new(engine));
+
+        let engine_thread = {
+            let engine = Arc::clone(&engine);
+            thread::spawn(move || {
+                engine.lock().unwrap().run();
+            })
+        };
 
         loop {
             if let Some(cmd) = cons.try_pop() {
-                match cmd {
-                    FIXRequest::Order(comp_id, order) => {
-                        println!("Read Order | {:?} | {:?} |", comp_id, order,);
+                match cmd.message {
+                    FIXRequestMessage::Order(order) => {
+                        println!("Read Order | {:?} | {:?} |", cmd.comp_id, order);
 
                         let report = ExecutionReport {
                             cl_ord_id: 1,
@@ -291,10 +299,10 @@ mod tests {
                             maturity_date: "1".to_string(),
                         };
 
-                        reply_prod
-                            .try_push(FIXReply::ExecutionReport(comp_id, report))
-                            .ok();
-                        waker.wake().unwrap();
+                        engine.lock().unwrap().send_reply(FIXReply {
+                            comp_id: cmd.comp_id,
+                            message: FIXReplyMessage::ExecutionReport(report),
+                        });
                     }
                     _ => {}
                 }

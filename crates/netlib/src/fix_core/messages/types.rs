@@ -151,8 +151,9 @@ pub enum CustomerOrFirm {
 /// `5` = PGP/DES-MD5
 /// `6` = PEM/DES-MD5
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EncryptMethod {
+    #[default]
     None = 0,
     PKCS = 1,
     DES = 2,

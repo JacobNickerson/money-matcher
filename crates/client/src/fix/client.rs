@@ -70,29 +70,6 @@ mod tests {
 
         let _ = client.push_command(Logon::new(EncryptMethod::None, 50_u16));
         std::thread::sleep(std::time::Duration::from_millis(100));
-        let _ = client.push_command(NewOrder::new(
-            1,
-            1,
-            10,
-            OrdType::Limit,
-            666,
-            Side::Buy,
-            "OSISTRING".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-        ));
-
-        let _ = client.push_command(NewOrder::new(
-            3,
-            1,
-            10,
-            OrdType::Limit,
-            666,
-            Side::Buy,
-            "OSISTRING".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-        ));
 
         client_thread.join().unwrap();
     }
