@@ -43,11 +43,11 @@ pub struct SessionState {
 }
 
 pub enum FIXRequest {
-    Order(Token, Order),
+    Order(String, Order),
     Logon(Token, String),
 }
 pub enum FIXReply {
-    ExecutionReport(Token, ExecutionReport),
+    ExecutionReport(String, ExecutionReport),
 }
 
 impl Session {
@@ -121,7 +121,7 @@ impl Session {
 
             let event: Option<FIXRequest> = match msg_type {
                 Some(FIX_MESSAGE_TYPE_LOGON) => Some(self.handle_logon(&msg).expect("")),
-                Some(FIX_MESSAGE_TYPE_NEW_ORDER) => Some(self.handle_new_order(&msg).expect("")),
+                Some(FIX_MESSAGE_TYPE_NEW_ORDER) => self.handle_new_order(&msg).ok(),
                 _ => None,
             };
 
@@ -149,6 +149,12 @@ impl Session {
     }
 
     fn handle_new_order(&mut self, msg: &[u8]) -> Result<FIXRequest, &'static str> {
+        let comp_id = self
+            .state
+            .as_ref()
+            .ok_or("Can't find comp_id")?
+            .comp_id
+            .clone();
         let mut cl_ord_id: Option<OrderId> = None;
         let mut qty: Option<u32> = None;
         let mut price: Option<Price> = None;
@@ -201,15 +207,19 @@ impl Session {
             kind,
         );
 
-        Ok(FIXRequest::Order(self.token, order))
+        Ok(FIXRequest::Order(comp_id, order))
     }
 
-    pub fn handle_reply<T>(&mut self, reply: T)
+    pub fn handle_reply<T>(&mut self, reply: T) -> Result<(), &'static str>
     where
         T: FixMessage,
     {
         let sender_comp_id = "ENGINE01".to_string();
-        let target_comp_id = "CLIENT01".to_string();
+        let target_comp_id = self
+            .state
+            .as_ref()
+            .map(|s| s.comp_id.clone())
+            .ok_or("Can't find comp_id")?;
 
         let msg = write_fix_message(
             T::MESSAGE_TYPE,
@@ -220,6 +230,8 @@ impl Session {
         );
 
         self.tx.try_push(msg).ok();
+
+        Ok(())
     }
 
     pub fn send_replies(&mut self) -> Result<(), &'static str> {

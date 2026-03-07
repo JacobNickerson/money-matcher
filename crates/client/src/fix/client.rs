@@ -69,6 +69,7 @@ mod tests {
         });
 
         let _ = client.push_command(Logon::new(EncryptMethod::None, 50_u16));
+        std::thread::sleep(std::time::Duration::from_millis(100));
         let _ = client.push_command(NewOrder::new(
             1,
             1,

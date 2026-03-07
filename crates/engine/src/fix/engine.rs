@@ -16,7 +16,7 @@ const MAX_BUFFER_SIZE: usize = 1024;
 
 pub struct FixEngine {
     connections: HashMap<Token, Session>,
-    session_store: HashMap<String, SessionState>,
+    sessions: HashMap<String, (Token, SessionState)>,
     listener: TcpListener,
     tx: HeapProd<FIXRequest>,
     rx: HeapCons<FIXReply>,
@@ -36,7 +36,7 @@ impl FixEngine {
         let waker = { Arc::new(Waker::new(poll.registry(), WAKE)?) };
         let mut this = Self {
             connections: HashMap::new(),
-            session_store: HashMap::new(),
+            sessions: HashMap::new(),
             listener,
             tx,
             rx,
@@ -118,8 +118,12 @@ impl FixEngine {
 
     fn process_replies(&mut self) {
         while let Some(msg) = self.rx.try_pop() {
-            let (token, reply) = match msg {
-                FIXReply::ExecutionReport(t, d) => (t, d),
+            let (comp_id, reply) = match msg {
+                FIXReply::ExecutionReport(c, d) => (c, d),
+            };
+
+            let Some(token) = self.sessions.get(&comp_id).map(|(t, _)| *t) else {
+                continue;
             };
 
             if let Some(session) = self.connections.get_mut(&token) {
@@ -191,10 +195,10 @@ impl FixEngine {
     fn close_session(&mut self, token: Token) {
         if let Some(mut session) = self.connections.remove(&token) {
             if let Some(state) = session.state {
-                if let Some(stored) = self.session_store.get_mut(&state.comp_id) {
-                    stored.logged_in = false;
-                    stored.inbound_seq_num = state.inbound_seq_num;
-                    stored.outbound_seq_num = state.outbound_seq_num;
+                if let Some((_, stored_state)) = self.sessions.get_mut(&state.comp_id) {
+                    stored_state.logged_in = false;
+                    stored_state.inbound_seq_num = state.inbound_seq_num;
+                    stored_state.outbound_seq_num = state.outbound_seq_num;
                 }
             }
             self.poll.registry().deregister(&mut session.stream).ok();
@@ -202,27 +206,33 @@ impl FixEngine {
     }
 
     fn finalize_logon(&mut self, token: Token, comp_id: String) {
-        let stored = self
-            .session_store
-            .entry(comp_id.clone())
-            .or_insert_with(|| SessionState {
-                comp_id: comp_id.clone(),
-                inbound_seq_num: 0,
-                outbound_seq_num: 0,
-                logged_in: false,
-            });
+        let stored = self.sessions.entry(comp_id.clone()).or_insert_with(|| {
+            (
+                token,
+                SessionState {
+                    comp_id: comp_id.clone(),
+                    inbound_seq_num: 0,
+                    outbound_seq_num: 0,
+                    logged_in: false,
+                },
+            )
+        });
 
-        if stored.logged_in {
+        let (stored_token, stored_state) = stored;
+        *stored_token = token;
+
+        if stored_state.logged_in {
+            self.close_session(token);
             return;
         }
 
-        stored.logged_in = true;
+        stored_state.logged_in = true;
 
         if let Some(session) = self.connections.get_mut(&token) {
             session.state = Some(SessionState {
                 comp_id: comp_id,
-                inbound_seq_num: stored.inbound_seq_num,
-                outbound_seq_num: stored.outbound_seq_num,
+                inbound_seq_num: stored_state.inbound_seq_num,
+                outbound_seq_num: stored_state.outbound_seq_num,
                 logged_in: true,
             });
         }
@@ -257,8 +267,8 @@ mod tests {
         loop {
             if let Some(cmd) = cons.try_pop() {
                 match cmd {
-                    FIXRequest::Order(token, order) => {
-                        println!("Read Order | {:?} | {:?} |", token, order,);
+                    FIXRequest::Order(comp_id, order) => {
+                        println!("Read Order | {:?} | {:?} |", comp_id, order,);
 
                         let report = ExecutionReport {
                             cl_ord_id: 1,
@@ -282,7 +292,7 @@ mod tests {
                         };
 
                         reply_prod
-                            .try_push(FIXReply::ExecutionReport(token, report))
+                            .try_push(FIXReply::ExecutionReport(comp_id, report))
                             .ok();
                         waker.wake().unwrap();
                     }

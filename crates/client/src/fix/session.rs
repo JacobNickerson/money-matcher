@@ -43,7 +43,7 @@ impl Session {
             inbound_sequence_number: 1,
             logged_in: false,
             outbound_sequence_number: 1,
-            sender_comp_id: "CLIENT01".to_string(),
+            sender_comp_id: "OOOOGA".to_string(),
             stream,
             target_comp_id: "ENGINE01".to_string(),
             write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
