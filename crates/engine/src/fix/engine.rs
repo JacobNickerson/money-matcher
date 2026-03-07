@@ -1,4 +1,4 @@
-use crate::fix::session::{FIXReply, FIXRequest};
+use crate::fix::session::{FIXReply, FIXRequest, SessionState};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
@@ -15,7 +15,8 @@ const WAKE: Token = Token(1);
 const MAX_BUFFER_SIZE: usize = 1024;
 
 pub struct FixEngine {
-    sessions: HashMap<Token, Session>,
+    connections: HashMap<Token, Session>,
+    session_store: HashMap<String, SessionState>,
     listener: TcpListener,
     tx: HeapProd<FIXRequest>,
     rx: HeapCons<FIXReply>,
@@ -34,7 +35,8 @@ impl FixEngine {
         let poll = Poll::new()?;
         let waker = { Arc::new(Waker::new(poll.registry(), WAKE)?) };
         let mut this = Self {
-            sessions: HashMap::new(),
+            connections: HashMap::new(),
+            session_store: HashMap::new(),
             listener,
             tx,
             rx,
@@ -105,7 +107,7 @@ impl FixEngine {
             Interest::READABLE,
         )?;
 
-        self.sessions.insert(
+        self.connections.insert(
             Token(self.token_counter),
             Session::new(Token(self.token_counter), stream),
         );
@@ -120,7 +122,7 @@ impl FixEngine {
                 FIXReply::ExecutionReport(t, d) => (t, d),
             };
 
-            if let Some(session) = self.sessions.get_mut(&token) {
+            if let Some(session) = self.connections.get_mut(&token) {
                 let was_empty = session.tx.is_empty();
 
                 session.handle_reply(reply);
@@ -140,10 +142,9 @@ impl FixEngine {
     }
 
     fn handle_writable(&mut self, token: Token) {
-        if let Some(session) = self.sessions.get_mut(&token) {
+        if let Some(session) = self.connections.get_mut(&token) {
             if session.send_replies().is_err() {
-                self.poll.registry().deregister(&mut session.stream).ok();
-                self.sessions.remove(&token);
+                self.close_session(token);
                 return;
             }
 
@@ -158,11 +159,72 @@ impl FixEngine {
     }
 
     fn handle_readable(&mut self, token: Token) {
-        if let Some(session) = self.sessions.get_mut(&token)
-            && session.poll(&mut self.tx).is_err()
-        {
+        let events = match self.connections.get_mut(&token) {
+            Some(session) => match session.poll() {
+                Ok(e) => e,
+                Err(e) => {
+                    self.close_session(token);
+                    return;
+                }
+            },
+            None => return,
+        };
+
+        for event in events {
+            match event {
+                FIXRequest::Logon(token, comp_id) => self.finalize_logon(token, comp_id),
+
+                _ => {
+                    if let Some(session) = self.connections.get_mut(&token) {
+                        if session.state.is_some() {
+                            self.tx.try_push(event).ok();
+                        } else {
+                            self.close_session(token);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn close_session(&mut self, token: Token) {
+        if let Some(mut session) = self.connections.remove(&token) {
+            if let Some(state) = session.state {
+                if let Some(stored) = self.session_store.get_mut(&state.comp_id) {
+                    stored.logged_in = false;
+                    stored.inbound_seq_num = state.inbound_seq_num;
+                    stored.outbound_seq_num = state.outbound_seq_num;
+                }
+            }
             self.poll.registry().deregister(&mut session.stream).ok();
-            self.sessions.remove(&token);
+        }
+    }
+
+    fn finalize_logon(&mut self, token: Token, comp_id: String) {
+        let stored = self
+            .session_store
+            .entry(comp_id.clone())
+            .or_insert_with(|| SessionState {
+                comp_id: comp_id.clone(),
+                inbound_seq_num: 0,
+                outbound_seq_num: 0,
+                logged_in: false,
+            });
+
+        if stored.logged_in {
+            return;
+        }
+
+        stored.logged_in = true;
+
+        if let Some(session) = self.connections.get_mut(&token) {
+            session.state = Some(SessionState {
+                comp_id: comp_id,
+                inbound_seq_num: stored.inbound_seq_num,
+                outbound_seq_num: stored.outbound_seq_num,
+                logged_in: true,
+            });
         }
     }
 }
@@ -224,6 +286,7 @@ mod tests {
                             .ok();
                         waker.wake().unwrap();
                     }
+                    _ => {}
                 }
             }
         }

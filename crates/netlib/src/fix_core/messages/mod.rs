@@ -9,6 +9,7 @@ pub struct FixFrame {
 }
 
 pub mod execution_report;
+pub mod logon;
 pub mod new_order;
 pub mod order_cancel;
 pub mod order_cancel_reject;
@@ -20,6 +21,7 @@ pub const FIX_MESSAGE_TYPE_NEW_ORDER: &[u8] = b"D";
 pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT: &[u8] = b"9";
 pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE: &[u8] = b"G";
 pub const FIX_MESSAGE_TYPE_ORDER_CANCEL: &[u8] = b"F";
+pub const FIX_MESSAGE_TYPE_LOGON: &[u8] = b"A";
 
 pub const TAG_BEGIN_STRING: &[u8] = b"8";
 pub const TAG_BODY_LENGTH: &[u8] = b"9";
@@ -56,3 +58,5 @@ pub const TAG_CUSTOMER_OR_FIRM: &[u8] = b"204";
 pub const TAG_MATURITY_DAY: &[u8] = b"205";
 pub const TAG_MATURITY_DATE: &[u8] = b"541";
 pub const TAG_CXL_REJ_RESPONSE_TO: &[u8] = b"434";
+pub const TAG_ENCRYPT_METHOD: &[u8] = b"98";
+pub const TAG_HEART_BT_INT: &[u8] = b"108";

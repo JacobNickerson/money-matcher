@@ -49,8 +49,9 @@ impl FixClient {
 mod tests {
     use super::*;
     use netlib::fix_core::messages::{
+        logon::Logon,
         new_order::NewOrder,
-        types::{OpenClose, OrdType, Side},
+        types::{EncryptMethod, OpenClose, OrdType, Side},
     };
     use ringbuf::traits::Split;
     use std::thread;
@@ -67,8 +68,21 @@ mod tests {
             ses.run();
         });
 
+        let _ = client.push_command(Logon::new(EncryptMethod::None, 50_u16));
         let _ = client.push_command(NewOrder::new(
             1,
+            1,
+            10,
+            OrdType::Limit,
+            666,
+            Side::Buy,
+            "OSISTRING".to_string(),
+            OpenClose::Open,
+            "OPT".to_string(),
+        ));
+
+        let _ = client.push_command(NewOrder::new(
+            3,
             1,
             10,
             OrdType::Limit,

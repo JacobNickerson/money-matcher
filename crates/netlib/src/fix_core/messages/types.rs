@@ -141,3 +141,23 @@ pub enum CustomerOrFirm {
     CustomerProfessional = b'8',
     JointBackOffice = b'9',
 }
+
+/// Tag 98 - EncryptMethod
+/// `0` = None
+/// `1` = PKCS (proprietary)
+/// `2` = DES (ECB mode)
+/// `3` = PKCS/DES (proprietary)
+/// `4` = PGP/DES (defunct)
+/// `5` = PGP/DES-MD5
+/// `6` = PEM/DES-MD5
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncryptMethod {
+    None = 0,
+    PKCS = 1,
+    DES = 2,
+    PKCS_DES = 3,
+    PGP_DES = 4,
+    PGP_DES_MD5 = 5,
+    PEM_DES_MD5 = 6,
+}
