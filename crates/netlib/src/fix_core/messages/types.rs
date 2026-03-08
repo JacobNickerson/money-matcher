@@ -154,11 +154,11 @@ pub enum CustomerOrFirm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EncryptMethod {
     #[default]
-    None = 0,
-    PKCS = 1,
-    DES = 2,
-    PKCS_DES = 3,
-    PGP_DES = 4,
-    PGP_DES_MD5 = 5,
-    PEM_DES_MD5 = 6,
+    None = b'0',
+    PKCS = b'1',
+    DES = b'2',
+    PKCS_DES = b'3',
+    PGP_DES = b'4',
+    PGP_DES_MD5 = b'5',
+    PEM_DES_MD5 = b'6',
 }

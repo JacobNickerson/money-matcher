@@ -1,4 +1,4 @@
-use crate::fix::{FIXReply, FIXReplyMessage, FIXRequest, FIXRequestMessage};
+use crate::fix::{FIXRequest, FIXRequestMessage};
 use crate::lob::{
     order::{Order, OrderSide, OrderType},
     types::{OrderId, Price, Timestamp},
@@ -10,12 +10,14 @@ use netlib::fix_core::messages::{
     FIX_MESSAGE_TYPE_LOGON, TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_TYPE,
     TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TRANSACT_TIME,
 };
+use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use netlib::fix_core::{
     helpers::{convert_timestamp, extract_message, write_fix_message},
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
 };
 use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
 use ringbuf::{HeapCons, HeapProd, traits::*};
+use std::time::Instant;
 use std::{
     io::{Read, Write},
     str::from_utf8,
@@ -34,6 +36,10 @@ pub struct Session {
     pub(crate) tx: HeapProd<Vec<u8>>,
     rx: HeapCons<Vec<u8>>,
     pub state: Option<SessionState>,
+    pub last_sent: Instant,     // Server -> Client
+    pub last_received: Instant, // Client -> Server
+    pub(crate) test_req_counter: u32,
+    pub pending_test_req: Option<Instant>,
 }
 
 #[derive(Clone)]
@@ -73,6 +79,10 @@ impl Session {
             tx,
             rx,
             state: None,
+            last_sent: Instant::now(),
+            last_received: Instant::now(),
+            test_req_counter: 0,
+            pending_test_req: None,
         }
     }
 
@@ -90,6 +100,7 @@ impl Session {
                 }
                 Ok(n) => {
                     self.tmp_end += n;
+                    self.last_received = Instant::now();
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     self.read(&mut events);
@@ -267,6 +278,7 @@ impl Session {
         );
 
         self.tx.try_push(msg).ok();
+        self.last_sent = Instant::now();
 
         Ok(())
     }

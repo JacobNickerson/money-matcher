@@ -1,7 +1,9 @@
 use mio::{event::Event, net::TcpStream};
+use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use netlib::fix_core::{
     helpers::{extract_message, print_message, write_fix_message},
-    messages::FixFrame,
+    iterator::FixIterator,
+    messages::{FixFrame, TAG_MSG_TYPE},
 };
 use ringbuf::{HeapCons, traits::Consumer};
 use std::{
@@ -121,7 +123,21 @@ impl Session {
     fn process_replies(&mut self) {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
             self.inbound_sequence_number = self.inbound_sequence_number.wrapping_add(1);
-            print_message(&msg);
+
+            let mut msg_type = None;
+
+            for (tag, value) in FixIterator::new(&msg) {
+                if tag == TAG_MSG_TYPE {
+                    msg_type = Some(value);
+                    break;
+                }
+            }
+
+            let event: Option<FIXReply> = match msg_type {
+                _ => None,
+            };
+
+            //events.extend(event);
         }
     }
 

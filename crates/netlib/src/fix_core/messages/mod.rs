@@ -1,3 +1,10 @@
+use zerocopy::Order;
+
+use crate::fix_core::messages::{
+    execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
+    test_request::TestRequest,
+};
+
 pub trait FixMessage {
     const MESSAGE_TYPE: &'static [u8];
     fn as_bytes(&self) -> Vec<u8>;
@@ -9,13 +16,17 @@ pub struct FixFrame {
 }
 
 pub mod execution_report;
+pub mod heartbeat;
 pub mod logon;
 pub mod new_order;
 pub mod order_cancel;
 pub mod order_cancel_reject;
 pub mod order_cancel_replace;
+pub mod test_request;
 pub mod types;
 
+pub const FIX_MESSAGE_TYPE_HEARTBEAT: &[u8] = b"0";
+pub const FIX_MESSAGE_TYPE_TEST_REQUEST: &[u8] = b"1";
 pub const FIX_MESSAGE_TYPE_EXECUTION_REPORT: &[u8] = b"8";
 pub const FIX_MESSAGE_TYPE_NEW_ORDER: &[u8] = b"D";
 pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT: &[u8] = b"9";
@@ -48,6 +59,7 @@ pub const TAG_TEXT: &[u8] = b"58";
 pub const TAG_TRANSACT_TIME: &[u8] = b"60";
 pub const TAG_OPEN_CLOSE: &[u8] = b"77";
 pub const TAG_MSG_SEQ_NUM: &[u8] = b"34";
+pub const TAG_TEST_REQ_ID: &[u8] = b"112";
 pub const TAG_EXEC_TYPE: &[u8] = b"150";
 pub const TAG_LEAVES_QTY: &[u8] = b"151";
 pub const TAG_SECURITY_TYPE: &[u8] = b"167";
@@ -60,3 +72,37 @@ pub const TAG_MATURITY_DATE: &[u8] = b"541";
 pub const TAG_CXL_REJ_RESPONSE_TO: &[u8] = b"434";
 pub const TAG_ENCRYPT_METHOD: &[u8] = b"98";
 pub const TAG_HEART_BT_INT: &[u8] = b"108";
+
+#[derive(Debug)]
+pub struct FIXReply {
+    pub comp_id: String,
+    pub message: FIXReplyMessage,
+}
+
+#[derive(Debug)]
+pub enum FIXReplyMessage {
+    ExecutionReport(ExecutionReport),
+    Logon(Logon),
+    Heartbeat(Heartbeat),
+    TestRequest(TestRequest),
+}
+
+impl FIXReplyMessage {
+    pub fn message_type(&self) -> &'static [u8] {
+        match self {
+            FIXReplyMessage::ExecutionReport(_) => ExecutionReport::MESSAGE_TYPE,
+            FIXReplyMessage::Logon(_) => Logon::MESSAGE_TYPE,
+            FIXReplyMessage::Heartbeat(_) => Heartbeat::MESSAGE_TYPE,
+            FIXReplyMessage::TestRequest(_) => TestRequest::MESSAGE_TYPE,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        match self {
+            FIXReplyMessage::ExecutionReport(er) => er.as_bytes(),
+            FIXReplyMessage::Logon(l) => l.as_bytes(),
+            FIXReplyMessage::Heartbeat(hb) => hb.as_bytes(),
+            FIXReplyMessage::TestRequest(tr) => tr.as_bytes(),
+        }
+    }
+}

@@ -1,14 +1,18 @@
 use crate::fix::session::SessionState;
-use crate::fix::{FIXReply, FIXReplyMessage, FIXRequest, FIXRequestMessage};
+use crate::fix::{FIXRequest, FIXRequestMessage};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
+use netlib::fix_core::messages::heartbeat::{self, Heartbeat};
 use netlib::fix_core::messages::logon::{self, Logon};
+use netlib::fix_core::messages::test_request::TestRequest;
+use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::collections::HashMap;
 use std::io::{self};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::fix::session::Session;
 
@@ -66,11 +70,60 @@ impl FixEngine {
         println!("Server running on {}", self.listener.local_addr().unwrap());
 
         loop {
-            self.poll.poll(&mut events, None).unwrap();
+            self.poll
+                .poll(&mut events, Some(Duration::from_secs(1)))
+                .unwrap();
 
             for event in events.iter() {
                 self.handle_event(event);
             }
+
+            self.check_heartbeats();
+        }
+    }
+
+    pub fn check_heartbeats(&mut self) {
+        let now = Instant::now();
+        let mut replies = Vec::new();
+        let mut close_sessions = Vec::new();
+        for (token, session) in &mut self.connections {
+            let Some(state) = &session.state else {
+                continue;
+            };
+            let interval = Duration::from_secs(state.heart_bt_int as u64);
+
+            if now - session.last_received > interval {
+                if session.pending_test_req.is_none() {
+                    session.test_req_counter += 1;
+                    session.pending_test_req = Some(now);
+
+                    replies.push(FIXReply {
+                        comp_id: state.comp_id.clone(),
+                        message: FIXReplyMessage::TestRequest(TestRequest {
+                            test_req_id: session.test_req_counter,
+                        }),
+                    });
+                } else if now - session.pending_test_req.unwrap()
+                    > interval + Duration::from_secs(10)
+                {
+                    close_sessions.push(*token);
+                }
+            }
+
+            if now - session.last_sent > interval {
+                replies.push(FIXReply {
+                    comp_id: state.comp_id.clone(),
+                    message: FIXReplyMessage::Heartbeat(Heartbeat { test_req_id: None }),
+                });
+            }
+        }
+
+        for token in close_sessions {
+            self.close_session(token);
+        }
+
+        for reply in replies {
+            self.send_reply(reply);
         }
     }
 
@@ -152,6 +205,8 @@ impl FixEngine {
 
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.connections.get_mut(&token) {
+            println!("Closing session: {:?}", token);
+
             if session.send_replies().is_err() {
                 self.close_session(token);
                 return;
