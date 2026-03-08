@@ -4,14 +4,16 @@ use crate::lob::{
     types::{OrderId, Price, Timestamp},
 };
 use mio::{Token, net::TcpStream};
+use netlib::fix_core::helpers::print_message;
 use netlib::fix_core::messages::heartbeat::Heartbeat;
 use netlib::fix_core::messages::logon::Logon;
 use netlib::fix_core::messages::test_request::TestRequest;
 use netlib::fix_core::messages::types::EncryptMethod;
 use netlib::fix_core::messages::{
     FIX_MESSAGE_TYPE_HEARTBEAT, FIX_MESSAGE_TYPE_LOGON, FIX_MESSAGE_TYPE_TEST_REQUEST,
-    TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_TYPE, TAG_ORD_TYPE, TAG_ORDER_QTY,
-    TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TEST_REQ_ID, TAG_TRANSACT_TIME,
+    TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_SEQ_NUM, TAG_MSG_TYPE,
+    TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TEST_REQ_ID,
+    TAG_TRANSACT_TIME,
 };
 use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use netlib::fix_core::{
@@ -19,6 +21,7 @@ use netlib::fix_core::{
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
 };
 use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
+use rand::seq;
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{
@@ -60,7 +63,7 @@ impl Default for SessionState {
             comp_id: String::new(),
             target_comp_id: String::new(),
             inbound_seq_num: 0,
-            outbound_seq_num: 1,
+            outbound_seq_num: 0,
             encrypt_method: EncryptMethod::None,
             heart_bt_int: 30,
             logged_in: false,
@@ -127,13 +130,39 @@ impl Session {
 
     fn process_messages(&mut self, events: &mut Vec<FIXRequest>) {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
+            let mut msg_seq_num = None;
             let mut msg_type = None;
 
             for (tag, value) in FixIterator::new(&msg) {
                 if tag == TAG_MSG_TYPE {
                     msg_type = Some(value);
-                    break;
+                } else if tag == TAG_MSG_SEQ_NUM {
+                    msg_seq_num = from_utf8(value).ok().and_then(|v| v.parse().ok());
                 }
+            }
+
+            let seq_num = match msg_seq_num {
+                Some(seq) => seq,
+                None => return,
+            };
+
+            if let Some(state) = self.state.as_mut() {
+                let expected_seq_num = state.inbound_seq_num + 1;
+
+                if seq_num == expected_seq_num {
+                    println!("INBOUND SEQ MATCHES {} {}", seq_num, expected_seq_num);
+                    state.inbound_seq_num = seq_num;
+                } else if seq_num > expected_seq_num {
+                    println!("INBOUND SEQ TOO HIGH {} {}", seq_num, expected_seq_num);
+                    // RESEND REQUEST
+                    return;
+                } else if seq_num < expected_seq_num {
+                    println!("INBOUND SEQ TOO LOW {} {}", seq_num, expected_seq_num);
+                    // SEND LOGOUT MESSAGE
+                    continue;
+                }
+            } else if msg_type != Some(FIX_MESSAGE_TYPE_LOGON) {
+                return;
             }
 
             let event: Option<FIXRequest> = match msg_type {
@@ -308,17 +337,20 @@ impl Session {
     }
 
     pub fn handle_reply(&mut self, reply: FIXReplyMessage) -> Result<(), &'static str> {
-        let state = self.state.as_ref().ok_or("Can't find comp_id")?;
+        let state = self.state.as_mut().ok_or("Can't find comp_id")?;
         let sender_comp_id = state.target_comp_id.clone();
         let target_comp_id = state.comp_id.clone();
 
+        state.outbound_seq_num += 1;
+
         let msg = write_fix_message(
             reply.message_type(),
-            &1_u32,
+            &state.outbound_seq_num,
             &sender_comp_id,
             &target_comp_id,
             &reply.as_bytes(),
         );
+        print_message(&msg);
 
         self.write_buffer.extend(msg);
 

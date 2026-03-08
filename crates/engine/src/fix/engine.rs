@@ -103,8 +103,6 @@ impl FixEngine {
                         test_req_id: session.test_req_counter,
                     };
 
-                    println!("Sending Test Request | {:?}", test_request);
-
                     self.tmp_pending_heartbeats
                         .push((*token, FIXReplyMessage::TestRequest(test_request)));
                 } else if now - session.last_received > interval + Duration::from_secs(10) {
@@ -112,7 +110,6 @@ impl FixEngine {
                 }
             } else if now - session.last_sent > interval {
                 let heartbeat = Heartbeat { test_req_id: None };
-                println!("Sending heartbeat | {:?}", heartbeat);
                 self.tmp_pending_heartbeats
                     .push((*token, FIXReplyMessage::Heartbeat(heartbeat)));
             }
@@ -130,7 +127,6 @@ impl FixEngine {
     }
 
     pub fn send_reply(&mut self, reply: FIXReply) {
-        println!("Sending reply | {:?}", reply.message);
         let Some((token, _)) = self.sessions.get(&reply.comp_id) else {
             return;
         };
@@ -232,14 +228,12 @@ impl FixEngine {
     }
 
     fn handle_readable(&mut self, token: Token) {
-        println!("handle_readable: {:?}", token);
         self.poll_events.clear();
 
         let result = match self.connections.get_mut(&token) {
             Some(session) => session.poll(&mut self.poll_events),
             None => return,
         };
-        println!("poll result: {:?}", result);
 
         if result.is_err() {
             self.close_session(token);
@@ -324,6 +318,7 @@ impl FixEngine {
 
         *stored_token = token;
         stored_state.logged_in = true;
+        stored_state.inbound_seq_num += 1;
 
         if let Some(session) = self.connections.get_mut(&token) {
             let state = session.state.insert(stored_state.clone());
