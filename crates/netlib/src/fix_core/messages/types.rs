@@ -12,6 +12,19 @@ pub enum OrdType {
     StopLimit = b'4',
 }
 
+impl TryFrom<u8> for OrdType {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'1' => Ok(Self::Market),
+            b'2' => Ok(Self::Limit),
+            b'3' => Ok(Self::Stop),
+            b'4' => Ok(Self::StopLimit),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Tag 54 - Side
 /// `1` = Buy
 /// `2` = Sell
@@ -20,6 +33,17 @@ pub enum OrdType {
 pub enum Side {
     Buy = b'1',
     Sell = b'2',
+}
+
+impl TryFrom<u8> for Side {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'1' => Ok(Self::Buy),
+            b'2' => Ok(Self::Sell),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Tag 77 - OpenClose
@@ -32,6 +56,17 @@ pub enum OpenClose {
     Close = b'C',
 }
 
+impl TryFrom<u8> for OpenClose {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::Open),
+            b'C' => Ok(Self::Close),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Tag 201 - PutOrCall
 /// `0` = Put
 /// `1` = Call
@@ -42,6 +77,17 @@ pub enum PutOrCall {
     Call = b'1',
 }
 
+impl TryFrom<u8> for PutOrCall {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::Put),
+            b'1' => Ok(Self::Call),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Tag 434 - CxlRejResponseTo
 /// `1` = Order Cancel Request
 /// `2` = Order Cancel Replace Request
@@ -50,6 +96,17 @@ pub enum PutOrCall {
 pub enum CxlRejResponseTo {
     OrderCancelRequest = b'1',
     OrderCancelReplaceRequest = b'2',
+}
+
+impl TryFrom<u8> for CxlRejResponseTo {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'1' => Ok(Self::OrderCancelRequest),
+            b'2' => Ok(Self::OrderCancelReplaceRequest),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Tag 39 - OrdStatus
@@ -76,6 +133,24 @@ pub enum OrdStatus {
     PendingReplace = b'E',
 }
 
+impl TryFrom<u8> for OrdStatus {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::New),
+            b'1' => Ok(Self::PartiallyFilled),
+            b'2' => Ok(Self::Filled),
+            b'3' => Ok(Self::DoneForDay),
+            b'4' => Ok(Self::Canceled),
+            b'5' => Ok(Self::Replaced),
+            b'6' => Ok(Self::PendingCancel),
+            b'8' => Ok(Self::Rejected),
+            b'E' => Ok(Self::PendingReplace),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Tag 20 - ExecTransType
 /// `0` = New
 /// `1` = Cancel
@@ -88,6 +163,19 @@ pub enum ExecTransType {
     Cancel = b'1',
     Correct = b'2',
     Status = b'3',
+}
+
+impl TryFrom<u8> for ExecTransType {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::New),
+            b'1' => Ok(Self::Cancel),
+            b'2' => Ok(Self::Correct),
+            b'3' => Ok(Self::Status),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Tag 150 - ExecType
@@ -116,6 +204,25 @@ pub enum ExecType {
     PendingReplace = b'E',
 }
 
+impl TryFrom<u8> for ExecType {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::New),
+            b'1' => Ok(Self::PartiallyFilled),
+            b'2' => Ok(Self::Filled),
+            b'3' => Ok(Self::DoneForDay),
+            b'4' => Ok(Self::Canceled),
+            b'5' => Ok(Self::Replace),
+            b'6' => Ok(Self::PendingCancel),
+            b'8' => Ok(Self::Rejected),
+            b'D' => Ok(Self::Restated),
+            b'E' => Ok(Self::PendingReplace),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Tag 204 - CustomerOrFirm
 /// `0` = Customer
 /// `1` = Proprietary Firm
@@ -142,6 +249,25 @@ pub enum CustomerOrFirm {
     JointBackOffice = b'9',
 }
 
+impl TryFrom<u8> for CustomerOrFirm {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::Customer),
+            b'1' => Ok(Self::ProprietaryFirm),
+            b'2' => Ok(Self::BrokerDealerFirm),
+            b'3' => Ok(Self::BrokerDealerCustomer),
+            b'4' => Ok(Self::IseMarketMaker),
+            b'5' => Ok(Self::FarMarketMaker),
+            b'6' => Ok(Self::RetailCustomer),
+            b'7' => Ok(Self::ProprietaryCustomer),
+            b'8' => Ok(Self::CustomerProfessional),
+            b'9' => Ok(Self::JointBackOffice),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Tag 98 - EncryptMethod
 /// `0` = None
 /// `1` = PKCS (proprietary)
@@ -161,4 +287,20 @@ pub enum EncryptMethod {
     PGP_DES = b'4',
     PGP_DES_MD5 = b'5',
     PEM_DES_MD5 = b'6',
+}
+
+impl TryFrom<u8> for EncryptMethod {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::None),
+            b'1' => Ok(Self::PKCS),
+            b'2' => Ok(Self::DES),
+            b'3' => Ok(Self::PKCS_DES),
+            b'4' => Ok(Self::PGP_DES),
+            b'5' => Ok(Self::PGP_DES_MD5),
+            b'6' => Ok(Self::PEM_DES_MD5),
+            _ => Err(()),
+        }
+    }
 }
