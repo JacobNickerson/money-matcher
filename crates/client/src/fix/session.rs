@@ -3,21 +3,23 @@ use netlib::fix_core::helpers::{extract_message, print_message, write_fix_messag
 use netlib::fix_core::messages::execution_report::ExecutionReport;
 use netlib::fix_core::messages::heartbeat::Heartbeat;
 use netlib::fix_core::messages::logon::Logon;
+use netlib::fix_core::messages::resend_request::ResendRequest;
 use netlib::fix_core::messages::test_request::TestRequest;
 use netlib::fix_core::messages::types::{
     CustomerOrFirm, EncryptMethod, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side,
 };
 use netlib::fix_core::messages::{
     FIX_MESSAGE_TYPE_EXECUTION_REPORT, FIX_MESSAGE_TYPE_HEARTBEAT, FIX_MESSAGE_TYPE_LOGON,
-    FIX_MESSAGE_TYPE_TEST_REQUEST, TAG_CL_ORD_ID, TAG_CUM_QTY, TAG_CUSTOMER_OR_FIRM,
-    TAG_ENCRYPT_METHOD, TAG_EXEC_ID, TAG_EXEC_TRANS_TYPE, TAG_EXEC_TYPE, TAG_HEART_BT_INT,
-    TAG_LEAVES_QTY, TAG_MATURITY_DATE, TAG_MSG_SEQ_NUM, TAG_MSG_TYPE, TAG_OPEN_CLOSE,
-    TAG_ORD_STATUS, TAG_ORDER_ID, TAG_ORDER_QTY, TAG_PUT_OR_CALL, TAG_SECURITY_ID,
-    TAG_SECURITY_TYPE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL, TAG_TEST_REQ_ID,
+    FIX_MESSAGE_TYPE_RESEND_REQUEST, FIX_MESSAGE_TYPE_TEST_REQUEST, TAG_CL_ORD_ID, TAG_CUM_QTY,
+    TAG_CUSTOMER_OR_FIRM, TAG_ENCRYPT_METHOD, TAG_EXEC_ID, TAG_EXEC_TRANS_TYPE, TAG_EXEC_TYPE,
+    TAG_HEART_BT_INT, TAG_LEAVES_QTY, TAG_MATURITY_DATE, TAG_MSG_SEQ_NUM, TAG_MSG_TYPE,
+    TAG_OPEN_CLOSE, TAG_ORD_STATUS, TAG_ORDER_ID, TAG_ORDER_QTY, TAG_POSS_DUP_FLAG,
+    TAG_PUT_OR_CALL, TAG_SECURITY_ID, TAG_SECURITY_TYPE, TAG_SENDER_COMP_ID, TAG_SIDE,
+    TAG_STRIKE_PRICE, TAG_SYMBOL, TAG_TEST_REQ_ID,
 };
 use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::time::Instant;
 use std::{
     io::{Read, Write},
@@ -50,6 +52,7 @@ pub struct SessionState {
     pub logged_in: bool,
     pub encrypt_method: EncryptMethod,
     pub heart_bt_int: u16,
+    pub sent_messages: BTreeMap<u32, FIXReplyMessage>,
 }
 
 impl Default for SessionState {
@@ -62,6 +65,7 @@ impl Default for SessionState {
             encrypt_method: EncryptMethod::None,
             heart_bt_int: 30,
             logged_in: false,
+            sent_messages: BTreeMap::new(),
         }
     }
 }
@@ -127,12 +131,15 @@ impl Session {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
             let mut msg_seq_num = None;
             let mut msg_type = None;
+            let mut poss_dup_flag = false;
 
             for (tag, value) in FixIterator::new(&msg) {
                 if tag == TAG_MSG_TYPE {
                     msg_type = Some(value);
                 } else if tag == TAG_MSG_SEQ_NUM {
                     msg_seq_num = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                } else if tag == TAG_POSS_DUP_FLAG {
+                    poss_dup_flag = value == b"Y";
                 }
             }
 
@@ -145,19 +152,27 @@ impl Session {
                 let expected_seq_num = state.inbound_seq_num + 1;
 
                 if seq_num == expected_seq_num {
-                    println!("INBOUND SEQ MATCHES {} {}", seq_num, expected_seq_num);
                     state.inbound_seq_num = seq_num;
                 } else if seq_num > expected_seq_num {
                     println!("INBOUND SEQ TOO HIGH {} {}", seq_num, expected_seq_num);
-                    // RESEND REQUEST
-                    return;
-                } else if seq_num < expected_seq_num {
-                    println!("INBOUND SEQ TOO LOW {} {}", seq_num, expected_seq_num);
+                    self.handle_request(
+                        FIXReplyMessage::ResendRequest(ResendRequest {
+                            begin_seq_no: expected_seq_num,
+                            end_seq_no: 0,
+                        }),
+                        None,
+                        false,
+                    );
+
+                    if msg_type != Some(FIX_MESSAGE_TYPE_RESEND_REQUEST)
+                        && msg_type != Some(FIX_MESSAGE_TYPE_LOGON)
+                    {
+                        continue;
+                    }
+                } else if !poss_dup_flag {
                     // SEND LOGOUT MESSAGE
-                    continue;
+                    return;
                 }
-            } else if msg_type != Some(FIX_MESSAGE_TYPE_LOGON) {
-                return;
             }
 
             let event: Option<FIXReply> = match msg_type {
@@ -165,7 +180,7 @@ impl Session {
                 Some(FIX_MESSAGE_TYPE_EXECUTION_REPORT) => self.handle_execution_report(&msg).ok(),
                 Some(FIX_MESSAGE_TYPE_TEST_REQUEST) => self.handle_test_request(&msg).ok(),
                 Some(FIX_MESSAGE_TYPE_HEARTBEAT) => self.handle_heartbeat(&msg).ok(),
-
+                Some(FIX_MESSAGE_TYPE_RESEND_REQUEST) => self.handle_resend_request(&msg).ok(),
                 _ => None,
             };
 
@@ -173,23 +188,47 @@ impl Session {
         }
     }
 
-    pub fn handle_request<T>(&mut self, request: T) -> Result<(), &'static str>
-    where
-        T: FixMessage,
-    {
+    pub fn handle_request(
+        &mut self,
+        request: FIXReplyMessage,
+        override_seq_num: Option<u32>,
+        poss_dup_flag: bool,
+    ) -> Result<(), &'static str> {
         let state = self.state.as_mut().ok_or("Can't find comp_id")?;
         let sender_comp_id = state.comp_id.clone();
         let target_comp_id = state.target_comp_id.clone();
-        state.outbound_seq_num += 1;
+
+        let seq_num = match override_seq_num {
+            Some(seq) => seq,
+            None => {
+                state.outbound_seq_num += 1;
+                state.outbound_seq_num
+            }
+        };
+
+        let mut body = request.as_bytes();
+
+        if poss_dup_flag {
+            let mut new_body = Vec::new();
+            new_body.extend_from_slice(TAG_POSS_DUP_FLAG);
+            new_body.extend_from_slice(b"=Y\x01");
+            new_body.extend_from_slice(&body);
+            body = new_body;
+        }
 
         let msg = write_fix_message(
-            T::MESSAGE_TYPE,
-            &state.outbound_seq_num,
+            request.message_type(),
+            &seq_num,
             &sender_comp_id,
             &target_comp_id,
-            &request.as_bytes(),
+            &body,
         );
+
         print_message(&msg);
+
+        if override_seq_num.is_none() {
+            state.sent_messages.insert(seq_num, request);
+        }
 
         self.write_buffer.extend(msg);
         self.last_sent = Instant::now();
@@ -252,6 +291,42 @@ impl Session {
             message: FIXReplyMessage::Logon(Logon {
                 encrypt_method: encrypt_method.unwrap_or_default(),
                 heart_bt_int: heart_bt_int.unwrap_or(30),
+            }),
+        })
+    }
+
+    fn handle_resend_request(&mut self, msg: &[u8]) -> Result<FIXReply, &'static str> {
+        let mut comp_id: Option<String> = self.state.as_ref().map(|s| s.comp_id.clone());
+        let mut begin_seq_no: Option<u32> = None;
+        let mut end_seq_no: Option<u32> = None;
+
+        println!("Received Test Request | {:?}", comp_id);
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_SENDER_COMP_ID => {
+                    if comp_id.is_none() {
+                        comp_id = from_utf8(value).ok().map(str::to_owned);
+                    }
+                }
+                TAG_BEGIN_SEQ_NO => {
+                    begin_seq_no = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_END_SEQ_NO => {
+                    end_seq_no = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        let comp_id = comp_id.ok_or("Can't find comp_id")?;
+        let begin_seq_no = begin_seq_no.ok_or("Can't find begin_seq_no")?;
+        let end_seq_no = end_seq_no.ok_or("Can't end_seq_no comp_id")?;
+        Ok(FIXReply {
+            comp_id,
+            message: FIXReplyMessage::ResendRequest(ResendRequest {
+                begin_seq_no,
+                end_seq_no,
             }),
         })
     }

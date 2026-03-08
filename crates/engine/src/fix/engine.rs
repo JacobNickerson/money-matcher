@@ -5,8 +5,9 @@ use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
 use netlib::fix_core::messages::heartbeat::Heartbeat;
 use netlib::fix_core::messages::logon::Logon;
+use netlib::fix_core::messages::resend_request::ResendRequest;
 use netlib::fix_core::messages::test_request::TestRequest;
-use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
+use netlib::fix_core::messages::{FIXReply, FIXReplyMessage, resend_request};
 use ringbuf::traits::{Consumer, Producer};
 use std::collections::HashMap;
 use std::io::{self};
@@ -140,7 +141,7 @@ impl FixEngine {
         };
 
         let was_empty = session.write_buffer.is_empty();
-        session.handle_reply(msg).ok();
+        session.handle_reply(msg, None, false).ok();
         if was_empty && !session.write_buffer.is_empty() {
             self.poll
                 .registry()
@@ -240,12 +241,29 @@ impl FixEngine {
             return;
         }
 
+        if let Some(session) = self.connections.get_mut(&token) {
+            if !session.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(
+                        &mut session.stream,
+                        token,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )
+                    .unwrap();
+            }
+        }
+
         let events = std::mem::take(&mut self.poll_events);
 
         for event in events {
             match event.message {
                 FIXRequestMessage::Logon(ref logon) => {
                     self.finalize_logon(token, event.comp_id, logon)
+                }
+                FIXRequestMessage::ResendRequest(ref resend_request) => {
+                    println!("RESEND REQUEST {:?}", resend_request);
+                    self.resend_messages(token, resend_request);
                 }
                 FIXRequestMessage::TestRequest(ref test_request) => {
                     self.send_to_session(
@@ -292,6 +310,42 @@ impl FixEngine {
                 }
             }
             self.poll.registry().deregister(&mut session.stream).ok();
+        }
+    }
+
+    fn resend_messages(&mut self, token: Token, resend_request: &ResendRequest) {
+        let mut messages_to_resend = Vec::new();
+
+        if let Some(session) = self.connections.get_mut(&token) {
+            if let Some(state) = &session.state {
+                let end = if resend_request.end_seq_no == 0 {
+                    u32::MAX
+                } else {
+                    resend_request.end_seq_no
+                };
+
+                for (&seq, msg) in state.sent_messages.range(resend_request.begin_seq_no..=end) {
+                    messages_to_resend.push((seq, msg.clone()));
+                }
+            }
+
+            let was_empty = session.write_buffer.is_empty();
+
+            for (seq, msg) in messages_to_resend {
+                session.handle_reply(msg.clone(), Some(seq), true).ok();
+            }
+
+            if was_empty && !session.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(
+                        &mut session.stream,
+                        token,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )
+                    .unwrap();
+            }
+            self.handle_writable(token);
         }
     }
 

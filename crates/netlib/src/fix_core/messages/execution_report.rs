@@ -22,7 +22,7 @@ use crate::fix_core::{
 /// • report trade busts or other post-trade corrections
 ///
 /// MsgType = 8
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExecutionReport {
     pub cl_ord_id: u64,
     pub cum_qty: u32,

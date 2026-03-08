@@ -4,7 +4,7 @@ use crate::fix_core::messages::{FIX_MESSAGE_TYPE_HEARTBEAT, FixMessage, TAG_TEST
 /// During periods of message inactivity, FIX applications will generate Heartbeat messages at regular time intervals.
 ///
 /// MsgType = 0
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Heartbeat {
     pub test_req_id: Option<u32>,
 }

@@ -63,6 +63,10 @@ impl FixClient {
     }
 
     pub fn connect(&mut self) -> io::Result<()> {
+        if self.session.is_some() {
+            return Ok(());
+        }
+
         let mut stream = TcpStream::connect(self.server_addr)?;
         self.poll.registry().register(
             &mut stream,
@@ -80,7 +84,9 @@ impl FixClient {
         });
 
         let logon = Logon::new(self.encrypt_method, self.heart_bt_int);
-        session.handle_request(logon).ok();
+        session
+            .handle_request(FIXReplyMessage::Logon(logon), None, false)
+            .ok();
 
         self.session = Some(session);
         Ok(())
@@ -138,12 +144,10 @@ impl FixClient {
             self.close_session();
         } else if should_send_test_req {
             let test_request = TestRequest { test_req_id };
-            println!("Sending Test Request | {:?}", test_request);
-            self.send_request(test_request);
+            self.send_request(FIXReplyMessage::TestRequest(test_request));
         } else if should_send_heartbeat {
             let heartbeat = Heartbeat { test_req_id: None };
-            println!("Sending heartbeat | {:?}", heartbeat);
-            self.send_request(heartbeat);
+            self.send_request(FIXReplyMessage::Heartbeat(heartbeat));
         }
     }
 
@@ -221,17 +225,32 @@ impl FixClient {
             return;
         }
 
+        if let Some(session) = self.session.as_mut() {
+            if !session.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(
+                        &mut session.stream,
+                        SESSION,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )
+                    .unwrap();
+            }
+        }
+
         let events = std::mem::take(&mut self.poll_events);
 
         for event in events {
             match event.message {
                 FIXReplyMessage::Logon(logon) => self.finalize_logon(event.comp_id, logon),
+                FIXReplyMessage::ResendRequest(resend_request) => {
+                    self.resend_messages(&resend_request);
+                }
                 FIXReplyMessage::TestRequest(ref test_request) => {
                     let heartbeat = Heartbeat {
                         test_req_id: Some(test_request.test_req_id),
                     };
-                    println!("Sending test request reply | {:?}", heartbeat);
-                    self.send_request(heartbeat);
+                    self.send_request(FIXReplyMessage::Heartbeat(heartbeat));
                 }
                 FIXReplyMessage::Heartbeat(ref heartbeat) => {
                     if let Some(session) = self.session.as_mut() {
@@ -263,6 +282,45 @@ impl FixClient {
         }
     }
 
+    fn resend_messages(
+        &mut self,
+        resend_request: &netlib::fix_core::messages::resend_request::ResendRequest,
+    ) {
+        let mut messages_to_resend = Vec::new();
+
+        if let Some(session) = self.session.as_mut() {
+            if let Some(state) = &session.state {
+                let end = if resend_request.end_seq_no == 0 {
+                    u32::MAX
+                } else {
+                    resend_request.end_seq_no
+                };
+
+                for (&seq, msg) in state.sent_messages.range(resend_request.begin_seq_no..=end) {
+                    messages_to_resend.push((seq, msg.clone()));
+                }
+            }
+
+            let was_empty = session.write_buffer.is_empty();
+
+            for (seq, msg) in messages_to_resend {
+                session.handle_request(msg.clone(), Some(seq), true).ok();
+            }
+
+            if was_empty && !session.write_buffer.is_empty() {
+                self.poll
+                    .registry()
+                    .reregister(
+                        &mut session.stream,
+                        SESSION,
+                        Interest::READABLE | Interest::WRITABLE,
+                    )
+                    .unwrap();
+            }
+            self.handle_writable();
+        }
+    }
+
     fn finalize_logon(&mut self, comp_id: String, logon: Logon) {
         let Some(session) = self.session.as_mut() else {
             return;
@@ -275,25 +333,18 @@ impl FixClient {
             self.close_session();
             return;
         }
-        println!(
-            "Finalize Logon | incoming heart_bt_int: {}",
-            logon.heart_bt_int
-        );
 
         state.logged_in = true;
         state.encrypt_method = logon.encrypt_method;
         state.heart_bt_int = logon.heart_bt_int;
     }
 
-    fn send_request<T>(&mut self, message: T)
-    where
-        T: FixMessage,
-    {
+    fn send_request(&mut self, message: FIXReplyMessage) {
         let Some(session) = self.session.as_mut() else {
             return;
         };
         let was_empty = session.write_buffer.is_empty();
-        session.handle_request(message).ok();
+        session.handle_request(message, None, false).ok();
         if was_empty && !session.write_buffer.is_empty() {
             self.poll
                 .registry()

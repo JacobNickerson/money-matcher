@@ -7,13 +7,14 @@ use mio::{Token, net::TcpStream};
 use netlib::fix_core::helpers::print_message;
 use netlib::fix_core::messages::heartbeat::Heartbeat;
 use netlib::fix_core::messages::logon::Logon;
+use netlib::fix_core::messages::resend_request::ResendRequest;
 use netlib::fix_core::messages::test_request::TestRequest;
 use netlib::fix_core::messages::types::EncryptMethod;
 use netlib::fix_core::messages::{
-    FIX_MESSAGE_TYPE_HEARTBEAT, FIX_MESSAGE_TYPE_LOGON, FIX_MESSAGE_TYPE_TEST_REQUEST,
-    TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_SEQ_NUM, TAG_MSG_TYPE,
-    TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TEST_REQ_ID,
-    TAG_TRANSACT_TIME,
+    FIX_MESSAGE_TYPE_HEARTBEAT, FIX_MESSAGE_TYPE_LOGON, FIX_MESSAGE_TYPE_RESEND_REQUEST,
+    FIX_MESSAGE_TYPE_TEST_REQUEST, TAG_BEGIN_SEQ_NO, TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD,
+    TAG_END_SEQ_NO, TAG_HEART_BT_INT, TAG_MSG_SEQ_NUM, TAG_MSG_TYPE, TAG_ORD_TYPE, TAG_ORDER_QTY,
+    TAG_POSS_DUP_FLAG, TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TEST_REQ_ID, TAG_TRANSACT_TIME,
 };
 use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use netlib::fix_core::{
@@ -22,7 +23,8 @@ use netlib::fix_core::{
 };
 use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
 use rand::seq;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::hash::Hash;
 use std::time::Instant;
 use std::{
     io::{Read, Write},
@@ -55,6 +57,7 @@ pub struct SessionState {
     pub logged_in: bool,
     pub encrypt_method: EncryptMethod,
     pub heart_bt_int: u16,
+    pub sent_messages: BTreeMap<u32, FIXReplyMessage>,
 }
 
 impl Default for SessionState {
@@ -67,6 +70,7 @@ impl Default for SessionState {
             encrypt_method: EncryptMethod::None,
             heart_bt_int: 30,
             logged_in: false,
+            sent_messages: BTreeMap::new(),
         }
     }
 }
@@ -132,12 +136,15 @@ impl Session {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
             let mut msg_seq_num = None;
             let mut msg_type = None;
+            let mut poss_dup_flag = false;
 
             for (tag, value) in FixIterator::new(&msg) {
                 if tag == TAG_MSG_TYPE {
                     msg_type = Some(value);
                 } else if tag == TAG_MSG_SEQ_NUM {
                     msg_seq_num = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                } else if tag == TAG_POSS_DUP_FLAG {
+                    poss_dup_flag = value == b"Y";
                 }
             }
 
@@ -150,19 +157,27 @@ impl Session {
                 let expected_seq_num = state.inbound_seq_num + 1;
 
                 if seq_num == expected_seq_num {
-                    println!("INBOUND SEQ MATCHES {} {}", seq_num, expected_seq_num);
                     state.inbound_seq_num = seq_num;
                 } else if seq_num > expected_seq_num {
                     println!("INBOUND SEQ TOO HIGH {} {}", seq_num, expected_seq_num);
-                    // RESEND REQUEST
-                    return;
-                } else if seq_num < expected_seq_num {
-                    println!("INBOUND SEQ TOO LOW {} {}", seq_num, expected_seq_num);
+                    self.handle_reply(
+                        FIXReplyMessage::ResendRequest(ResendRequest {
+                            begin_seq_no: expected_seq_num,
+                            end_seq_no: 0,
+                        }),
+                        None,
+                        false,
+                    );
+
+                    if msg_type != Some(FIX_MESSAGE_TYPE_RESEND_REQUEST)
+                        && msg_type != Some(FIX_MESSAGE_TYPE_LOGON)
+                    {
+                        continue;
+                    }
+                } else if !poss_dup_flag {
                     // SEND LOGOUT MESSAGE
-                    continue;
+                    return;
                 }
-            } else if msg_type != Some(FIX_MESSAGE_TYPE_LOGON) {
-                return;
             }
 
             let event: Option<FIXRequest> = match msg_type {
@@ -170,6 +185,7 @@ impl Session {
                 Some(FIX_MESSAGE_TYPE_NEW_ORDER) => self.handle_new_order(&msg).ok(),
                 Some(FIX_MESSAGE_TYPE_HEARTBEAT) => self.handle_heartbeat(&msg).ok(),
                 Some(FIX_MESSAGE_TYPE_TEST_REQUEST) => self.handle_test_request(&msg).ok(),
+                Some(FIX_MESSAGE_TYPE_RESEND_REQUEST) => self.handle_resend_request(&msg).ok(),
                 _ => None,
             };
 
@@ -229,6 +245,42 @@ impl Session {
             comp_id,
             message: FIXRequestMessage::TestRequest(TestRequest {
                 test_req_id: test_req_id.unwrap_or(0),
+            }),
+        })
+    }
+
+    fn handle_resend_request(&mut self, msg: &[u8]) -> Result<FIXRequest, &'static str> {
+        let mut comp_id: Option<String> = self.state.as_ref().map(|s| s.comp_id.clone());
+        let mut begin_seq_no: Option<u32> = None;
+        let mut end_seq_no: Option<u32> = None;
+
+        println!("Received Test Request | {:?}", comp_id);
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_SENDER_COMP_ID => {
+                    if comp_id.is_none() {
+                        comp_id = from_utf8(value).ok().map(str::to_owned);
+                    }
+                }
+                TAG_BEGIN_SEQ_NO => {
+                    begin_seq_no = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_END_SEQ_NO => {
+                    end_seq_no = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        let comp_id = comp_id.ok_or("Can't find comp_id")?;
+        let begin_seq_no = begin_seq_no.ok_or("Can't find begin_seq_no")?;
+        let end_seq_no = end_seq_no.ok_or("Can't end_seq_no comp_id")?;
+        Ok(FIXRequest {
+            comp_id,
+            message: FIXRequestMessage::ResendRequest(ResendRequest {
+                begin_seq_no,
+                end_seq_no,
             }),
         })
     }
@@ -336,23 +388,48 @@ impl Session {
         })
     }
 
-    pub fn handle_reply(&mut self, reply: FIXReplyMessage) -> Result<(), &'static str> {
+    pub fn handle_reply(
+        &mut self,
+        reply: FIXReplyMessage,
+        override_seq_num: Option<u32>,
+        poss_dup_flag: bool,
+    ) -> Result<(), &'static str> {
         let state = self.state.as_mut().ok_or("Can't find comp_id")?;
         let sender_comp_id = state.target_comp_id.clone();
         let target_comp_id = state.comp_id.clone();
 
-        state.outbound_seq_num += 1;
+        let seq_num = match override_seq_num {
+            Some(seq) => seq,
+            None => {
+                state.outbound_seq_num += 1;
+                state.outbound_seq_num
+            }
+        };
+
+        let mut body = reply.as_bytes();
+
+        if poss_dup_flag {
+            let mut new_body = Vec::new();
+            new_body.extend_from_slice(b"43=Y\x01");
+            new_body.extend_from_slice(&body);
+            body = new_body;
+        }
 
         let msg = write_fix_message(
             reply.message_type(),
-            &state.outbound_seq_num,
+            &seq_num,
             &sender_comp_id,
             &target_comp_id,
-            &reply.as_bytes(),
+            &body,
         );
-        print_message(&msg);
 
+        if override_seq_num.is_none() {
+            state.sent_messages.insert(seq_num, reply);
+        }
+
+        print_message(&msg);
         self.write_buffer.extend(msg);
+        self.last_sent = Instant::now();
 
         Ok(())
     }

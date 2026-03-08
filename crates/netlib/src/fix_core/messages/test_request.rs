@@ -4,7 +4,7 @@ use crate::fix_core::messages::{FIX_MESSAGE_TYPE_TEST_REQUEST, FixMessage, TAG_T
 /// The test request message forces a heartbeat from the opposing application.
 ///
 /// MsgType = 1
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TestRequest {
     pub test_req_id: u32,
 }

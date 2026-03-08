@@ -6,7 +6,7 @@ use crate::fix_core::messages::{
 /// The logon message authenticates a user establishing a connection to a remote system.
 ///
 /// MsgType = A
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Logon {
     pub encrypt_method: EncryptMethod,
     /// Same value used by both sides

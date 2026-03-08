@@ -2,7 +2,7 @@ use zerocopy::Order;
 
 use crate::fix_core::messages::{
     execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
-    test_request::TestRequest,
+    resend_request::ResendRequest, test_request::TestRequest,
 };
 
 pub trait FixMessage {
@@ -22,6 +22,7 @@ pub mod new_order;
 pub mod order_cancel;
 pub mod order_cancel_reject;
 pub mod order_cancel_replace;
+pub mod resend_request;
 pub mod test_request;
 pub mod types;
 
@@ -33,7 +34,11 @@ pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT: &[u8] = b"9";
 pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE: &[u8] = b"G";
 pub const FIX_MESSAGE_TYPE_ORDER_CANCEL: &[u8] = b"F";
 pub const FIX_MESSAGE_TYPE_LOGON: &[u8] = b"A";
+pub const FIX_MESSAGE_TYPE_RESEND_REQUEST: &[u8] = b"2";
 
+pub const TAG_POSS_DUP_FLAG: &[u8] = b"43";
+pub const TAG_BEGIN_SEQ_NO: &[u8] = b"7";
+pub const TAG_END_SEQ_NO: &[u8] = b"16";
 pub const TAG_BEGIN_STRING: &[u8] = b"8";
 pub const TAG_BODY_LENGTH: &[u8] = b"9";
 pub const TAG_CHECKSUM: &[u8] = b"10";
@@ -73,18 +78,19 @@ pub const TAG_CXL_REJ_RESPONSE_TO: &[u8] = b"434";
 pub const TAG_ENCRYPT_METHOD: &[u8] = b"98";
 pub const TAG_HEART_BT_INT: &[u8] = b"108";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FIXReply {
     pub comp_id: String,
     pub message: FIXReplyMessage,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FIXReplyMessage {
     ExecutionReport(ExecutionReport),
     Logon(Logon),
     Heartbeat(Heartbeat),
     TestRequest(TestRequest),
+    ResendRequest(ResendRequest),
 }
 
 impl FIXReplyMessage {
@@ -94,6 +100,7 @@ impl FIXReplyMessage {
             FIXReplyMessage::Logon(_) => Logon::MESSAGE_TYPE,
             FIXReplyMessage::Heartbeat(_) => Heartbeat::MESSAGE_TYPE,
             FIXReplyMessage::TestRequest(_) => TestRequest::MESSAGE_TYPE,
+            FIXReplyMessage::ResendRequest(_) => ResendRequest::MESSAGE_TYPE,
         }
     }
 
@@ -103,6 +110,7 @@ impl FIXReplyMessage {
             FIXReplyMessage::Logon(l) => l.as_bytes(),
             FIXReplyMessage::Heartbeat(hb) => hb.as_bytes(),
             FIXReplyMessage::TestRequest(tr) => tr.as_bytes(),
+            FIXReplyMessage::ResendRequest(rr) => rr.as_bytes(),
         }
     }
 }
