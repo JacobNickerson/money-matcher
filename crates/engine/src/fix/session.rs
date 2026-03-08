@@ -4,11 +4,14 @@ use crate::lob::{
     types::{OrderId, Price, Timestamp},
 };
 use mio::{Token, net::TcpStream};
+use netlib::fix_core::messages::heartbeat::Heartbeat;
 use netlib::fix_core::messages::logon::Logon;
+use netlib::fix_core::messages::test_request::TestRequest;
 use netlib::fix_core::messages::types::EncryptMethod;
 use netlib::fix_core::messages::{
-    FIX_MESSAGE_TYPE_LOGON, TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_TYPE,
-    TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TRANSACT_TIME,
+    FIX_MESSAGE_TYPE_HEARTBEAT, FIX_MESSAGE_TYPE_LOGON, FIX_MESSAGE_TYPE_TEST_REQUEST,
+    TAG_CL_ORD_ID, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, TAG_MSG_TYPE, TAG_ORD_TYPE, TAG_ORDER_QTY,
+    TAG_PRICE, TAG_SENDER_COMP_ID, TAG_SIDE, TAG_TEST_REQ_ID, TAG_TRANSACT_TIME,
 };
 use netlib::fix_core::messages::{FIXReply, FIXReplyMessage};
 use netlib::fix_core::{
@@ -16,13 +19,13 @@ use netlib::fix_core::{
     messages::FIX_MESSAGE_TYPE_NEW_ORDER,
 };
 use netlib::fix_core::{iterator::FixIterator, messages::FixMessage};
-use ringbuf::{HeapCons, HeapProd, traits::*};
+use std::collections::VecDeque;
 use std::time::Instant;
 use std::{
     io::{Read, Write},
     str::from_utf8,
 };
-const WAKE: Token = Token(1);
+
 const MAX_BUFFER_SIZE: usize = 1024;
 const MAX_TMP_BUFFER_SIZE: usize = 512;
 
@@ -30,21 +33,20 @@ pub struct Session {
     token: Token,
     pub(crate) stream: TcpStream,
     read_buffer: Vec<u8>,
-    pub(crate) write_buffer: Vec<u8>,
+    pub(crate) write_buffer: VecDeque<u8>,
     tmp: [u8; MAX_TMP_BUFFER_SIZE],
     tmp_end: usize,
-    pub(crate) tx: HeapProd<Vec<u8>>,
-    rx: HeapCons<Vec<u8>>,
     pub state: Option<SessionState>,
     pub last_sent: Instant,     // Server -> Client
     pub last_received: Instant, // Client -> Server
     pub(crate) test_req_counter: u32,
-    pub pending_test_req: Option<Instant>,
+    pub pending_test_req: Option<u32>,
 }
 
 #[derive(Clone)]
 pub struct SessionState {
     pub comp_id: String,
+    pub target_comp_id: String,
     pub inbound_seq_num: u32,
     pub outbound_seq_num: u32,
     pub logged_in: bool,
@@ -56,6 +58,7 @@ impl Default for SessionState {
     fn default() -> Self {
         Self {
             comp_id: String::new(),
+            target_comp_id: String::new(),
             inbound_seq_num: 0,
             outbound_seq_num: 1,
             encrypt_method: EncryptMethod::None,
@@ -67,17 +70,13 @@ impl Default for SessionState {
 
 impl Session {
     pub fn new(token: Token, stream: TcpStream) -> Self {
-        let (tx, rx) = ringbuf::HeapRb::<Vec<u8>>::new(256).split();
-
         Self {
             token,
             stream,
             read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
-            write_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            write_buffer: VecDeque::with_capacity(MAX_BUFFER_SIZE),
             tmp: [0u8; MAX_TMP_BUFFER_SIZE],
             tmp_end: 0,
-            tx,
-            rx,
             state: None,
             last_sent: Instant::now(),
             last_received: Instant::now(),
@@ -86,11 +85,9 @@ impl Session {
         }
     }
 
-    pub fn poll(&mut self) -> Result<Vec<FIXRequest>, &'static str> {
-        let mut events = Vec::new();
-
+    pub fn poll(&mut self, events: &mut Vec<FIXRequest>) -> Result<(), &'static str> {
         loop {
-            if self.tmp_end >= MAX_TMP_BUFFER_SIZE && !self.read(&mut events) {
+            if self.tmp_end >= MAX_TMP_BUFFER_SIZE && !self.read(events) {
                 break;
             }
 
@@ -103,7 +100,7 @@ impl Session {
                     self.last_received = Instant::now();
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    self.read(&mut events);
+                    self.read(events);
                     break;
                 }
                 Err(_e) => {
@@ -112,7 +109,7 @@ impl Session {
             }
         }
 
-        Ok(events)
+        Ok(())
     }
 
     fn read(&mut self, events: &mut Vec<FIXRequest>) -> bool {
@@ -140,13 +137,71 @@ impl Session {
             }
 
             let event: Option<FIXRequest> = match msg_type {
-                Some(FIX_MESSAGE_TYPE_LOGON) => Some(self.handle_logon(&msg).expect("")),
+                Some(FIX_MESSAGE_TYPE_LOGON) => self.handle_logon(&msg),
                 Some(FIX_MESSAGE_TYPE_NEW_ORDER) => self.handle_new_order(&msg).ok(),
+                Some(FIX_MESSAGE_TYPE_HEARTBEAT) => self.handle_heartbeat(&msg).ok(),
+                Some(FIX_MESSAGE_TYPE_TEST_REQUEST) => self.handle_test_request(&msg).ok(),
                 _ => None,
             };
 
             events.extend(event);
         }
+    }
+
+    fn handle_heartbeat(&mut self, msg: &[u8]) -> Result<FIXRequest, &'static str> {
+        let mut comp_id: Option<String> = self.state.as_ref().map(|s| s.comp_id.clone());
+        let mut test_req_id: Option<u32> = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_SENDER_COMP_ID => {
+                    if comp_id.is_none() {
+                        comp_id = from_utf8(value).ok().map(str::to_owned);
+                    }
+                }
+                TAG_TEST_REQ_ID => {
+                    test_req_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        let comp_id = comp_id.ok_or("Can't find comp_id")?;
+        println!("Received Heartbeat | {:?}", comp_id);
+
+        Ok(FIXRequest {
+            comp_id,
+            message: FIXRequestMessage::Heartbeat(Heartbeat { test_req_id }),
+        })
+    }
+
+    fn handle_test_request(&mut self, msg: &[u8]) -> Result<FIXRequest, &'static str> {
+        let mut comp_id: Option<String> = self.state.as_ref().map(|s| s.comp_id.clone());
+        let mut test_req_id: Option<u32> = None;
+
+        println!("Received Test Request | {:?}", comp_id);
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_SENDER_COMP_ID => {
+                    if comp_id.is_none() {
+                        comp_id = from_utf8(value).ok().map(str::to_owned);
+                    }
+                }
+                TAG_TEST_REQ_ID => {
+                    test_req_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        let comp_id = comp_id.ok_or("Can't find comp_id")?;
+        Ok(FIXRequest {
+            comp_id,
+            message: FIXRequestMessage::TestRequest(TestRequest {
+                test_req_id: test_req_id.unwrap_or(0),
+            }),
+        })
     }
 
     fn handle_logon(&mut self, msg: &[u8]) -> Option<FIXRequest> {
@@ -164,19 +219,10 @@ impl Session {
                     comp_id = from_utf8(value).ok().map(str::to_owned);
                 }
                 TAG_ENCRYPT_METHOD => {
-                    encrypt_method = from_utf8(value)
-                        .ok()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .and_then(|v| match v {
-                            0 => Some(EncryptMethod::None),
-                            1 => Some(EncryptMethod::PKCS),
-                            2 => Some(EncryptMethod::DES),
-                            3 => Some(EncryptMethod::PKCS_DES),
-                            4 => Some(EncryptMethod::PGP_DES),
-                            5 => Some(EncryptMethod::PGP_DES_MD5),
-                            6 => Some(EncryptMethod::PEM_DES_MD5),
-                            _ => None,
-                        });
+                    encrypt_method = value
+                        .first()
+                        .copied()
+                        .and_then(|b| EncryptMethod::try_from(b).ok());
                 }
                 TAG_HEART_BT_INT => {
                     heart_bt_int = from_utf8(value).ok().and_then(|v| v.parse().ok());
@@ -262,12 +308,9 @@ impl Session {
     }
 
     pub fn handle_reply(&mut self, reply: FIXReplyMessage) -> Result<(), &'static str> {
-        let sender_comp_id = "ENGINE01".to_string();
-        let target_comp_id = self
-            .state
-            .as_ref()
-            .map(|s| s.comp_id.clone())
-            .ok_or("Can't find comp_id")?;
+        let state = self.state.as_ref().ok_or("Can't find comp_id")?;
+        let sender_comp_id = state.target_comp_id.clone();
+        let target_comp_id = state.comp_id.clone();
 
         let msg = write_fix_message(
             reply.message_type(),
@@ -277,28 +320,23 @@ impl Session {
             &reply.as_bytes(),
         );
 
-        self.tx.try_push(msg).ok();
-        self.last_sent = Instant::now();
+        self.write_buffer.extend(msg);
 
         Ok(())
     }
 
     pub fn send_replies(&mut self) -> Result<(), &'static str> {
-        while let Some(msg) = self.rx.try_pop() {
-            if self.write_buffer.len() + msg.len() > MAX_BUFFER_SIZE {
-                break;
-            }
-            self.write_buffer.extend_from_slice(&msg);
-        }
-
         loop {
             if self.write_buffer.is_empty() {
                 break;
             }
 
-            match self.stream.write(&self.write_buffer) {
+            let slice = self.write_buffer.make_contiguous();
+            match self.stream.write(slice) {
                 Ok(n) => {
+                    self.last_sent = Instant::now();
                     self.write_buffer.drain(..n);
+                    println!("send_replies wrote {} bytes", n);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(_) => return Err("Write error"),
@@ -314,11 +352,9 @@ mod tests {
     use super::*;
     use mio::net::TcpListener;
     use netlib::fix_core::helpers::write_trailer;
-    use ringbuf::HeapRb;
     use std::net::SocketAddr;
 
-    fn make_session() -> (Session, ringbuf::HeapRb<FIXRequest>) {
-        let queue = HeapRb::<FIXRequest>::new(8);
+    fn make_session() -> Session {
         let listener_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let listener = TcpListener::bind(listener_addr).expect("err");
         let addr = listener.local_addr().expect("err");
@@ -326,37 +362,15 @@ mod tests {
         let _client = TcpStream::connect(addr).expect("err");
         let (server, _) = listener.accept().expect("err");
 
-        (Session::new(Token(0), server), queue)
+        Session::new(Token(0), server)
     }
 
     #[test]
-    fn test_handle_new_order_limit_bid() {
-        // let (mut session, q) = make_session();
-        // let (mut tx, mut rx) = q.split();
-        //
-        // let msg = b"8=FIX.4.2\x019=177\x0135=D\x0134=1\x0149=CLIENT01\x0152=20260223-16:56:36.513\x0156=ENGINE01\x0111=1\x0138=10\x0140=2\x0144=666\x0154=1\x0160=20260223-16:56:36.510\x0110=092\x01";
-        //
-        // session.handle_new_order(msg, &mut tx).expect("err");
-        //
-        // let cmd = rx.try_pop().expect("err");
-        // match cmd {
-        //     FIXRequest::Order(token, o1) => {
-        //         assert_eq!(o1.order_id, 1);
-        //         assert_eq!(o1.side, OrderSide::Bid);
-        //         assert_eq!(
-        //             o1.kind,
-        //             OrderType::Limit {
-        //                 qty: 10,
-        //                 price: 666
-        //             }
-        //         );
-        //     }
-        // }
-    }
+    fn test_handle_new_order_limit_bid() {}
 
     #[test]
     fn test_extract_message_valid_checksum() {
-        let (mut session, _rx1) = make_session();
+        let mut session = make_session();
 
         let body = b"35=D\x01";
         let body_len = body.len();
@@ -378,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_extract_message_checksum_mismatch() {
-        let (mut session, _rx1) = make_session();
+        let mut session = make_session();
 
         let msg = b"8=FIX.4.2\x019=5\x0135=D\x0110=000\x01";
         session.read_buffer.extend_from_slice(msg);
