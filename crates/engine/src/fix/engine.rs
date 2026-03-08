@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn mpsc_test() {
+    fn fix_engine_test() {
         let (lob_prod, mut lob_cons) = ringbuf::HeapRb::<FIXRequest>::new(256).split();
         let (mut reply_prod, reply_cons) = ringbuf::HeapRb::<FIXReply>::new(256).split();
 

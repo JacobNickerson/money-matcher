@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn mpsc_test() {
+    fn fix_client_test() {
         let (mut outbound_prod, outbound_cons) = HeapRb::<Vec<u8>>::new(256).split();
         let (reply_prod, mut reply_cons) = HeapRb::<FIXReply>::new(256).split();
 
