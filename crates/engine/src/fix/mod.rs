@@ -19,4 +19,5 @@ pub enum FIXRequestMessage {
     Order(Order),
     Logon(Logon),
     Heartbeat(Heartbeat),
+    TestRequest(TestRequest),
 }
