@@ -1,9 +1,10 @@
-use zerocopy::IntoBytes;
+use std::str::from_utf8;
 
 use crate::fix_core::{
     helpers::get_timestamp,
+    iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_EXECUTION_REPORT, FixMessage, TAG_CL_ORD_ID, TAG_CUM_QTY,
+        FIX_MESSAGE_TYPE_EXECUTION_REPORT, FIXMessage, TAG_CL_ORD_ID, TAG_CUM_QTY,
         TAG_CUSTOMER_OR_FIRM, TAG_EXEC_ID, TAG_EXEC_TRANS_TYPE, TAG_EXEC_TYPE, TAG_LEAVES_QTY,
         TAG_MATURITY_DATE, TAG_OPEN_CLOSE, TAG_ORD_STATUS, TAG_ORDER_ID, TAG_ORDER_QTY,
         TAG_PUT_OR_CALL, TAG_SECURITY_ID, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE,
@@ -44,7 +45,7 @@ pub struct ExecutionReport {
     pub maturity_date: String,
 }
 
-impl FixMessage for ExecutionReport {
+impl FIXMessage for ExecutionReport {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_EXECUTION_REPORT;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -166,5 +167,125 @@ impl FixMessage for ExecutionReport {
         buf.push(0x01);
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut cl_ord_id = None;
+        let mut cum_qty = None;
+        let mut exec_id = None;
+        let mut exec_trans_type = None;
+        let mut order_id = None;
+        let mut order_qty = None;
+        let mut ord_status = None;
+        let mut security_id = None;
+        let mut side = None;
+        let mut symbol = None;
+        let mut open_close = None;
+        let mut exec_type = None;
+        let mut leaves_qty = None;
+        let mut security_type = None;
+        let mut put_or_call = None;
+        let mut strike_price = None;
+        let mut customer_or_firm = None;
+        let mut maturity_date = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_CL_ORD_ID => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_CUM_QTY => {
+                    cum_qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_EXEC_ID => {
+                    exec_id = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_EXEC_TRANS_TYPE => {
+                    exec_trans_type = value
+                        .first()
+                        .copied()
+                        .and_then(|b| ExecTransType::try_from(b).ok());
+                }
+                TAG_ORDER_ID => {
+                    order_id = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_ORDER_QTY => {
+                    order_qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORD_STATUS => {
+                    ord_status = value
+                        .first()
+                        .copied()
+                        .and_then(|b| OrdStatus::try_from(b).ok());
+                }
+                TAG_SECURITY_ID => {
+                    security_id = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_SIDE => {
+                    side = value.first().copied().and_then(|b| Side::try_from(b).ok());
+                }
+                TAG_SYMBOL => {
+                    symbol = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_OPEN_CLOSE => {
+                    open_close = value
+                        .first()
+                        .copied()
+                        .and_then(|b| OpenClose::try_from(b).ok());
+                }
+                TAG_EXEC_TYPE => {
+                    exec_type = value
+                        .first()
+                        .copied()
+                        .and_then(|b| ExecType::try_from(b).ok());
+                }
+                TAG_LEAVES_QTY => {
+                    leaves_qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_SECURITY_TYPE => {
+                    security_type = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_PUT_OR_CALL => {
+                    put_or_call = value
+                        .first()
+                        .copied()
+                        .and_then(|b| PutOrCall::try_from(b).ok());
+                }
+                TAG_STRIKE_PRICE => {
+                    strike_price = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_CUSTOMER_OR_FIRM => {
+                    customer_or_firm = value
+                        .first()
+                        .copied()
+                        .and_then(|b| CustomerOrFirm::try_from(b).ok());
+                }
+                TAG_MATURITY_DATE => {
+                    maturity_date = from_utf8(value).ok().map(str::to_owned);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ExecutionReport {
+            cl_ord_id: cl_ord_id.ok_or("Missing ClOrdID")?,
+            cum_qty: cum_qty.ok_or("Missing CumQty")?,
+            exec_id: exec_id.ok_or("Missing ExecID")?,
+            exec_trans_type: exec_trans_type.ok_or("Missing ExecTransType")?,
+            order_id: order_id.ok_or("Missing OrderID")?,
+            order_qty: order_qty.ok_or("Missing OrderQty")?,
+            ord_status: ord_status.ok_or("Missing OrdStatus")?,
+            security_id: security_id.ok_or("Missing SecurityID")?,
+            side: side.ok_or("Missing Side")?,
+            symbol: symbol.ok_or("Missing Symbol")?,
+            open_close: open_close.ok_or("Missing OpenClose")?,
+            exec_type: exec_type.ok_or("Missing ExecType")?,
+            leaves_qty: leaves_qty.ok_or("Missing LeavesQty")?,
+            security_type: security_type.ok_or("Missing SecurityType")?,
+            put_or_call: put_or_call.ok_or("Missing PutOrCall")?,
+            strike_price: strike_price.ok_or("Missing StrikePrice")?,
+            customer_or_firm: customer_or_firm.ok_or("Missing CustomerOrFirm")?,
+            maturity_date: maturity_date.ok_or("Missing MaturityDate")?,
+        })
     }
 }

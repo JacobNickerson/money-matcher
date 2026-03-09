@@ -1,4 +1,9 @@
-use crate::fix_core::messages::{FIX_MESSAGE_TYPE_HEARTBEAT, FixMessage, TAG_TEST_REQ_ID};
+use std::str::from_utf8;
+
+use crate::fix_core::{
+    iterator::FixIterator,
+    messages::{FIX_MESSAGE_TYPE_HEARTBEAT, FIXMessage, TAG_TEST_REQ_ID},
+};
 
 /// Heartbeat
 /// During periods of message inactivity, FIX applications will generate Heartbeat messages at regular time intervals.
@@ -15,7 +20,7 @@ impl Heartbeat {
     }
 }
 
-impl FixMessage for Heartbeat {
+impl FIXMessage for Heartbeat {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_HEARTBEAT;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -31,5 +36,20 @@ impl FixMessage for Heartbeat {
         }
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut test_req_id: Option<u32> = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_TEST_REQ_ID => {
+                    test_req_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(Self { test_req_id })
     }
 }

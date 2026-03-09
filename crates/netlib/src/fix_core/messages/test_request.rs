@@ -1,4 +1,9 @@
-use crate::fix_core::messages::{FIX_MESSAGE_TYPE_TEST_REQUEST, FixMessage, TAG_TEST_REQ_ID};
+use std::str::from_utf8;
+
+use crate::fix_core::{
+    iterator::FixIterator,
+    messages::{FIX_MESSAGE_TYPE_TEST_REQUEST, FIXMessage, TAG_TEST_REQ_ID},
+};
 
 /// TestRequest
 /// The test request message forces a heartbeat from the opposing application.
@@ -15,7 +20,7 @@ impl TestRequest {
     }
 }
 
-impl FixMessage for TestRequest {
+impl FIXMessage for TestRequest {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_TEST_REQUEST;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -28,5 +33,22 @@ impl FixMessage for TestRequest {
         buf.push(0x01);
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut test_req_id = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_TEST_REQ_ID => {
+                    test_req_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(TestRequest {
+            test_req_id: test_req_id.ok_or("Missing TestReqID")?,
+        })
     }
 }

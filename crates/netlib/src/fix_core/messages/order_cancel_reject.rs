@@ -1,13 +1,19 @@
-use crate::fix_core::messages::{
-    FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT, FixMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO,
-    TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID, TAG_TEXT,
-    types::{CxlRejResponseTo, OrdStatus},
+use std::str::from_utf8;
+
+use crate::fix_core::{
+    iterator::FixIterator,
+    messages::{
+        FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT, FIXMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO,
+        TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID, TAG_TEXT,
+        types::{CxlRejResponseTo, OrdStatus},
+    },
 };
 
 /// An Order Cancel Reject message is returned by the exchange in the event of an invalid cancel
 /// or modify request.
 ///
 /// `MsgType = 9`
+#[derive(Debug, Clone)]
 pub struct OrderCancelReject {
     pub cl_ord_id: u64,
     /// Status of order that was to have been canceled or modified.
@@ -37,7 +43,7 @@ impl OrderCancelReject {
     }
 }
 
-impl FixMessage for OrderCancelReject {
+impl FIXMessage for OrderCancelReject {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -75,6 +81,49 @@ impl FixMessage for OrderCancelReject {
         buf.push(0x01);
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut cl_ord_id = None;
+        let mut ord_status = None;
+        let mut orig_cl_ord_id = None;
+        let mut text = None;
+        let mut cxl_rej_response_to = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_CL_ORD_ID => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORD_STATUS => {
+                    ord_status = value
+                        .first()
+                        .copied()
+                        .and_then(|b| OrdStatus::try_from(b).ok());
+                }
+                TAG_ORIG_CL_ORD_ID => {
+                    orig_cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_TEXT => {
+                    text = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_CXL_REJ_RESPONSE_TO => {
+                    cxl_rej_response_to = value
+                        .first()
+                        .copied()
+                        .and_then(|b| CxlRejResponseTo::try_from(b).ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(OrderCancelReject {
+            cl_ord_id: cl_ord_id.ok_or("Missing ClOrdID")?,
+            ord_status: ord_status.ok_or("Missing OrdStatus")?,
+            orig_cl_ord_id: orig_cl_ord_id.ok_or("Missing OrigClOrdID")?,
+            text: text.ok_or("Missing Text")?,
+            cxl_rej_response_to: cxl_rej_response_to.ok_or("Missing CxlRejResponseTo")?,
+        })
     }
 }
 

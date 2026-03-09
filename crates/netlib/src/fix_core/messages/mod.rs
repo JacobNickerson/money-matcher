@@ -1,13 +1,15 @@
-use zerocopy::Order;
-
 use crate::fix_core::messages::{
-    execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
+    execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon, new_order::NewOrder,
+    order_cancel::OrderCancel, order_cancel_reject::OrderCancelReject,
     resend_request::ResendRequest, test_request::TestRequest,
 };
 
-pub trait FixMessage {
+pub trait FIXMessage {
     const MESSAGE_TYPE: &'static [u8];
     fn as_bytes(&self) -> Vec<u8>;
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str>
+    where
+        Self: Sized;
 }
 
 pub struct FixFrame {
@@ -79,38 +81,104 @@ pub const TAG_ENCRYPT_METHOD: &[u8] = b"98";
 pub const TAG_HEART_BT_INT: &[u8] = b"108";
 
 #[derive(Debug, Clone)]
-pub struct FIXReply {
+pub struct FIXEvent {
     pub comp_id: String,
-    pub message: FIXReplyMessage,
+    pub payload: FIXPayload,
 }
 
 #[derive(Debug, Clone)]
-pub enum FIXReplyMessage {
+pub enum FIXPayload {
+    Engine(EngineMessage),
+    Business(BusinessMessage),
+    Report(ReportMessage),
+}
+
+impl FIXPayload {
+    pub fn message_type(&self) -> &'static [u8] {
+        match self {
+            FIXPayload::Engine(msg) => msg.message_type(),
+            FIXPayload::Business(msg) => msg.message_type(),
+            FIXPayload::Report(msg) => msg.message_type(),
+        }
+    }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        match self {
+            FIXPayload::Engine(msg) => msg.as_bytes(),
+            FIXPayload::Business(msg) => msg.as_bytes(),
+            FIXPayload::Report(msg) => msg.as_bytes(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ReportMessage {
     ExecutionReport(ExecutionReport),
+    OrderCancelReject(OrderCancelReject),
+}
+
+impl ReportMessage {
+    pub fn message_type(&self) -> &'static [u8] {
+        match self {
+            ReportMessage::ExecutionReport(_) => ExecutionReport::MESSAGE_TYPE,
+            ReportMessage::OrderCancelReject(_) => OrderCancelReject::MESSAGE_TYPE,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        match self {
+            ReportMessage::ExecutionReport(msg) => msg.as_bytes(),
+            ReportMessage::OrderCancelReject(msg) => msg.as_bytes(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BusinessMessage {
+    NewOrder(NewOrder),
+    OrderCancel(OrderCancel),
+}
+
+impl BusinessMessage {
+    pub fn message_type(&self) -> &'static [u8] {
+        match self {
+            BusinessMessage::NewOrder(_) => NewOrder::MESSAGE_TYPE,
+            BusinessMessage::OrderCancel(_) => OrderCancel::MESSAGE_TYPE,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        match self {
+            BusinessMessage::NewOrder(msg) => msg.as_bytes(),
+            BusinessMessage::OrderCancel(msg) => msg.as_bytes(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum EngineMessage {
     Logon(Logon),
     Heartbeat(Heartbeat),
     TestRequest(TestRequest),
     ResendRequest(ResendRequest),
 }
 
-impl FIXReplyMessage {
+impl EngineMessage {
     pub fn message_type(&self) -> &'static [u8] {
         match self {
-            FIXReplyMessage::ExecutionReport(_) => ExecutionReport::MESSAGE_TYPE,
-            FIXReplyMessage::Logon(_) => Logon::MESSAGE_TYPE,
-            FIXReplyMessage::Heartbeat(_) => Heartbeat::MESSAGE_TYPE,
-            FIXReplyMessage::TestRequest(_) => TestRequest::MESSAGE_TYPE,
-            FIXReplyMessage::ResendRequest(_) => ResendRequest::MESSAGE_TYPE,
+            EngineMessage::Logon(_) => Logon::MESSAGE_TYPE,
+            EngineMessage::Heartbeat(_) => Heartbeat::MESSAGE_TYPE,
+            EngineMessage::TestRequest(_) => TestRequest::MESSAGE_TYPE,
+            EngineMessage::ResendRequest(_) => ResendRequest::MESSAGE_TYPE,
         }
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
         match self {
-            FIXReplyMessage::ExecutionReport(er) => er.as_bytes(),
-            FIXReplyMessage::Logon(l) => l.as_bytes(),
-            FIXReplyMessage::Heartbeat(hb) => hb.as_bytes(),
-            FIXReplyMessage::TestRequest(tr) => tr.as_bytes(),
-            FIXReplyMessage::ResendRequest(rr) => rr.as_bytes(),
+            EngineMessage::Logon(msg) => msg.as_bytes(),
+            EngineMessage::Heartbeat(msg) => msg.as_bytes(),
+            EngineMessage::TestRequest(msg) => msg.as_bytes(),
+            EngineMessage::ResendRequest(msg) => msg.as_bytes(),
         }
     }
 }

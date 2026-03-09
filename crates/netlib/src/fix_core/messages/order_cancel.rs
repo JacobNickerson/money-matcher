@@ -1,13 +1,17 @@
+use std::str::from_utf8;
+
 use crate::fix_core::{
     helpers::get_timestamp,
+    iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL, FixMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY,
+        FIX_MESSAGE_TYPE_ORDER_CANCEL, FIXMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY,
         TAG_ORIG_CL_ORD_ID, TAG_TRANSACT_TIME,
     },
 };
 /// The Order Cancel Request message is used to cancel a regular or multi-leg order.
 ///
 /// `MsgType = F`
+#[derive(Debug, Clone)]
 pub struct OrderCancel {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.
     pub cl_ord_id: u64,
@@ -27,7 +31,7 @@ impl OrderCancel {
     }
 }
 
-impl FixMessage for OrderCancel {
+impl FIXMessage for OrderCancel {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -55,6 +59,33 @@ impl FixMessage for OrderCancel {
         buf.push(0x01);
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut cl_ord_id = None;
+        let mut qty = None;
+        let mut orig_cl_ord_id = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_CL_ORD_ID => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORDER_QTY => {
+                    qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORIG_CL_ORD_ID => {
+                    orig_cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(OrderCancel {
+            cl_ord_id: cl_ord_id.ok_or("Missing ClOrdID")?,
+            qty: qty.ok_or("Missing Qty")?,
+            orig_cl_ord_id: orig_cl_ord_id.ok_or("Missing OrigClOrdID")?,
+        })
     }
 }
 

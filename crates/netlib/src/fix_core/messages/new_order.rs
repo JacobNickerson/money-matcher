@@ -1,7 +1,10 @@
+use std::str::from_utf8;
+
 use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
+    iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_NEW_ORDER, FixMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM,
+        FIX_MESSAGE_TYPE_NEW_ORDER, FIXMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM,
         TAG_HANDL_INST, TAG_MATURITY_DAY, TAG_MATURITY_MONTH_YEAR, TAG_OPEN_CLOSE, TAG_ORD_TYPE,
         TAG_ORDER_QTY, TAG_PRICE, TAG_PUT_OR_CALL, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE,
         TAG_SYMBOL, TAG_TRANSACT_TIME,
@@ -12,6 +15,7 @@ use crate::fix_core::{
 /// New Order Single is used to send a regular or Block order.
 ///
 /// `MsgType = D`
+#[derive(Debug, Clone)]
 pub struct NewOrder {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.
     pub cl_ord_id: u64,
@@ -55,7 +59,7 @@ impl NewOrder {
     }
 }
 
-impl FixMessage for NewOrder {
+impl FIXMessage for NewOrder {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_NEW_ORDER;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -153,6 +157,69 @@ impl FixMessage for NewOrder {
         buf.push(0x01);
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut cl_ord_id: Option<u64> = None;
+        let mut handl_inst: Option<u8> = None;
+        let mut qty: Option<u32> = None;
+        let mut ord_type: Option<OrdType> = None;
+        let mut price: Option<u32> = None;
+        let mut side: Option<Side> = None;
+        let mut symbol: Option<String> = None;
+        let mut open_close: Option<OpenClose> = None;
+        let mut security_type: Option<String> = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_CL_ORD_ID => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_HANDL_INST => {
+                    handl_inst = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORDER_QTY => {
+                    qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORD_TYPE => {
+                    ord_type = value
+                        .first()
+                        .copied()
+                        .and_then(|b| OrdType::try_from(b).ok());
+                }
+                TAG_PRICE => {
+                    price = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_SIDE => {
+                    side = value.first().copied().and_then(|b| Side::try_from(b).ok());
+                }
+                TAG_SYMBOL => {
+                    symbol = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_OPEN_CLOSE => {
+                    open_close = value
+                        .first()
+                        .copied()
+                        .and_then(|b: u8| OpenClose::try_from(b).ok());
+                }
+                TAG_SECURITY_TYPE => {
+                    security_type = from_utf8(value).ok().map(str::to_owned);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(NewOrder::new(
+            cl_ord_id.ok_or("Missing ClOrdID")?,
+            handl_inst.ok_or("Missing HandlInst")?,
+            qty.ok_or("Missing OrderQty")?,
+            ord_type.ok_or("Missing OrdType")?,
+            price.ok_or("Missing Price")?,
+            side.ok_or("Missing Side")?,
+            symbol.ok_or("Missing Symbol")?,
+            open_close.ok_or("Missing OpenClose")?,
+            security_type.ok_or("Missing SecurityType")?,
+        ))
     }
 }
 

@@ -317,6 +317,8 @@ dependencies = [
  "bytes",
  "chrono",
  "itoa",
+ "mio",
+ "ringbuf",
  "zerocopy",
 ]
 

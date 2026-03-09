@@ -1,5 +1,11 @@
-use crate::fix_core::messages::{
-    FIX_MESSAGE_TYPE_LOGON, FixMessage, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, types::EncryptMethod,
+use std::str::from_utf8;
+
+use crate::fix_core::{
+    iterator::FixIterator,
+    messages::{
+        FIX_MESSAGE_TYPE_LOGON, FIXMessage, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT,
+        types::EncryptMethod,
+    },
 };
 
 /// Logon
@@ -22,7 +28,7 @@ impl Logon {
     }
 }
 
-impl FixMessage for Logon {
+impl FIXMessage for Logon {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_LOGON;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -42,5 +48,30 @@ impl FixMessage for Logon {
         buf.push(0x01);
 
         buf
+    }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut encrypt_method: Option<EncryptMethod> = None;
+        let mut heart_bt_int: Option<u16> = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_ENCRYPT_METHOD => {
+                    encrypt_method = value
+                        .first()
+                        .copied()
+                        .and_then(|b| EncryptMethod::try_from(b).ok());
+                }
+                TAG_HEART_BT_INT => {
+                    heart_bt_int = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(Logon {
+            encrypt_method: encrypt_method.unwrap_or_default(),
+            heart_bt_int: heart_bt_int.unwrap_or(30),
+        })
     }
 }

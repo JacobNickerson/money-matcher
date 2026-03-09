@@ -1,17 +1,21 @@
-use crate::fix::session::{Session, SessionState};
-use mio::event::Event;
-use mio::net::TcpStream;
-use mio::{Events, Interest, Poll, Token, Waker};
-use netlib::fix_core::messages::heartbeat::Heartbeat;
-use netlib::fix_core::messages::logon::Logon;
-use netlib::fix_core::messages::test_request::TestRequest;
-use netlib::fix_core::messages::types::EncryptMethod;
-use netlib::fix_core::messages::{FIXReply, FIXReplyMessage, FixMessage};
-use ringbuf::{HeapCons, HeapProd, traits::*};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
+use ringbuf::{
+    HeapCons, HeapProd,
+    traits::{Consumer, Producer},
+};
+
+use netlib::fix_core::{
+    messages::{
+        EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
+        resend_request::ResendRequest, test_request::TestRequest, types::EncryptMethod,
+    },
+    session::{Session, SessionState},
+};
 
 const WAKE: Token = Token(0);
 const SESSION: Token = Token(1);
@@ -23,11 +27,11 @@ pub struct FixClient {
     target_comp_id: String,
     heart_bt_int: u16,
     encrypt_method: EncryptMethod,
-    outbound_rx: HeapCons<Vec<u8>>,
-    reply_tx: HeapProd<FIXReply>,
+    outbound_rx: HeapCons<FIXEvent>,
+    inbound_tx: HeapProd<FIXEvent>,
     waker: Arc<Waker>,
     poll: Poll,
-    poll_events: Vec<FIXReply>,
+    poll_events: Vec<FIXEvent>,
 }
 
 impl FixClient {
@@ -37,8 +41,8 @@ impl FixClient {
         target_comp_id: String,
         heart_bt_int: u16,
         encrypt_method: EncryptMethod,
-        outbound_rx: HeapCons<Vec<u8>>,
-        reply_tx: HeapProd<FIXReply>,
+        outbound_rx: HeapCons<FIXEvent>,
+        inbound_tx: HeapProd<FIXEvent>,
     ) -> io::Result<Self> {
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE)?);
@@ -51,7 +55,7 @@ impl FixClient {
             heart_bt_int,
             encrypt_method,
             outbound_rx,
-            reply_tx,
+            inbound_tx,
             waker,
             poll,
             poll_events: Vec::new(),
@@ -85,7 +89,7 @@ impl FixClient {
 
         let logon = Logon::new(self.encrypt_method, self.heart_bt_int);
         session
-            .handle_request(FIXReplyMessage::Logon(logon), None, false)
+            .send_message(FIXPayload::Engine(EngineMessage::Logon(logon)), None, false)
             .ok();
 
         self.session = Some(session);
@@ -111,49 +115,40 @@ impl FixClient {
 
     pub fn check_heartbeats(&mut self) {
         let now = Instant::now();
-        let mut should_close = false;
-        let mut should_send_test_req = false;
-        let mut should_send_heartbeat = false;
-        let mut test_req_id = 0;
+        let mut action = None;
 
         if let Some(session) = self.session.as_mut() {
-            let Some(state) = &session.state else {
-                return;
-            };
-
+            let Some(state) = &session.state else { return };
             let interval = Duration::from_secs(state.heart_bt_int as u64);
 
             if now - session.last_received > interval {
                 if session.pending_test_req.is_none() {
                     session.test_req_counter += 1;
                     session.pending_test_req = Some(session.test_req_counter);
-                    test_req_id = session.test_req_counter;
-                    should_send_test_req = true;
+                    action = Some(FIXPayload::Engine(EngineMessage::TestRequest(
+                        TestRequest {
+                            test_req_id: session.test_req_counter,
+                        },
+                    )));
                 } else if now - session.last_received > interval + Duration::from_secs(10) {
-                    should_close = true;
+                    self.close_session();
+                    return;
                 }
-            }
-
-            if !should_close && !should_send_test_req && now - session.last_sent > interval {
-                should_send_heartbeat = true;
+            } else if now - session.last_sent > interval {
+                action = Some(FIXPayload::Engine(EngineMessage::Heartbeat(Heartbeat {
+                    test_req_id: None,
+                })));
             }
         }
 
-        if should_close {
-            println!("CLOSING SESSION");
-            self.close_session();
-        } else if should_send_test_req {
-            let test_request = TestRequest { test_req_id };
-            self.send_request(FIXReplyMessage::TestRequest(test_request));
-        } else if should_send_heartbeat {
-            let heartbeat = Heartbeat { test_req_id: None };
-            self.send_request(FIXReplyMessage::Heartbeat(heartbeat));
+        if let Some(msg) = action {
+            self.send_outbound_message(msg);
         }
     }
 
     fn handle_event(&mut self, event: &Event) {
         match event.token() {
-            WAKE => self.process_requests(),
+            WAKE => self.process_outbound_messages(),
             SESSION => {
                 if event.is_writable() {
                     self.handle_writable();
@@ -166,20 +161,14 @@ impl FixClient {
         }
     }
 
-    fn process_requests(&mut self) {
-        while let Some(msg) = self.outbound_rx.try_pop() {
+    fn process_outbound_messages(&mut self) {
+        while let Some(req) = self.outbound_rx.try_pop() {
             let Some(session) = self.session.as_mut() else {
                 continue;
             };
 
-            if let Some(state) = &session.state {
-                if !state.logged_in {
-                    continue;
-                }
-            }
-
             let was_empty = session.write_buffer.is_empty();
-            session.write_buffer.extend(msg);
+            session.send_message(req.payload, None, false).ok();
             if was_empty && !session.write_buffer.is_empty() {
                 self.poll
                     .registry()
@@ -195,9 +184,7 @@ impl FixClient {
 
     fn handle_writable(&mut self) {
         if let Some(session) = self.session.as_mut() {
-            println!("Sending to server");
-
-            if session.send_requests().is_err() {
+            if session.flush().is_err() {
                 self.close_session();
                 return;
             }
@@ -207,7 +194,7 @@ impl FixClient {
                     .registry()
                     .reregister(&mut session.stream, SESSION, Interest::READABLE)
                     .unwrap();
-                self.process_requests();
+                self.process_outbound_messages();
             }
         }
     }
@@ -216,7 +203,7 @@ impl FixClient {
         self.poll_events.clear();
 
         let result = match self.session.as_mut() {
-            Some(session) => session.poll(&mut self.poll_events),
+            Some(session) => session.poll(&mut self.poll_events, &mut self.inbound_tx),
             None => return,
         };
 
@@ -225,52 +212,35 @@ impl FixClient {
             return;
         }
 
-        if let Some(session) = self.session.as_mut() {
-            if !session.write_buffer.is_empty() {
-                self.poll
-                    .registry()
-                    .reregister(
-                        &mut session.stream,
-                        SESSION,
-                        Interest::READABLE | Interest::WRITABLE,
-                    )
-                    .unwrap();
-            }
-        }
-
         let events = std::mem::take(&mut self.poll_events);
 
         for event in events {
-            match event.message {
-                FIXReplyMessage::Logon(logon) => self.finalize_logon(event.comp_id, logon),
-                FIXReplyMessage::ResendRequest(resend_request) => {
+            match event.payload {
+                FIXPayload::Engine(EngineMessage::Logon(logon)) => {
+                    self.finalize_logon(event.comp_id, logon)
+                }
+                FIXPayload::Engine(EngineMessage::ResendRequest(resend_request)) => {
                     self.resend_messages(&resend_request);
                 }
-                FIXReplyMessage::TestRequest(ref test_request) => {
+                FIXPayload::Engine(EngineMessage::TestRequest(ref test_request)) => {
                     let heartbeat = Heartbeat {
                         test_req_id: Some(test_request.test_req_id),
                     };
-                    self.send_request(FIXReplyMessage::Heartbeat(heartbeat));
+                    self.send_outbound_message(FIXPayload::Engine(EngineMessage::Heartbeat(
+                        heartbeat,
+                    )));
                 }
-                FIXReplyMessage::Heartbeat(ref heartbeat) => {
+                FIXPayload::Engine(EngineMessage::Heartbeat(ref heartbeat)) => {
                     if let Some(session) = self.session.as_mut() {
                         if let Some(sent_id) = session.pending_test_req {
                             if heartbeat.test_req_id == Some(sent_id) {
-                                println!("Clearing pending test_req");
                                 session.pending_test_req = None;
                             }
                         }
                     }
                 }
                 _ => {
-                    if let Some(session) = self.session.as_mut() {
-                        if session.state.is_some() {
-                            self.reply_tx.try_push(event).ok();
-                        } else {
-                            self.close_session();
-                            return;
-                        }
-                    }
+                    self.inbound_tx.try_push(event).ok();
                 }
             }
         }
@@ -282,10 +252,7 @@ impl FixClient {
         }
     }
 
-    fn resend_messages(
-        &mut self,
-        resend_request: &netlib::fix_core::messages::resend_request::ResendRequest,
-    ) {
+    fn resend_messages(&mut self, resend_request: &ResendRequest) {
         let mut messages_to_resend = Vec::new();
 
         if let Some(session) = self.session.as_mut() {
@@ -304,7 +271,7 @@ impl FixClient {
             let was_empty = session.write_buffer.is_empty();
 
             for (seq, msg) in messages_to_resend {
-                session.handle_request(msg.clone(), Some(seq), true).ok();
+                session.send_message(msg.clone(), Some(seq), true).ok();
             }
 
             if was_empty && !session.write_buffer.is_empty() {
@@ -321,7 +288,7 @@ impl FixClient {
         }
     }
 
-    fn finalize_logon(&mut self, comp_id: String, logon: Logon) {
+    fn finalize_logon(&mut self, _comp_id: String, logon: Logon) {
         let Some(session) = self.session.as_mut() else {
             return;
         };
@@ -339,12 +306,12 @@ impl FixClient {
         state.heart_bt_int = logon.heart_bt_int;
     }
 
-    fn send_request(&mut self, message: FIXReplyMessage) {
+    fn send_outbound_message(&mut self, payload: FIXPayload) {
         let Some(session) = self.session.as_mut() else {
             return;
         };
         let was_empty = session.write_buffer.is_empty();
-        session.handle_request(message, None, false).ok();
+        session.send_message(payload, None, false).ok();
         if was_empty && !session.write_buffer.is_empty() {
             self.poll
                 .registry()
@@ -361,18 +328,15 @@ impl FixClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netlib::fix_core::messages::{
-        new_order::NewOrder,
-        types::{OpenClose, OrdType, Side},
-    };
-    use ringbuf::HeapRb;
+    use netlib::fix_core::messages::{BusinessMessage, ReportMessage};
+    use ringbuf::{HeapRb, traits::Split};
     use std::thread;
 
     #[test]
     #[ignore]
     fn fix_client_test() {
-        let (mut outbound_prod, outbound_cons) = HeapRb::<Vec<u8>>::new(256).split();
-        let (reply_prod, mut reply_cons) = HeapRb::<FIXReply>::new(256).split();
+        let (mut outbound_prod, outbound_cons) = HeapRb::<FIXEvent>::new(256).split();
+        let (reply_prod, mut reply_cons) = HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let mut client = FixClient::new(
@@ -397,20 +361,31 @@ mod tests {
 
         loop {
             if let Some(cmd) = reply_cons.try_pop() {
-                match cmd.message {
-                    FIXReplyMessage::ExecutionReport(r) => {
-                        println!("Read ExecutionReport | {:?} |", r);
-                    }
-                    FIXReplyMessage::Logon(l) => {
-                        println!("Read Logon | {:?} |", l);
-                    }
-                    FIXReplyMessage::Heartbeat(h) => {
-                        println!("Read Heartbeat | {:?} |", h);
-                    }
-                    FIXReplyMessage::TestRequest(tr) => {
-                        println!("Read TestRequest | {:?} |", tr);
-                    }
-                    _ => {}
+                match cmd.payload {
+                    FIXPayload::Engine(msg) => match msg {
+                        EngineMessage::Logon(l) => {
+                            println!("Read Logon | {:?} |", l);
+                        }
+                        EngineMessage::Heartbeat(h) => {
+                            println!("Read Heartbeat | {:?} |", h);
+                        }
+                        EngineMessage::TestRequest(tr) => {
+                            println!("Read TestRequest | {:?} |", tr);
+                        }
+                        _ => {}
+                    },
+                    FIXPayload::Business(msg) => match msg {
+                        BusinessMessage::NewOrder(o) => {
+                            println!("Read NewOrder | {:?} |", o);
+                        }
+                        _ => {}
+                    },
+                    FIXPayload::Report(msg) => match msg {
+                        ReportMessage::ExecutionReport(r) => {
+                            println!("Read ExecutionReport | {:?} |", r);
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
