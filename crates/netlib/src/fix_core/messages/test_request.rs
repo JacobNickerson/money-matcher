@@ -5,19 +5,12 @@ use crate::fix_core::{
     messages::{FIX_MESSAGE_TYPE_TEST_REQUEST, FIXMessage, TAG_TEST_REQ_ID},
 };
 
-/// TestRequest
 /// The test request message forces a heartbeat from the opposing application.
 ///
-/// MsgType = 1
+/// `MsgType = 1`
 #[derive(Debug, Clone)]
 pub struct TestRequest {
     pub test_req_id: u32,
-}
-
-impl TestRequest {
-    pub fn new(test_req_id: u32) -> Self {
-        Self { test_req_id }
-    }
 }
 
 impl FIXMessage for TestRequest {

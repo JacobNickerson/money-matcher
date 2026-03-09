@@ -97,7 +97,10 @@ impl FixClient {
             ..Default::default()
         });
 
-        let logon = Logon::new(self.encrypt_method, self.heart_bt_int);
+        let logon = Logon {
+            encrypt_method: self.encrypt_method,
+            heart_bt_int: self.heart_bt_int,
+        };
         session
             .send_message(FIXPayload::Engine(EngineMessage::Logon(logon)), None, false)
             .ok();
@@ -357,8 +360,8 @@ mod tests {
     use super::*;
     use netlib::fix_core::messages::{
         BusinessMessage, ReportMessage,
-        new_order::NewOrder,
-        types::{OpenClose, OrdType, Side},
+        new_order_single::NewOrderSingle,
+        types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
     };
     use ringbuf::{HeapRb, traits::Split};
     use std::thread;
@@ -387,19 +390,25 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(100));
 
-        let order = NewOrder::new(
-            1,
-            1,
-            10,
-            OrdType::Limit,
-            666,
-            Side::Buy,
-            "OSISTRING".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-        );
+        let order = NewOrderSingle {
+            cl_ord_id: 1,
+            handl_inst: 1,
+            qty: 10,
+            ord_type: OrdType::Limit,
+            price: 666,
+            side: Side::Buy,
+            symbol: "OSISTRING".to_string(),
+            open_close: OpenClose::Open,
+            security_type: "OPT".to_string(),
+            put_or_call: PutOrCall::Call,
+            strike_price: 10,
+            customer_or_firm: CustomerOrFirm::Customer,
+            maturity_day: 10,
+        };
 
-        handler.send_message(FIXPayload::Business(BusinessMessage::NewOrder((order))));
+        handler.send_message(FIXPayload::Business(BusinessMessage::NewOrderSingle(
+            (order),
+        )));
 
         loop {
             if let Some(cmd) = lob_rx.try_pop() {

@@ -41,38 +41,6 @@ pub struct OrderCancelReplace {
     pub customer_or_firm: CustomerOrFirm,
 }
 
-impl OrderCancelReplace {
-    pub fn new(
-        cl_ord_id: u64,
-        handl_inst: u8,
-        qty: u32,
-        ord_type: OrdType,
-        orig_cl_ord_id: u64,
-        side: Side,
-        symbol: String,
-        open_close: OpenClose,
-        security_type: String,
-        put_or_call: PutOrCall,
-        strike_price: u32,
-        customer_or_firm: CustomerOrFirm,
-    ) -> Self {
-        Self {
-            cl_ord_id,
-            handl_inst,
-            qty,
-            ord_type,
-            orig_cl_ord_id,
-            side,
-            symbol,
-            open_close,
-            security_type,
-            put_or_call,
-            strike_price,
-            customer_or_firm,
-        }
-    }
-}
-
 impl FIXMessage for OrderCancelReplace {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE;
 
@@ -244,20 +212,20 @@ mod tests {
 
     #[test]
     fn test_order_cancel_replace_initial_state() {
-        let o = OrderCancelReplace::new(
-            1,
-            1,
-            123,
-            OrdType::Limit,
-            456,
-            Side::Buy,
-            "str1".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-            PutOrCall::Call,
-            10,
-            CustomerOrFirm::Customer,
-        );
+        let o = OrderCancelReplace {
+            cl_ord_id: 1,
+            handl_inst: 1,
+            qty: 123,
+            ord_type: OrdType::Limit,
+            orig_cl_ord_id: 456,
+            side: Side::Buy,
+            symbol: "str1".to_string(),
+            open_close: OpenClose::Open,
+            security_type: "OPT".to_string(),
+            put_or_call: PutOrCall::Call,
+            strike_price: 10,
+            customer_or_firm: CustomerOrFirm::Customer,
+        };
 
         assert_eq!(o.cl_ord_id, 1);
         assert_eq!(o.handl_inst, 1);
@@ -275,20 +243,20 @@ mod tests {
 
     #[test]
     fn test_into_bytes_field_values() {
-        let o = OrderCancelReplace::new(
-            1,
-            1,
-            123,
-            OrdType::Limit,
-            456,
-            Side::Buy,
-            "str1".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-            PutOrCall::Call,
-            10,
-            CustomerOrFirm::Customer,
-        );
+        let o = OrderCancelReplace {
+            cl_ord_id: 1,
+            handl_inst: 1,
+            qty: 123,
+            ord_type: OrdType::Limit,
+            orig_cl_ord_id: 456,
+            side: Side::Buy,
+            symbol: "str1".to_string(),
+            open_close: OpenClose::Open,
+            security_type: "OPT".to_string(),
+            put_or_call: PutOrCall::Call,
+            strike_price: 10,
+            customer_or_firm: CustomerOrFirm::Customer,
+        };
 
         let b = o.as_bytes();
         let s = String::from_utf8_lossy(&b);

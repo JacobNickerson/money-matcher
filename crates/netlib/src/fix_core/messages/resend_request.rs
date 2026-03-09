@@ -7,7 +7,7 @@ use crate::fix_core::{
 
 /// The resend request is sent by the receiving application to initiate the retransmission of messages.
 ///
-/// MsgType = 2
+/// `MsgType = 2`
 #[derive(Debug, Clone)]
 pub struct ResendRequest {
     pub begin_seq_no: u32,
@@ -21,13 +21,11 @@ impl FIXMessage for ResendRequest {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(64);
 
-        // 7 - BeginSeqNo
         buf.extend_from_slice(TAG_BEGIN_SEQ_NO);
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.begin_seq_no).as_bytes());
         buf.push(0x01);
 
-        // 16 - EndSeqNo
         buf.extend_from_slice(TAG_END_SEQ_NO);
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.end_seq_no).as_bytes());

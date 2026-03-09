@@ -21,16 +21,6 @@ pub struct OrderCancel {
     pub orig_cl_ord_id: u64,
 }
 
-impl OrderCancel {
-    pub fn new(cl_ord_id: u64, qty: u32, orig_cl_ord_id: u64) -> Self {
-        Self {
-            cl_ord_id,
-            qty,
-            orig_cl_ord_id,
-        }
-    }
-}
-
 impl FIXMessage for OrderCancel {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL;
 
@@ -95,7 +85,11 @@ mod tests {
 
     #[test]
     fn test_order_cancel_initial_state() {
-        let o = OrderCancel::new(1, 123, 456);
+        let o = OrderCancel {
+            cl_ord_id: 1,
+            qty: 123,
+            orig_cl_ord_id: 456,
+        };
 
         assert_eq!(o.cl_ord_id, 1);
         assert_eq!(o.qty, 123);
@@ -104,7 +98,11 @@ mod tests {
 
     #[test]
     fn test_into_bytes_field_values() {
-        let o = OrderCancel::new(1, 123, 456);
+        let o = OrderCancel {
+            cl_ord_id: 1,
+            qty: 123,
+            orig_cl_ord_id: 456,
+        };
 
         let b = o.as_bytes();
         let s = String::from_utf8_lossy(&b);

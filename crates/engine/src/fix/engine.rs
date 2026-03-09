@@ -382,7 +382,10 @@ impl FixEngine {
             state.logged_in = true;
         }
 
-        let logon_confirmation = Logon::new(stored_state.encrypt_method, stored_state.heart_bt_int);
+        let logon_confirmation = Logon {
+            encrypt_method: stored_state.encrypt_method,
+            heart_bt_int: stored_state.heart_bt_int,
+        };
         self.send_outbound_message(FIXEvent {
             comp_id,
             payload: FIXPayload::Engine(EngineMessage::Logon(logon_confirmation)),
@@ -429,28 +432,28 @@ mod tests {
             if let Some(cmd) = lob_rx.try_pop() {
                 match cmd.payload {
                     FIXPayload::Business(msg) => match msg {
-                        BusinessMessage::NewOrder(order) => {
+                        BusinessMessage::NewOrderSingle(order) => {
                             println!("Read Order | {:?} | {:?} |", cmd.comp_id, order);
 
                             let report = ExecutionReport {
-                                cl_ord_id: 1,
+                                cl_ord_id: order.cl_ord_id,
                                 cum_qty: 0,
                                 exec_id: "EXEC12345".to_string(),
                                 exec_trans_type: ExecTransType::New,
                                 order_id: "ORDER123".to_string(),
-                                order_qty: 100,
+                                order_qty: order.qty,
                                 ord_status: OrdStatus::New,
-                                security_id: "AAAA".to_string(),
-                                side: Side::Buy,
-                                symbol: "AAAA".to_string(),
-                                open_close: OpenClose::Open,
+                                security_id: "SECURITYID".to_string(),
+                                side: order.side,
+                                symbol: order.symbol,
+                                open_close: order.open_close,
                                 exec_type: ExecType::New,
-                                leaves_qty: 100,
-                                security_type: "ST".to_string(),
-                                put_or_call: PutOrCall::Put,
-                                strike_price: 150,
-                                customer_or_firm: CustomerOrFirm::Customer,
-                                maturity_date: "1".to_string(),
+                                leaves_qty: order.qty,
+                                security_type: order.security_type,
+                                put_or_call: order.put_or_call,
+                                strike_price: order.strike_price,
+                                customer_or_firm: order.customer_or_firm,
+                                maturity_date: "202603".to_string(),
                             };
 
                             handler.send_message(FIXEvent {

@@ -16,8 +16,9 @@ use crate::fix_core::{
         FIX_MESSAGE_TYPE_RESEND_REQUEST, FIX_MESSAGE_TYPE_TEST_REQUEST, FIXEvent, FIXMessage,
         FIXPayload, ReportMessage, TAG_MSG_SEQ_NUM, TAG_MSG_TYPE, TAG_POSS_DUP_FLAG,
         TAG_SENDER_COMP_ID, execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
-        new_order::NewOrder, order_cancel::OrderCancel, order_cancel_reject::OrderCancelReject,
-        resend_request::ResendRequest, test_request::TestRequest, types::EncryptMethod,
+        new_order_single::NewOrderSingle, order_cancel::OrderCancel,
+        order_cancel_reject::OrderCancelReject, resend_request::ResendRequest,
+        test_request::TestRequest, types::EncryptMethod,
     },
 };
 
@@ -191,8 +192,8 @@ impl Session {
                     .map(|m| FIXPayload::Engine(EngineMessage::TestRequest(m))),
                 Some(FIX_MESSAGE_TYPE_RESEND_REQUEST) => ResendRequest::from_bytes(&msg)
                     .map(|m| FIXPayload::Engine(EngineMessage::ResendRequest(m))),
-                Some(FIX_MESSAGE_TYPE_NEW_ORDER) => NewOrder::from_bytes(&msg)
-                    .map(|m| FIXPayload::Business(BusinessMessage::NewOrder(m))),
+                Some(FIX_MESSAGE_TYPE_NEW_ORDER) => NewOrderSingle::from_bytes(&msg)
+                    .map(|m| FIXPayload::Business(BusinessMessage::NewOrderSingle(m))),
                 Some(FIX_MESSAGE_TYPE_ORDER_CANCEL) => OrderCancel::from_bytes(&msg)
                     .map(|m| FIXPayload::Business(BusinessMessage::OrderCancel(m))),
                 Some(FIX_MESSAGE_TYPE_EXECUTION_REPORT) => ExecutionReport::from_bytes(&msg)

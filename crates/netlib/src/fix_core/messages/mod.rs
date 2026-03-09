@@ -1,7 +1,8 @@
 use crate::fix_core::messages::{
-    execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon, new_order::NewOrder,
-    order_cancel::OrderCancel, order_cancel_reject::OrderCancelReject,
-    resend_request::ResendRequest, test_request::TestRequest,
+    execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
+    new_order_single::NewOrderSingle, order_cancel::OrderCancel,
+    order_cancel_reject::OrderCancelReject, resend_request::ResendRequest,
+    test_request::TestRequest,
 };
 
 pub trait FIXMessage {
@@ -20,7 +21,7 @@ pub struct FixFrame {
 pub mod execution_report;
 pub mod heartbeat;
 pub mod logon;
-pub mod new_order;
+pub mod new_order_single;
 pub mod order_cancel;
 pub mod order_cancel_reject;
 pub mod order_cancel_replace;
@@ -135,21 +136,21 @@ impl ReportMessage {
 
 #[derive(Debug, Clone)]
 pub enum BusinessMessage {
-    NewOrder(NewOrder),
+    NewOrderSingle(NewOrderSingle),
     OrderCancel(OrderCancel),
 }
 
 impl BusinessMessage {
     pub fn message_type(&self) -> &'static [u8] {
         match self {
-            BusinessMessage::NewOrder(_) => NewOrder::MESSAGE_TYPE,
+            BusinessMessage::NewOrderSingle(_) => NewOrderSingle::MESSAGE_TYPE,
             BusinessMessage::OrderCancel(_) => OrderCancel::MESSAGE_TYPE,
         }
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
         match self {
-            BusinessMessage::NewOrder(msg) => msg.as_bytes(),
+            BusinessMessage::NewOrderSingle(msg) => msg.as_bytes(),
             BusinessMessage::OrderCancel(msg) => msg.as_bytes(),
         }
     }
