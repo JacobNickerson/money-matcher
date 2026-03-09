@@ -1,13 +1,17 @@
+use std::str::from_utf8;
+
 use crate::fix_core::{
     helpers::get_timestamp,
+    iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL, FixMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY,
+        FIX_MESSAGE_TYPE_ORDER_CANCEL, FIXMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY,
         TAG_ORIG_CL_ORD_ID, TAG_TRANSACT_TIME,
     },
 };
 /// The Order Cancel Request message is used to cancel a regular or multi-leg order.
 ///
 /// `MsgType = F`
+#[derive(Debug, Clone)]
 pub struct OrderCancel {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.
     pub cl_ord_id: u64,
@@ -17,17 +21,7 @@ pub struct OrderCancel {
     pub orig_cl_ord_id: u64,
 }
 
-impl OrderCancel {
-    pub fn new(cl_ord_id: u64, qty: u32, orig_cl_ord_id: u64) -> Self {
-        Self {
-            cl_ord_id,
-            qty,
-            orig_cl_ord_id,
-        }
-    }
-}
-
-impl FixMessage for OrderCancel {
+impl FIXMessage for OrderCancel {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -56,6 +50,33 @@ impl FixMessage for OrderCancel {
 
         buf
     }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut cl_ord_id = None;
+        let mut qty = None;
+        let mut orig_cl_ord_id = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_CL_ORD_ID => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORDER_QTY => {
+                    qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORIG_CL_ORD_ID => {
+                    orig_cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(OrderCancel {
+            cl_ord_id: cl_ord_id.ok_or("Missing ClOrdID")?,
+            qty: qty.ok_or("Missing Qty")?,
+            orig_cl_ord_id: orig_cl_ord_id.ok_or("Missing OrigClOrdID")?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -64,7 +85,11 @@ mod tests {
 
     #[test]
     fn test_order_cancel_initial_state() {
-        let o = OrderCancel::new(1, 123, 456);
+        let o = OrderCancel {
+            cl_ord_id: 1,
+            qty: 123,
+            orig_cl_ord_id: 456,
+        };
 
         assert_eq!(o.cl_ord_id, 1);
         assert_eq!(o.qty, 123);
@@ -73,7 +98,11 @@ mod tests {
 
     #[test]
     fn test_into_bytes_field_values() {
-        let o = OrderCancel::new(1, 123, 456);
+        let o = OrderCancel {
+            cl_ord_id: 1,
+            qty: 123,
+            orig_cl_ord_id: 456,
+        };
 
         let b = o.as_bytes();
         let s = String::from_utf8_lossy(&b);

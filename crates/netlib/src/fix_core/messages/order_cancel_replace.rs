@@ -1,7 +1,10 @@
+use std::str::from_utf8;
+
 use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
+    iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE, FixMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM,
+        FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE, FIXMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM,
         TAG_HANDL_INST, TAG_MATURITY_MONTH_YEAR, TAG_OPEN_CLOSE, TAG_ORD_TYPE, TAG_ORDER_QTY,
         TAG_ORIG_CL_ORD_ID, TAG_PUT_OR_CALL, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE,
         TAG_SYMBOL, TAG_TRANSACT_TIME,
@@ -12,6 +15,7 @@ use crate::fix_core::{
 /// The Order Cancel Replace Request message is used to modify a regular order.
 ///
 /// `MsgType = G`
+#[derive(Debug, Clone)]
 pub struct OrderCancelReplace {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.
     pub cl_ord_id: u64,
@@ -37,39 +41,7 @@ pub struct OrderCancelReplace {
     pub customer_or_firm: CustomerOrFirm,
 }
 
-impl OrderCancelReplace {
-    pub fn new(
-        cl_ord_id: u64,
-        handl_inst: u8,
-        qty: u32,
-        ord_type: OrdType,
-        orig_cl_ord_id: u64,
-        side: Side,
-        symbol: String,
-        open_close: OpenClose,
-        security_type: String,
-        put_or_call: PutOrCall,
-        strike_price: u32,
-        customer_or_firm: CustomerOrFirm,
-    ) -> Self {
-        Self {
-            cl_ord_id,
-            handl_inst,
-            qty,
-            ord_type,
-            orig_cl_ord_id,
-            side,
-            symbol,
-            open_close,
-            security_type,
-            put_or_call,
-            strike_price,
-            customer_or_firm,
-        }
-    }
-}
-
-impl FixMessage for OrderCancelReplace {
+impl FIXMessage for OrderCancelReplace {
     const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE;
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -148,6 +120,90 @@ impl FixMessage for OrderCancelReplace {
 
         buf
     }
+
+    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str> {
+        let mut cl_ord_id = None;
+        let mut handl_inst = None;
+        let mut qty = None;
+        let mut ord_type = None;
+        let mut orig_cl_ord_id = None;
+        let mut side = None;
+        let mut symbol = None;
+        let mut open_close = None;
+        let mut security_type = None;
+        let mut put_or_call = None;
+        let mut strike_price = None;
+        let mut customer_or_firm = None;
+
+        for (tag, value) in FixIterator::new(msg) {
+            match tag {
+                TAG_CL_ORD_ID => {
+                    cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_HANDL_INST => {
+                    handl_inst = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORDER_QTY => {
+                    qty = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_ORD_TYPE => {
+                    ord_type = value
+                        .first()
+                        .copied()
+                        .and_then(|b| OrdType::try_from(b).ok());
+                }
+                TAG_ORIG_CL_ORD_ID => {
+                    orig_cl_ord_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_SIDE => {
+                    side = value.first().copied().and_then(|b| Side::try_from(b).ok());
+                }
+                TAG_SYMBOL => {
+                    symbol = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_OPEN_CLOSE => {
+                    open_close = value
+                        .first()
+                        .copied()
+                        .and_then(|b| OpenClose::try_from(b).ok());
+                }
+                TAG_SECURITY_TYPE => {
+                    security_type = from_utf8(value).ok().map(str::to_owned);
+                }
+                TAG_PUT_OR_CALL => {
+                    put_or_call = value
+                        .first()
+                        .copied()
+                        .and_then(|b| PutOrCall::try_from(b).ok());
+                }
+                TAG_STRIKE_PRICE => {
+                    strike_price = from_utf8(value).ok().and_then(|v| v.parse().ok());
+                }
+                TAG_CUSTOMER_OR_FIRM => {
+                    customer_or_firm = value
+                        .first()
+                        .copied()
+                        .and_then(|b| CustomerOrFirm::try_from(b).ok());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(OrderCancelReplace {
+            cl_ord_id: cl_ord_id.ok_or("Missing ClOrdID")?,
+            handl_inst: handl_inst.ok_or("Missing HandlInst")?,
+            qty: qty.ok_or("Missing Qty")?,
+            ord_type: ord_type.ok_or("Missing OrdType")?,
+            orig_cl_ord_id: orig_cl_ord_id.ok_or("Missing OrigClOrdID")?,
+            side: side.ok_or("Missing Side")?,
+            symbol: symbol.ok_or("Missing Symbol")?,
+            open_close: open_close.ok_or("Missing OpenClose")?,
+            security_type: security_type.ok_or("Missing SecurityType")?,
+            put_or_call: put_or_call.ok_or("Missing PutOrCall")?,
+            strike_price: strike_price.ok_or("Missing StrikePrice")?,
+            customer_or_firm: customer_or_firm.ok_or("Missing CustomerOrFirm")?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -156,20 +212,20 @@ mod tests {
 
     #[test]
     fn test_order_cancel_replace_initial_state() {
-        let o = OrderCancelReplace::new(
-            1,
-            1,
-            123,
-            OrdType::Limit,
-            456,
-            Side::Buy,
-            "str1".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-            PutOrCall::Call,
-            10,
-            CustomerOrFirm::Customer,
-        );
+        let o = OrderCancelReplace {
+            cl_ord_id: 1,
+            handl_inst: 1,
+            qty: 123,
+            ord_type: OrdType::Limit,
+            orig_cl_ord_id: 456,
+            side: Side::Buy,
+            symbol: "str1".to_string(),
+            open_close: OpenClose::Open,
+            security_type: "OPT".to_string(),
+            put_or_call: PutOrCall::Call,
+            strike_price: 10,
+            customer_or_firm: CustomerOrFirm::Customer,
+        };
 
         assert_eq!(o.cl_ord_id, 1);
         assert_eq!(o.handl_inst, 1);
@@ -187,20 +243,20 @@ mod tests {
 
     #[test]
     fn test_into_bytes_field_values() {
-        let o = OrderCancelReplace::new(
-            1,
-            1,
-            123,
-            OrdType::Limit,
-            456,
-            Side::Buy,
-            "str1".to_string(),
-            OpenClose::Open,
-            "OPT".to_string(),
-            PutOrCall::Call,
-            10,
-            CustomerOrFirm::Customer,
-        );
+        let o = OrderCancelReplace {
+            cl_ord_id: 1,
+            handl_inst: 1,
+            qty: 123,
+            ord_type: OrdType::Limit,
+            orig_cl_ord_id: 456,
+            side: Side::Buy,
+            symbol: "str1".to_string(),
+            open_close: OpenClose::Open,
+            security_type: "OPT".to_string(),
+            put_or_call: PutOrCall::Call,
+            strike_price: 10,
+            customer_or_firm: CustomerOrFirm::Customer,
+        };
 
         let b = o.as_bytes();
         let s = String::from_utf8_lossy(&b);

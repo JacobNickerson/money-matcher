@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zerocopy = { version = "0.8.39", features = ["derive"] }
 bytes = "1.11.1"
-itoa = "1.0.17"
 chrono = "0.4.43"
+itoa = "1.0.17"
+mio = { version = "1.1.1", features = ["net", "os-poll"] }
+ringbuf = "0.4.8"
+zerocopy = { version = "0.8.39", features = ["derive"] }

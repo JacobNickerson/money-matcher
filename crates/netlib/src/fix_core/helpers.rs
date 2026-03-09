@@ -75,7 +75,6 @@ pub fn write_wrapper(write_buf: &mut Vec<u8>) {
     *write_buf = final_buf;
 
     write_trailer(write_buf);
-    print_message(write_buf);
 }
 
 pub fn calculate_checksum(message: &[u8]) -> u32 {

@@ -92,7 +92,6 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "itoa",
  "mio",
  "netlib",
  "nexus-queue",
@@ -317,6 +316,8 @@ dependencies = [
  "bytes",
  "chrono",
  "itoa",
+ "mio",
+ "ringbuf",
  "zerocopy",
 ]
 
