@@ -130,7 +130,7 @@ impl FixClient {
                             test_req_id: session.test_req_counter,
                         },
                     )));
-                } else if now - session.last_received > interval + Duration::from_secs(10) {
+                } else if now - session.last_received > interval + Duration::from_secs(30) {
                     self.close_session();
                     return;
                 }

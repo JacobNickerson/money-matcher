@@ -108,7 +108,7 @@ impl FixEngine {
                         *token,
                         FIXPayload::Engine(EngineMessage::TestRequest(test_request)),
                     ));
-                } else if now - session.last_received > interval + Duration::from_secs(10) {
+                } else if now - session.last_received > interval + Duration::from_secs(30) {
                     self.tmp_pending_close.push(*token);
                 }
             } else if now - session.last_sent > interval {
