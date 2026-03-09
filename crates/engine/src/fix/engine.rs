@@ -193,7 +193,7 @@ impl FixEngine {
                     self.register_session(new_stream).unwrap();
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(e) => {
+                Err(_e) => {
                     break;
                 }
             }
@@ -256,17 +256,17 @@ impl FixEngine {
             return;
         }
 
-        if let Some(session) = self.connections.get_mut(&token) {
-            if !session.write_buffer.is_empty() {
-                self.poll
-                    .registry()
-                    .reregister(
-                        &mut session.stream,
-                        token,
-                        Interest::READABLE | Interest::WRITABLE,
-                    )
-                    .unwrap();
-            }
+        if let Some(session) = self.connections.get_mut(&token)
+            && !session.write_buffer.is_empty()
+        {
+            self.poll
+                .registry()
+                .reregister(
+                    &mut session.stream,
+                    token,
+                    Interest::READABLE | Interest::WRITABLE,
+                )
+                .unwrap();
         }
 
         let events = std::mem::take(&mut self.poll_events);
@@ -288,12 +288,11 @@ impl FixEngine {
                     );
                 }
                 FIXPayload::Engine(EngineMessage::Heartbeat(ref heartbeat)) => {
-                    if let Some(session) = self.connections.get_mut(&token) {
-                        if let Some(sent_id) = session.pending_test_req {
-                            if heartbeat.test_req_id == Some(sent_id) {
-                                session.pending_test_req = None;
-                            }
-                        }
+                    if let Some(session) = self.connections.get_mut(&token)
+                        && let Some(sent_id) = session.pending_test_req
+                        && heartbeat.test_req_id == Some(sent_id)
+                    {
+                        session.pending_test_req = None;
                     }
                 }
                 _ => {
@@ -305,12 +304,12 @@ impl FixEngine {
 
     fn close_session(&mut self, token: Token) {
         if let Some(mut session) = self.connections.remove(&token) {
-            if let Some(state) = session.state {
-                if let Some((_, stored_state)) = self.sessions.get_mut(&state.comp_id) {
-                    stored_state.logged_in = false;
-                    stored_state.inbound_seq_num = state.inbound_seq_num;
-                    stored_state.outbound_seq_num = state.outbound_seq_num;
-                }
+            if let Some(state) = session.state
+                && let Some((_, stored_state)) = self.sessions.get_mut(&state.comp_id)
+            {
+                stored_state.logged_in = false;
+                stored_state.inbound_seq_num = state.inbound_seq_num;
+                stored_state.outbound_seq_num = state.outbound_seq_num;
             }
             self.poll.registry().deregister(&mut session.stream).ok();
         }

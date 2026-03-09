@@ -241,12 +241,11 @@ impl FixClient {
                     )));
                 }
                 FIXPayload::Engine(EngineMessage::Heartbeat(ref heartbeat)) => {
-                    if let Some(session) = self.session.as_mut() {
-                        if let Some(sent_id) = session.pending_test_req {
-                            if heartbeat.test_req_id == Some(sent_id) {
-                                session.pending_test_req = None;
-                            }
-                        }
+                    if let Some(session) = self.session.as_mut()
+                        && let Some(sent_id) = session.pending_test_req
+                        && heartbeat.test_req_id == Some(sent_id)
+                    {
+                        session.pending_test_req = None;
                     }
                 }
                 _ => {
