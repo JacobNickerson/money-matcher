@@ -328,7 +328,11 @@ impl FixClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netlib::fix_core::messages::{BusinessMessage, ReportMessage};
+    use netlib::fix_core::messages::{
+        BusinessMessage, ReportMessage,
+        new_order::NewOrder,
+        types::{OpenClose, OrdType, Side},
+    };
     use ringbuf::{HeapRb, traits::Split};
     use std::thread;
 
@@ -359,33 +363,37 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(100));
 
+        let order = NewOrder::new(
+            1,
+            1,
+            10,
+            OrdType::Limit,
+            666,
+            Side::Buy,
+            "OSISTRING".to_string(),
+            OpenClose::Open,
+            "OPT".to_string(),
+        );
+
+        outbound_prod
+            .try_push(FIXEvent {
+                comp_id: "CLIENT01".to_string(),
+                payload: FIXPayload::Business(BusinessMessage::NewOrder(order)),
+            })
+            .ok();
+
+        waker.wake().unwrap();
+
         loop {
             if let Some(cmd) = reply_cons.try_pop() {
                 match cmd.payload {
-                    FIXPayload::Engine(msg) => match msg {
-                        EngineMessage::Logon(l) => {
-                            println!("Read Logon | {:?} |", l);
-                        }
-                        EngineMessage::Heartbeat(h) => {
-                            println!("Read Heartbeat | {:?} |", h);
-                        }
-                        EngineMessage::TestRequest(tr) => {
-                            println!("Read TestRequest | {:?} |", tr);
-                        }
-                        _ => {}
-                    },
-                    FIXPayload::Business(msg) => match msg {
-                        BusinessMessage::NewOrder(o) => {
-                            println!("Read NewOrder | {:?} |", o);
-                        }
-                        _ => {}
-                    },
                     FIXPayload::Report(msg) => match msg {
                         ReportMessage::ExecutionReport(r) => {
                             println!("Read ExecutionReport | {:?} |", r);
                         }
                         _ => {}
                     },
+                    _ => {}
                 }
             }
         }
