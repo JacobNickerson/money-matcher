@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
+use ringbuf::traits::Split;
 use ringbuf::{
     HeapCons, HeapProd,
     traits::{Consumer, Producer},
@@ -28,7 +29,7 @@ pub struct FixClient {
     heart_bt_int: u16,
     encrypt_method: EncryptMethod,
     outbound_rx: HeapCons<FIXEvent>,
-    inbound_tx: HeapProd<FIXEvent>,
+    lob_tx: HeapProd<FIXEvent>,
     waker: Arc<Waker>,
     poll: Poll,
     poll_events: Vec<FIXEvent>,
@@ -41,13 +42,20 @@ impl FixClient {
         target_comp_id: String,
         heart_bt_int: u16,
         encrypt_method: EncryptMethod,
-        outbound_rx: HeapCons<FIXEvent>,
-        inbound_tx: HeapProd<FIXEvent>,
-    ) -> io::Result<Self> {
+        lob_tx: HeapProd<FIXEvent>,
+    ) -> io::Result<(Self, FixClientHandler)> {
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE)?);
 
-        Ok(Self {
+        let (outbound_tx, outbound_rx) = ringbuf::HeapRb::<FIXEvent>::new(1024).split();
+
+        let handler = FixClientHandler {
+            comp_id: comp_id.clone(),
+            outbound_tx,
+            waker: waker.clone(),
+        };
+
+        let client = Self {
             session: None,
             server_addr,
             comp_id,
@@ -55,11 +63,13 @@ impl FixClient {
             heart_bt_int,
             encrypt_method,
             outbound_rx,
-            inbound_tx,
+            lob_tx,
             waker,
             poll,
             poll_events: Vec::new(),
-        })
+        };
+
+        Ok((client, handler))
     }
 
     pub fn get_waker(&self) -> Arc<Waker> {
@@ -203,7 +213,7 @@ impl FixClient {
         self.poll_events.clear();
 
         let result = match self.session.as_mut() {
-            Some(session) => session.poll(&mut self.poll_events, &mut self.inbound_tx),
+            Some(session) => session.poll(&mut self.poll_events, &mut self.lob_tx),
             None => return,
         };
 
@@ -240,7 +250,7 @@ impl FixClient {
                     }
                 }
                 _ => {
-                    self.inbound_tx.try_push(event).ok();
+                    self.lob_tx.try_push(event).ok();
                 }
             }
         }
@@ -325,6 +335,24 @@ impl FixClient {
     }
 }
 
+pub struct FixClientHandler {
+    comp_id: String,
+    outbound_tx: HeapProd<FIXEvent>,
+    waker: Arc<Waker>,
+}
+
+impl FixClientHandler {
+    pub fn send_message(&mut self, payload: FIXPayload) {
+        let event = FIXEvent {
+            comp_id: self.comp_id.clone(),
+            payload,
+        };
+
+        self.outbound_tx.try_push(event).ok();
+        self.waker.wake().ok();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,23 +367,20 @@ mod tests {
     #[test]
     #[ignore]
     fn fix_client_test() {
-        let (mut outbound_prod, outbound_cons) = HeapRb::<FIXEvent>::new(256).split();
-        let (reply_prod, mut reply_cons) = HeapRb::<FIXEvent>::new(256).split();
+        let (lob_tx, mut lob_rx) = HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
-        let mut client = FixClient::new(
+        let (mut client, mut handler) = FixClient::new(
             addr,
             "CLIENT01".to_string(),
             "ENGINE01".to_string(),
-            5,
+            30,
             EncryptMethod::None,
-            outbound_cons,
-            reply_prod,
+            lob_tx,
         )
         .unwrap();
 
         client.connect().unwrap();
-        let waker = client.get_waker().clone();
 
         let client_thread = thread::spawn(move || {
             client.run();
@@ -375,17 +400,10 @@ mod tests {
             "OPT".to_string(),
         );
 
-        outbound_prod
-            .try_push(FIXEvent {
-                comp_id: "CLIENT01".to_string(),
-                payload: FIXPayload::Business(BusinessMessage::NewOrder(order)),
-            })
-            .ok();
-
-        waker.wake().unwrap();
+        handler.send_message(FIXPayload::Business(BusinessMessage::NewOrder((order))));
 
         loop {
-            if let Some(cmd) = reply_cons.try_pop() {
+            if let Some(cmd) = lob_rx.try_pop() {
                 match cmd.payload {
                     FIXPayload::Report(msg) => match msg {
                         ReportMessage::ExecutionReport(r) => {

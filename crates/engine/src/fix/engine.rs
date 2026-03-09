@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
-use ringbuf::traits::Consumer;
+use ringbuf::HeapProd;
+use ringbuf::traits::{Consumer, Producer, Split};
 
 use netlib::fix_core::{
     messages::{
@@ -21,6 +22,7 @@ const LISTENER: Token = Token(0);
 const WAKE: Token = Token(1);
 
 pub struct FixEngine {
+    comp_id: String,
     connections: HashMap<Token, Session>,
     sessions: HashMap<String, (Token, SessionState)>,
     listener: TcpListener,
@@ -37,13 +39,22 @@ pub struct FixEngine {
 impl FixEngine {
     pub fn new(
         addr: SocketAddr,
+        comp_id: String,
         lob_tx: ringbuf::HeapProd<FIXEvent>,
-        outbound_rx: ringbuf::HeapCons<FIXEvent>,
-    ) -> io::Result<Self> {
+    ) -> io::Result<(Self, FixEngineHandler)> {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE)?);
-        let mut this = Self {
+
+        let (outbound_tx, outbound_rx) = ringbuf::HeapRb::<FIXEvent>::new(1024).split();
+
+        let handler = FixEngineHandler {
+            outbound_tx,
+            waker: waker.clone(),
+        };
+
+        let mut engine = Self {
+            comp_id,
             connections: HashMap::new(),
             sessions: HashMap::new(),
             listener,
@@ -57,11 +68,12 @@ impl FixEngine {
             poll_events: Vec::new(),
         };
 
-        this.poll
+        engine
+            .poll
             .registry()
-            .register(&mut this.listener, LISTENER, Interest::READABLE)?;
+            .register(&mut engine.listener, LISTENER, Interest::READABLE)?;
 
-        Ok(this)
+        Ok((engine, handler))
     }
 
     pub fn get_waker(&self) -> Arc<Waker> {
@@ -379,6 +391,18 @@ impl FixEngine {
     }
 }
 
+pub struct FixEngineHandler {
+    outbound_tx: HeapProd<FIXEvent>,
+    waker: Arc<Waker>,
+}
+
+impl FixEngineHandler {
+    pub fn send_message(&mut self, event: FIXEvent) {
+        self.outbound_tx.try_push(event).ok();
+        self.waker.wake().ok();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,25 +411,23 @@ mod tests {
         execution_report::ExecutionReport,
         types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
     };
-    use ringbuf::traits::*;
     use std::thread;
 
     #[test]
     #[ignore]
     fn fix_engine_test() {
-        let (lob_prod, mut lob_cons) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
-        let (mut request_prod, request_cons) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
+        let (lob_tx, mut lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
-        let mut engine = FixEngine::new(addr, lob_prod, request_cons).unwrap();
-        let waker = engine.get_waker();
+        let (mut engine, mut handler) =
+            FixEngine::new(addr, "ENGINE01".to_owned(), lob_tx).unwrap();
 
         let engine_thread = thread::spawn(move || {
             engine.run();
         });
 
         loop {
-            if let Some(cmd) = lob_cons.try_pop() {
+            if let Some(cmd) = lob_rx.try_pop() {
                 match cmd.payload {
                     FIXPayload::Business(msg) => match msg {
                         BusinessMessage::NewOrder(order) => {
@@ -432,15 +454,10 @@ mod tests {
                                 maturity_date: "1".to_string(),
                             };
 
-                            request_prod
-                                .try_push(FIXEvent {
-                                    comp_id: cmd.comp_id,
-                                    payload: FIXPayload::Report(ReportMessage::ExecutionReport(
-                                        report,
-                                    )),
-                                })
-                                .ok();
-                            waker.wake().unwrap();
+                            handler.send_message(FIXEvent {
+                                comp_id: cmd.comp_id,
+                                payload: FIXPayload::Report(ReportMessage::ExecutionReport(report)),
+                            });
                         }
                         _ => {}
                     },
