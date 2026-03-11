@@ -166,8 +166,7 @@ impl Session {
             kind,
         );
 
-        tx.try_push(order)
-            .map_err(|_| "LOB queue full")?;
+        tx.try_push(order).map_err(|_| "LOB queue full")?;
 
         Ok(())
     }

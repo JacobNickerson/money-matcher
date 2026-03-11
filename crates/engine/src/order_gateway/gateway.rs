@@ -10,11 +10,11 @@ pub struct OrderGateway {
 impl OrderGateway {
     pub fn new(mut poller: FixEngine, mut merger: OrderMerger) -> Self {
         let polling_thread = thread::spawn(move || {
-                poller.run();
-            });
+            poller.run();
+        });
         let merging_thread = thread::spawn(move || {
-				merger.run();
-			});
+            merger.run();
+        });
 
         Self {
             polling_thread,
@@ -26,10 +26,10 @@ impl OrderGateway {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{lob::order::Order};
-    
+    use crate::lob::order::Order;
+
+    use ringbuf::{HeapCons, HeapProd, HeapRb, traits::*};
     use std::net::SocketAddr;
-    use ringbuf::{HeapProd, HeapCons, HeapRb, traits::*};
 
     #[test]
     fn test_make_gateway() {
@@ -38,16 +38,8 @@ mod test {
         let (mut merge_prod, mut merge_cons) = HeapRb::<Order>::new(128).split();
         let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
         let gateway = OrderGateway::new(
-            FixEngine::new(
-                addr,
-                user_prod,
-            ).unwrap(),
-            OrderMerger::new(
-                synth_cons,
-                user_cons,
-                merge_prod,
-                1024
-            )
-        ); 
+            FixEngine::new(addr, user_prod).unwrap(),
+            OrderMerger::new(synth_cons, user_cons, merge_prod, 1024),
+        );
     }
 }
