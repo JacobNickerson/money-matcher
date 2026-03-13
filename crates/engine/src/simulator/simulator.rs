@@ -155,4 +155,9 @@ mod tests {
         }
         assert!(saw_greater_than_zero);
     }
+
+    #[test]
+    fn money_simulator_produces_no_real_money() {
+        assert_eq!(0,100);
+    }
 }
