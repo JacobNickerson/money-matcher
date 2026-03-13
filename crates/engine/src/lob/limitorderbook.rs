@@ -26,12 +26,16 @@ impl PriceLevel {
     /// Returns None if no active orders exist in queue with a non-zero quantity
     pub fn prune(&mut self, all_orders: &mut HashMap<OrderId, LimitOrder>) -> Option<OrderId> {
         while let Some(&order_id) = self.orders.front() {
-            let order = &all_orders[&order_id];
-            if order.status == OrderStatus::Active && order.qty > 0 {
-                return Some(order_id);
+            if let std::collections::hash_map::Entry::Occupied(entry) = all_orders.entry(order_id) {
+                let order = *entry.get();
+                if order.status == OrderStatus::Active && order.qty > 0 {
+                    return Some(order_id);
+                } else {
+                    self.orders.pop_front();
+                    self.total_qty -= order.qty;
+                    entry.remove();
+                }
             }
-            self.orders.pop_front();
-            self.total_qty -= order.qty;
         }
         None
     }
