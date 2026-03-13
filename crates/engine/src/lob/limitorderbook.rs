@@ -1136,4 +1136,50 @@ mod tests {
         assert_eq!(event_5.level_size, 4);
         assert_eq!(event_5.total_size, 10);
     }
+
+    #[test]
+    fn no_zero_trade_events() {
+        let (event_feeds, consumer_feeds) = create_event_feeds(32);
+        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let mut book = OrderBook::new(event_feeds);
+
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
+        assert_eq!(book.best_ask(), Some(100));
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 1 },
+        ));
+
+        while let Some(trade) = trade_events.try_pop() {
+            assert!(trade.quantity != 0);
+        }
+
+        client_events.try_pop(); // drop accepted events
+        client_events.try_pop();
+
+        let client_event_0 = client_events.try_pop().unwrap();
+        assert_eq!(client_event_0.order_id, 0);
+        assert_eq!(client_event_0.kind, ClientEventType::PartiallyFilled(4));
+        assert_eq!(client_event_0.liquidity_flag, LiquidityFlag::Maker);
+
+        let client_event_1 = client_events.try_pop().unwrap();
+        assert_eq!(client_event_1.order_id, 2);
+        assert_eq!(client_event_1.kind, ClientEventType::Filled);
+        assert_eq!(client_event_1.liquidity_flag, LiquidityFlag::Taker);
+
+        assert!(client_events.try_pop().is_none());
+    }
 }
