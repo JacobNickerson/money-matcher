@@ -388,64 +388,66 @@ impl<T: EventSink> OrderBook<T> {
         iter: impl Iterator<Item = (&'a Price, &'b mut PriceLevel)>,
         orders: &mut HashMap<OrderId, LimitOrder>,
         event_sink: &mut T,
-        order: &mut LimitOrder,
+        taker: &mut LimitOrder,
     ) {
-        let initial_qty = order.qty;
+        let initial_qty = taker.qty;
         for (price, level) in iter {
-            match order.side {
+            match taker.side {
                 OrderSide::Ask => {
-                    if *price < order.price {
+                    if *price < taker.price {
                         break;
                     }
                 }
                 OrderSide::Bid => {
-                    if *price > order.price {
+                    if *price > taker.price {
                         break;
                     }
                 }
             }
-            while let Some(buy_order_id) = level.front() {
+            while taker.qty > 0
+                && let Some(maker_id) = level.front()
+            {
                 // NOTE: Can panic, but an id in a price level should always be in orders until it is pruned
-                let buy_order = orders.get_mut(&buy_order_id).unwrap();
-                if buy_order.qty == 0 || buy_order.status == OrderStatus::Canceled {
+                let maker = orders.get_mut(&maker_id).unwrap();
+                if maker.qty == 0 || maker.status == OrderStatus::Canceled {
                     level.pop_front();
                     continue;
                 }
-                let trade_volume = std::cmp::min(buy_order.qty, order.qty);
-                buy_order.qty -= trade_volume;
-                order.qty -= trade_volume;
+                let trade_volume = std::cmp::min(maker.qty, taker.qty);
+                maker.qty -= trade_volume;
+                taker.qty -= trade_volume;
 
                 event_sink.push(MarketEvent::new(MarketEventType::Trade(TradeEvent {
                     price: *price,
                     quantity: trade_volume,
-                    aggressor_side: order.side,
+                    aggressor_side: taker.side,
                 })));
 
-                if buy_order.qty == 0 {
+                if maker.qty == 0 {
                     event_sink.push(MarketEvent::new(MarketEventType::Client(ClientEvent {
-                        order_id: buy_order_id,
+                        order_id: maker_id,
                         kind: ClientEventType::Filled,
                         liquidity_flag: LiquidityFlag::Maker,
                     })));
                     level.pop_front();
                 } else {
                     event_sink.push(MarketEvent::new(MarketEventType::Client(ClientEvent {
-                        order_id: buy_order_id,
-                        kind: ClientEventType::PartiallyFilled(buy_order.qty),
+                        order_id: maker_id,
+                        kind: ClientEventType::PartiallyFilled(maker.qty),
                         liquidity_flag: LiquidityFlag::Maker,
                     })));
                     break;
                 }
             }
         }
-        if order.qty == initial_qty {
+        if taker.qty == initial_qty {
             return;
         }
         event_sink.push(MarketEvent::new(MarketEventType::Client(ClientEvent {
-            order_id: order.order_id,
-            kind: match order.qty == 0 {
+            order_id: taker.order_id,
+            kind: match taker.qty == 0 {
                 true => ClientEventType::Filled,
-                false => ClientEventType::PartiallyFilled(order.qty),
+                false => ClientEventType::PartiallyFilled(taker.qty),
             },
             liquidity_flag: LiquidityFlag::Taker,
         })));
@@ -1099,45 +1101,85 @@ mod tests {
         ));
 
         let event_0 = l2_events.try_pop().unwrap();
-        println!("{:?}", event_0);
         assert_eq!(event_0.side, OrderSide::Ask);
         assert_eq!(event_0.price, 100);
         assert_eq!(event_0.level_size, 5);
         assert_eq!(event_0.total_size, 5);
 
         let event_1 = l2_events.try_pop().unwrap();
-        println!("{:?}", event_0);
         assert_eq!(event_1.side, OrderSide::Ask);
         assert_eq!(event_1.price, 100);
         assert_eq!(event_1.level_size, 8);
         assert_eq!(event_1.total_size, 8);
 
         let event_2 = l2_events.try_pop().unwrap();
-        println!("{:?}", event_0);
         assert_eq!(event_2.side, OrderSide::Ask);
         assert_eq!(event_2.price, 110);
         assert_eq!(event_2.level_size, 1);
         assert_eq!(event_2.total_size, 9);
 
         let event_3 = l2_events.try_pop().unwrap();
-        println!("{:?}", event_0);
         assert_eq!(event_3.side, OrderSide::Bid);
         assert_eq!(event_3.price, 75);
         assert_eq!(event_3.level_size, 4);
         assert_eq!(event_3.total_size, 4);
 
         let event_4 = l2_events.try_pop().unwrap();
-        println!("{:?}", event_0);
         assert_eq!(event_4.side, OrderSide::Bid);
         assert_eq!(event_4.price, 75);
         assert_eq!(event_4.level_size, 6);
         assert_eq!(event_4.total_size, 6);
 
         let event_5 = l2_events.try_pop().unwrap();
-        println!("{:?}", event_0);
         assert_eq!(event_5.side, OrderSide::Bid);
         assert_eq!(event_5.price, 85);
         assert_eq!(event_5.level_size, 4);
         assert_eq!(event_5.total_size, 10);
+    }
+
+    #[test]
+    fn no_zero_trade_events() {
+        let (event_feeds, consumer_feeds) = create_event_feeds(32);
+        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let mut book = OrderBook::new(event_feeds);
+
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
+        assert_eq!(book.best_ask(), Some(100));
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 1 },
+        ));
+
+        while let Some(trade) = trade_events.try_pop() {
+            assert!(trade.quantity != 0);
+        }
+
+        client_events.try_pop(); // drop accepted events
+        client_events.try_pop();
+
+        let client_event_0 = client_events.try_pop().unwrap();
+        assert_eq!(client_event_0.order_id, 0);
+        assert_eq!(client_event_0.kind, ClientEventType::PartiallyFilled(4));
+        assert_eq!(client_event_0.liquidity_flag, LiquidityFlag::Maker);
+
+        let client_event_1 = client_events.try_pop().unwrap();
+        assert_eq!(client_event_1.order_id, 2);
+        assert_eq!(client_event_1.kind, ClientEventType::Filled);
+        assert_eq!(client_event_1.liquidity_flag, LiquidityFlag::Taker);
+
+        assert!(client_events.try_pop().is_none());
     }
 }
