@@ -1,4 +1,5 @@
 use crate::lob::types::{OrderId, Price, Timestamp};
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Order {
@@ -16,6 +17,18 @@ impl Order {
             timestamp,
             kind,
         }
+    }
+}
+impl PartialOrd for Order {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Order {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.timestamp
+            .cmp(&other.timestamp)
+            .then_with(|| self.order_id.cmp(&other.order_id))
     }
 }
 

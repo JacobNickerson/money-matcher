@@ -2,7 +2,7 @@ use crate::lob::market_events::{
     ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
     MarketEventType, TradeEvent,
 };
-use crate::lob::order::{LimitOrder, Order, OrderSide, OrderStatus, OrderType};
+use crate::lob::order::{self, LimitOrder, Order, OrderSide, OrderStatus, OrderType};
 use crate::lob::types::{OrderId, Price};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
@@ -319,24 +319,40 @@ impl<T: EventSink> OrderBook<T> {
     /// by `best_bid()`, `best_ask()`, or `match_order()`
     /// Emits no events, even if order_id points to a valid order
     fn cancel_order(&mut self, order_id: OrderId) -> Option<LimitOrder> {
-        match self.orders.get_mut(&order_id) {
-            Some(order) => {
-                let level = match order.side {
-                    OrderSide::Ask => {
-                        self.total_asks -= order.qty;
-                        self.ask_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
-                    }
-                    OrderSide::Bid => {
-                        self.total_bids -= order.qty;
-                        self.bid_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
-                    }
-                };
-                level.total_qty -= order.qty;
-                order.qty = 0;
-                order.status = OrderStatus::Canceled;
-                Some(*order)
+        if let Some(order) = self.orders.get_mut(&order_id) {
+            if order.status == OrderStatus::Canceled || order.qty == 0 {
+                return None;
             }
-            None => None,
+            let level = match order.side {
+                OrderSide::Ask => {
+                    self.total_asks -= order.qty;
+                    // self.ask_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
+                    let test = self.ask_orders.get_mut(&order.price);
+                    if test.is_none() {
+                        println!("Oh great.");
+                        println!("{:?}", order);
+                        println!("{:?}", test);
+                    }
+                    test.unwrap()
+                }
+                OrderSide::Bid => {
+                    self.total_bids -= order.qty;
+                    // self.bid_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
+                    let test = self.bid_orders.get_mut(&order.price);
+                    if test.is_none() {
+                        println!("Oh great.");
+                        println!("{:?}", order);
+                        println!("{:?}", test);
+                    }
+                    test.unwrap()
+                }
+            };
+            level.total_qty -= order.qty;
+            order.qty = 0;
+            order.status = OrderStatus::Canceled;
+            Some(*order)
+        } else {
+            None
         }
     }
 
@@ -386,7 +402,7 @@ impl<T: EventSink> OrderBook<T> {
             }
             while let Some(buy_order_id) = level.front() {
                 // NOTE: Can panic, but an id in a price level should always be in orders until it is pruned
-                let mut buy_order = orders[&buy_order_id];
+                let buy_order = orders.get_mut(&buy_order_id).unwrap();
                 if buy_order.qty == 0 || buy_order.status == OrderStatus::Canceled {
                     level.pop_front();
                     continue;
