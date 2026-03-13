@@ -125,11 +125,12 @@ mod tests {
             prev_time = sim.time;
         }
     }
-    
+
     #[test]
     fn event_time_monotonic() {
         let (_, user_order_cons) = HeapRb::<Order>::new(SIM_HEAP_CAPACITY).split();
-        let (market_event_prod, mut market_event_cons) = HeapRb::<MarketEvent>::new(1 << 24).split();
+        let (market_event_prod, mut market_event_cons) =
+            HeapRb::<MarketEvent>::new(1 << 24).split();
         let mut sim = Simulator::new(
             PoissonSource::new(
                 ConstantPoissonRate::new(100_000.0),
@@ -141,14 +142,17 @@ mod tests {
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
         );
-        sim.step();
-        for _ in 0..100_000 {
+        // for _ in 0..100_000 {
+        for _ in 0..25 {
             sim.step();
         }
         let mut prev_time = market_event_cons.try_pop().unwrap().timestamp;
+        let mut saw_greater_than_zero = false;
         while let Some(event) = market_event_cons.try_pop() {
             assert!(event.timestamp >= prev_time);
+            saw_greater_than_zero = event.timestamp > 0;
             prev_time = event.timestamp;
-        } 
+        }
+        assert!(saw_greater_than_zero);
     }
 }

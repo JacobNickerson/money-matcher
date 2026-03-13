@@ -73,7 +73,10 @@ pub struct MarketEvent {
 }
 impl MarketEvent {
     pub fn new(timestamp: Timestamp, kind: MarketEventType) -> Self {
-        Self { timestamp: 0, kind }
+        Self {
+            timestamp: timestamp,
+            kind,
+        }
     }
 }
 
