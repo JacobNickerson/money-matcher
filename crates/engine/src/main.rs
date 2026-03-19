@@ -1,7 +1,7 @@
 mod data_generator;
 mod fix;
 mod lob;
-mod moldudp64_engine;
+mod moldudp64;
 mod simulator;
 
 fn main() {

@@ -418,6 +418,9 @@ mod tests {
     #[test]
     #[ignore]
     fn fix_engine_test() {
+        for _ in 0..50 {
+            println!("");
+        }
         let (lob_tx, mut lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();

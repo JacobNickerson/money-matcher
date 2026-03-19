@@ -16,3 +16,4 @@ rand_distr = "0.6.0"
 ringbuf = "0.4.8"
 smallrand = "1.0.1"
 zerocopy = { version = "0.8.39", features = ["derive"] }
+socket2 = "0.6.3"

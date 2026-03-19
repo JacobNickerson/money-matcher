@@ -4,10 +4,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
-use ringbuf::traits::Split;
 use ringbuf::{
     HeapCons, HeapProd,
-    traits::{Consumer, Producer},
+    traits::{Consumer, Producer, Split},
 };
 
 use netlib::fix_core::{
@@ -369,6 +368,9 @@ mod tests {
     #[test]
     #[ignore]
     fn fix_client_test() {
+        for _ in 0..50 {
+            println!("");
+        }
         let (lob_tx, mut lob_rx) = HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
@@ -376,7 +378,7 @@ mod tests {
             addr,
             "CLIENT01".to_string(),
             "ENGINE01".to_string(),
-            30,
+            10,
             EncryptMethod::None,
             lob_tx,
         )
@@ -388,7 +390,7 @@ mod tests {
             client.run();
         });
 
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_secs(2));
 
         let order = NewOrderSingle {
             cl_ord_id: 1,
