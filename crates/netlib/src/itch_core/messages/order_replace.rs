@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(msg.original_order_reference_number.get(), 5000);
         assert_eq!(msg.new_order_reference_number.get(), 5001);
         assert_eq!(msg.shares.get(), 20);
-        assert_eq!(msg.price.get(), 1000000);
+        assert_eq!(msg.price.get(), 100);
 
         msg.print();
     }

@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(msg.executed_shares.get(), 10);
         assert_eq!(msg.match_number.get(), 9999);
         assert_eq!(msg.printable, b'Y');
-        assert_eq!(msg.execution_price.get(), 1000000);
+        assert_eq!(msg.execution_price.get(), 100);
 
         msg.print();
     }

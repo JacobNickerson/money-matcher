@@ -93,9 +93,9 @@ mod tests {
         let s12 = SessionTable::make_session_id(12, &id_prefix);
         let s123 = SessionTable::make_session_id(123, &id_prefix);
 
-        assert_eq!(&s1, b"MM00000001");
-        assert_eq!(&s12, b"MM00000012");
-        assert_eq!(&s123, b"MM00000123");
+        assert_eq!(&s1, b"MM_L0_0001");
+        assert_eq!(&s12, b"MM_L0_0012");
+        assert_eq!(&s123, b"MM_L0_0123");
     }
 
     #[test]

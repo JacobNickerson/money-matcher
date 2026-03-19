@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(msg.buy_sell_indicator, b'B');
         assert_eq!(msg.shares.get(), 10);
         assert_eq!(msg.stock, stock_bytes);
-        assert_eq!(msg.price.get(), 1000000);
+        assert_eq!(msg.price.get(), 100);
 
         msg.print();
     }
