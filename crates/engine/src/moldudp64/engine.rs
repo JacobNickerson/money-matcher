@@ -2,24 +2,20 @@ use crate::{
     lob::market_events::{EventSink, MarketEvent, MarketEventType},
     moldudp64::sequencerpublisher::SequencerPublisher,
 };
-use bytes::{Bytes, buf};
+use bytes::Bytes;
 use netlib::{
-    itch_core::messages::{
-        ItchMessage, add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice,
-    },
+    itch_core::messages::{add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice},
     moldudp64_core::types::Event,
 };
 use ringbuf::{
     HeapCons, HeapProd, HeapRb,
-    traits::{Consumer, Producer, Split},
+    traits::{Producer, Split},
 };
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     thread,
-    time::Duration,
 };
-use zerocopy::{Immutable, IntoBytes};
 
 pub struct MoldEngine {
     l3_tx: HeapProd<Event>,

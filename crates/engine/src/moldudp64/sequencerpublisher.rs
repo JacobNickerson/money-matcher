@@ -1,10 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use netlib::moldudp64_core::sessions::SessionTable;
 use netlib::moldudp64_core::types::Event;
-use ringbuf::{
-    HeapCons, HeapProd, HeapRb,
-    traits::{Consumer, Producer, Split},
-};
+use ringbuf::{HeapCons, traits::Consumer};
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
@@ -71,10 +68,15 @@ impl SequencerPublisher {
     }
 
     pub fn run(mut self) {
+        let mut loop_counter: u8 = 0;
         loop {
-            if Instant::now() >= self.next_flush {
-                self.flush();
+            if loop_counter == 0 {
+                if Instant::now() >= self.next_flush {
+                    self.flush();
+                }
             }
+
+            loop_counter = loop_counter.wrapping_add(1);
 
             if let Some(event) = self.input.try_pop() {
                 self.process_event(event);
@@ -134,6 +136,7 @@ impl SequencerPublisher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ringbuf::{HeapRb, traits::Split};
 
     fn make_publisher() -> SequencerPublisher {
         let (_tx, rx) = HeapRb::<Event>::new(8).split();
