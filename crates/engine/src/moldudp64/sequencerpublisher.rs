@@ -139,7 +139,7 @@ mod tests {
         let (_tx, rx) = HeapRb::<Event>::new(8).split();
         SequencerPublisher::new(
             rx,
-            SocketAddr::V4("0.0.0.0:0".parse().unwrap()),
+            SocketAddr::V4("233.100.10.100:9600".parse().unwrap()),
             UdpSocket::bind("0.0.0.0:0").expect("err"),
             "MM_L0".to_string(),
         )
