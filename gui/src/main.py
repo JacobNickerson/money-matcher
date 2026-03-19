@@ -74,9 +74,9 @@ class Strats(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(0)
 
-        self.header = Header()
-        self.action_bar = ActionBar()
         self.editor = CodeEditor()
+        self.header = Header(self.editor)
+        self.action_bar = ActionBar(self.editor)
 
         layout.addWidget(self.header)
         layout.addWidget(self.action_bar)

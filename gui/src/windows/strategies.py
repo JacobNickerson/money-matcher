@@ -1,6 +1,9 @@
+import os
+from pathlib import Path
 from PyQt5.QtWidgets import ( 
     QWidget, QHBoxLayout, QPushButton, QLabel,
-    QSizePolicy, QFrame, QComboBox
+    QSizePolicy, QFrame, QComboBox, QFileDialog,
+    QMessageBox
 )
 from PyQt5.QtGui import (
     QFont, QColor, QPainter, QLinearGradient, QIcon
@@ -13,7 +16,7 @@ from PyQt5.Qsci import (
 )
 
 class Header(QWidget):
-    def __init__(self):
+    def __init__(self, editor):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet("""
@@ -23,6 +26,7 @@ class Header(QWidget):
                 border-radius: 16px;
             }
         """)
+        self.editor = editor
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -116,6 +120,9 @@ class Header(QWidget):
             """)
             btn.setIconSize(QSize(16, 16))
             btn_layout.addWidget(btn)
+
+        new_btn.clicked.connect(self.createNewStrategy)
+        load_btn.clicked.connect(self.openFileDialog)
         
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
@@ -126,10 +133,67 @@ class Header(QWidget):
 
         layout.addWidget(btn_container, 0, Qt.AlignRight)
 
+    def getStrategiesFolder(self):
+        base_dir = Path(__file__).resolve().parent
+        strategies_dir = base_dir / "strategies"
+        strategies_dir.mkdir(parents=True, exist_ok=True)
+        return strategies_dir
+
+    def openFileDialog(self):
+        strategies_dir = self.getStrategiesFolder()
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Strategy",
+            str(strategies_dir),
+            "Python Files (*.py)"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                self.editor.setText(content)
+                self.current_file = file_path
+
+                print("Loaded:", file_path)
+
+            except Exception as e:
+                print("Error loading file:", e)
+
+    def createNewStrategy(self):
+        strategies_dir = self.getStrategiesFolder()
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create New Strategy",
+            str(strategies_dir / "new_strategy.py"),
+            "Python Files (*.py)"
+        )
+
+        if not file_path:
+            return
+
+        content = """{
+            "name": "New Strategy",
+            "rules": []
+        }"""
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+
+        self.editor.setText(content)
+        self.current_file = file_path
+
+        print("Created:", file_path)
+
 class ActionBar(QWidget):
-    def __init__(self):
+    def __init__(self, editor):
         super().__init__()
         self.setStyleSheet("background: #101010;")
+        self.editor = editor
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 24, 16, 24)
@@ -167,9 +231,70 @@ class ActionBar(QWidget):
                 }
         """)
 
+        self.save_btn.clicked.connect(self.saveStrategy)
+        self.delete_btn.clicked.connect(self.deleteStrategy)
+
         layout.addWidget(spacer)
         layout.addWidget(self.save_btn)
         layout.addWidget(self.delete_btn)
+
+    def getStrategiesFolder(self):
+        base_dir = Path(__file__).resolve().parent
+        strategies_dir = base_dir / "strategies"
+        strategies_dir.mkdir(parents=True, exist_ok=True)
+        return strategies_dir
+
+    def saveStrategy(self):
+        if not hasattr(self, "current_file"):
+            return
+
+        try:
+            content = self.editor.text()
+
+            with open(self.current_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            print("Saved:", self.current_file)
+
+        except Exception as e:
+            print("Save error:", e)
+
+    def deleteStrategy(self):
+        strategies_dir = self.getStrategiesFolder()
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Delete Strategy",
+            str(strategies_dir),
+            "Python Files (*.py)"
+        )
+
+        if not file_path:
+            return
+
+        file_name = os.path.basename(file_path)
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete:\n\n{file_name}?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                os.remove(file_path)
+
+                if hasattr(self, "current_file") and self.current_file == file_path:
+                    self.editor.clear()
+                    self.current_file = None
+
+                QMessageBox.information(self, "Deleted", f"{file_name} was deleted.")
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Could not delete file:\n{e}")
+
 
 class FadeOverlay(QWidget):
     def __init__(self, parent):
@@ -194,7 +319,6 @@ class CodeEditor(QsciScintilla):
         self.setPaper(QColor("#020101"))
         self.setBraceMatching(QsciScintilla.SloppyBraceMatch)
         self.setStyleSheet("border: none;")
-        #self.setViewportMargins(220, 0, 220, 0)
 
         self.setIndentationGuides(True)
         self.setTabWidth(4)
