@@ -101,7 +101,6 @@ impl EventSink for MoldEngine {
                 self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
 
                 Self::push_event(&mut self.l3_tx, &buf);
-                std::thread::sleep(Duration::from_millis(200));
             }
             MarketEventType::Trade(e) => {
                 let mut buf = [0u8; 36];
@@ -121,7 +120,6 @@ impl EventSink for MoldEngine {
                 self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
 
                 Self::push_event(&mut self.trade_tx, &buf);
-                std::thread::sleep(Duration::from_millis(200));
             }
             _ => {}
         }
