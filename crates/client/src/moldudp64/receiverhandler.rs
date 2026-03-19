@@ -1,4 +1,3 @@
-use bytes::BytesMut;
 use netlib::{
     itch_core::messages::{
         ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
@@ -37,18 +36,14 @@ impl ReceiverHandler {
     }
 
     pub fn run(mut self) {
-        let mut buf = BytesMut::with_capacity(2048);
+        let mut buf = [0u8; 2048];
 
         loop {
-            buf.resize(2048, 0);
-
             let (len, _) = match self.socket.recv_from(&mut buf) {
                 Ok(v) => v,
-                Err(_e) => continue,
+                Err(_) => continue,
             };
-
-            let bytes = buf.split_to(len).freeze();
-            self.handle_packet(&bytes);
+            self.handle_packet(&buf[..len]);
         }
     }
 
