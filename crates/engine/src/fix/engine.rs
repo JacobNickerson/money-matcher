@@ -116,7 +116,7 @@ impl FixEngine {
                         test_req_id: session.test_req_counter,
                     };
 
-                    self.tmp_pending_heartbeats.push((
+                    self.tmp_pending_heartbeats.push(( 
                         *token,
                         FIXPayload::Engine(EngineMessage::TestRequest(test_request)),
                     ));
@@ -418,6 +418,9 @@ mod tests {
     #[test]
     #[ignore]
     fn fix_engine_test() {
+        for _ in 0..50 {
+            println!("");
+        }
         let (lob_tx, mut lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();

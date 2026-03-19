@@ -1,88 +1,88 @@
 use crate::moldudp64_client::receiverhandler::ReceiverHandler;
 use netlib::itch_core::messages::ItchEvent;
-use nexus_queue::spsc;
-use std::{net::UdpSocket, thread};
+use ringbuf::{HeapCons, HeapProd, HeapRb, traits::Split};
+use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+    thread,
+};
+
 pub struct MoldClient {
-    handler_rx: spsc::Consumer<ItchEvent>,
+    pub l3_rx: HeapCons<ItchEvent>,
+    pub trade_rx: HeapCons<ItchEvent>,
 }
 
 impl MoldClient {
     pub fn start() -> Self {
-        let (handler_tx, handler_rx) = spsc::ring_buffer::<ItchEvent>(8192);
-        let receiver_handler =
-            ReceiverHandler::new(handler_tx, UdpSocket::bind("127.0.0.1:8081").expect("err"));
+        let (l3_tx, l3_rx) = HeapRb::<ItchEvent>::new(2048).split();
+        let (trade_tx, trade_rx) = HeapRb::<ItchEvent>::new(2048).split();
+
+        Self::start_receiver("233.100.10.3:9503".parse().unwrap(), l3_tx);
+        Self::start_receiver("233.100.10.4:9504".parse().unwrap(), trade_tx);
+
+        Self { l3_rx, trade_rx }
+    }
+
+    fn start_receiver(addr: SocketAddr, tx: HeapProd<ItchEvent>) {
+        let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
+
+        socket.set_reuse_address(true).expect("err");
+
+        let bind_addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), addr.port());
+        socket.bind(&SockAddr::from(bind_addr)).expect("err");
+
+        if let IpAddr::V4(ip) = addr.ip() {
+            socket
+                .join_multicast_v4(&ip, &Ipv4Addr::LOCALHOST)
+                .expect("Failed to join");
+        }
+
+        let std_socket: UdpSocket = socket.into();
+        let receiver_handler = ReceiverHandler::new(tx, std_socket);
 
         thread::spawn(move || {
             receiver_handler.run();
         });
-
-        Self { handler_rx }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
-
-    #[test]
-    #[ignore]
-    fn benchmark_mold_consumer_enqueue() {
-        let mut mold_client = MoldClient::start();
-        let mut count = 0u64;
-        let mut start_instant: Option<Instant> = None;
-
-        loop {
-            if let Some(event) = mold_client.handler_rx.pop() {
-                match event {
-                    ItchEvent::TestBenchmark(_s) => {
-                        if start_instant.is_none() {
-                            start_instant = Some(Instant::now());
-                            println!("Start benchmark");
-                        } else if let Some(start) = start_instant {
-                            let elapsed = start.elapsed().as_nanos() as u64;
-
-                            println!(
-                                "	benchmark_results total_time_ns={} average_latency_ns={} count={}",
-                                elapsed,
-                                elapsed / count,
-                                count
-                            );
-
-                            break;
-                        }
-                    }
-
-                    ItchEvent::AddOrder(_s) => {
-                        count += 1;
-                    }
-
-                    _ => {}
-                }
-            } else {
-                std::hint::spin_loop();
-            }
-        }
-    }
+    use ringbuf::traits::Consumer;
 
     #[test]
     #[ignore]
     fn receive_orders() {
         let mut mold_client = MoldClient::start();
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        for _ in 0..50 {
+            println!("");
+        }
 
         loop {
-            if let Some(event) = mold_client.handler_rx.pop() {
+            if let Some(event) = mold_client.l3_rx.try_pop() {
                 match event {
                     ItchEvent::AddOrder(_s) => {
-                        _s.print();
+                        println!("Received {:?}", _s);
                     }
 
                     _ => {
                         println!("received something..")
                     }
                 }
-            } else {
-                std::hint::spin_loop();
+            }
+
+            if let Some(event) = mold_client.trade_rx.try_pop() {
+                match event {
+                    ItchEvent::OrderExecutedWithPrice(_s) => {
+                        println!("Received {:?}", _s);
+                    }
+
+                    _ => {
+                        println!("received something..")
+                    }
+                }
             }
         }
     }

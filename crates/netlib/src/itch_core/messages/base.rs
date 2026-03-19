@@ -1,4 +1,4 @@
-use crate::itch_core::helpers::{decode_price, decode_u48, encode_price, encode_u48};
+use crate::itch_core::helpers::{ decode_u48,  encode_u48};
 use crate::itch_core::messages::ItchMessage;
 use std::str::from_utf8;
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};

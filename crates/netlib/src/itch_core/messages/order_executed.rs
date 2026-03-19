@@ -57,7 +57,7 @@ impl OrderExecuted {
             self.executed_shares.get(),
             self.match_number.get(),
         );
-    }
+    }	
 }
 
 impl ItchMessage for OrderExecuted {

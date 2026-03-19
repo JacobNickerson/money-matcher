@@ -1,4 +1,4 @@
-use crate::itch_core::helpers::{decode_price, decode_u48, encode_price, encode_u48};
+use crate::itch_core::helpers::{decode_u48, encode_u48};
 use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ItchMessage};
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -42,7 +42,7 @@ impl OrderExecutedWithPrice {
         executed_shares: u32,
         match_number: u64,
         printable: u8,
-        execution_price: f64,
+        execution_price: u32,
     ) -> Self {
         Self {
             message_type: ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
@@ -53,8 +53,30 @@ impl OrderExecutedWithPrice {
             executed_shares: U32::new(executed_shares),
             match_number: U64::new(match_number),
             printable,
-            execution_price: U32::new(encode_price(execution_price)),
+            execution_price: U32::new(execution_price),
         }
+    }
+
+    pub fn encode_into(
+        buf: &mut [u8],
+        stock_locate: u16,
+        tracking_number: u16,
+        timestamp: u64,
+        order_reference_number: u64,
+        executed_shares: u32,
+        match_number: u64,
+        printable: u8,
+        execution_price: u32,
+    ) {
+        buf[0] = b'C';
+        buf[1..3].copy_from_slice(&stock_locate.to_be_bytes());
+        buf[3..5].copy_from_slice(&tracking_number.to_be_bytes());
+        buf[5..11].copy_from_slice(&encode_u48(timestamp));
+        buf[11..19].copy_from_slice(&order_reference_number.to_be_bytes());
+        buf[19..23].copy_from_slice(&executed_shares.to_be_bytes());
+        buf[23..31].copy_from_slice(&match_number.to_be_bytes());
+        buf[31] = printable;
+        buf[32..36].copy_from_slice(&execution_price.to_be_bytes());
     }
 
     pub fn print(&self) {
@@ -67,7 +89,7 @@ impl OrderExecutedWithPrice {
             self.executed_shares.get(),
             self.match_number.get(),
             self.printable as char,
-            decode_price(self.execution_price.get()),
+            self.execution_price.get(),
         );
     }
 }
@@ -88,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_order_executed_with_price_initial_state() {
-        let price_val = 100.0;
+        let price_val = 100;
         let msg = OrderExecutedWithPrice::new(1, 1000, 5000, 10, 9999, b'Y', price_val);
 
         assert_eq!(
@@ -108,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_order_executed_with_price_trait_updates() {
-        let mut msg = OrderExecutedWithPrice::new(0, 0, 0, 0, 0, b'N', 0.0);
+        let mut msg = OrderExecutedWithPrice::new(0, 0, 0, 0, 0, b'N', 0);
 
         msg.set_tracking_number(5);
         msg.set_stock_locate(10);

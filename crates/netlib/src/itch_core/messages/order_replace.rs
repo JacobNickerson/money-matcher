@@ -1,4 +1,4 @@
-use crate::itch_core::helpers::{decode_price, decode_u48, encode_price, encode_u48};
+use crate::itch_core::helpers::{decode_u48, encode_u48};
 use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_ORDER_REPLACE, ItchMessage};
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -37,7 +37,7 @@ impl OrderReplace {
         original_order_reference_number: u64,
         new_order_reference_number: u64,
         shares: u32,
-        price: f64,
+        price: u32,
     ) -> Self {
         Self {
             message_type: ITCH_MESSAGE_TYPE_ORDER_REPLACE,
@@ -47,7 +47,7 @@ impl OrderReplace {
             original_order_reference_number: U64::new(original_order_reference_number),
             new_order_reference_number: U64::new(new_order_reference_number),
             shares: U32::new(shares),
-            price: U32::new(encode_price(price)),
+            price: U32::new(price),
         }
     }
 
@@ -60,7 +60,7 @@ impl OrderReplace {
             self.original_order_reference_number.get(),
             self.new_order_reference_number.get(),
             self.shares.get(),
-            decode_price(self.price.get()),
+            self.price.get(),
         );
     }
 }
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_order_replace_initial_state() {
-        let price_val = 100.0;
+        let price_val = 100;
         let msg = OrderReplace::new(1, 1000, 5000, 5001, 20, price_val);
 
         assert_eq!(msg.message_type, ITCH_MESSAGE_TYPE_ORDER_REPLACE);
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_order_replace_trait_updates() {
-        let mut msg = OrderReplace::new(0, 0, 0, 0, 0, 0.0);
+        let mut msg = OrderReplace::new(0, 0, 0, 0, 0, 0);
 
         msg.set_tracking_number(5);
         msg.set_stock_locate(10);

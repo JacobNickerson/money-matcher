@@ -11,13 +11,13 @@ use netlib::{
     },
     moldudp64_core::types::Header,
 };
-use nexus_queue::{Full, spsc};
+use ringbuf::{HeapProd, traits::Producer};
 use std::net::UdpSocket;
 use zerocopy::FromBytes;
 
 pub struct ReceiverHandler {
     socket: UdpSocket,
-    output: spsc::Producer<ItchEvent>,
+    output: HeapProd<ItchEvent>,
 }
 
 macro_rules! itch {
@@ -32,7 +32,7 @@ macro_rules! itch {
 }
 
 impl ReceiverHandler {
-    pub fn new(output: spsc::Producer<ItchEvent>, socket: UdpSocket) -> Self {
+    pub fn new(output: HeapProd<ItchEvent>, socket: UdpSocket) -> Self {
         Self { socket, output }
     }
 
@@ -107,7 +107,6 @@ impl ReceiverHandler {
         }
 
         let message_type = message_data[0];
-
         itch!(message_type, message_data, {
             ITCH_MESSAGE_TYPE_ADD_ORDER => AddOrder(AddOrder),
             ITCH_MESSAGE_TYPE_ORDER_CANCEL => OrderCancel(OrderCancel),
@@ -119,26 +118,22 @@ impl ReceiverHandler {
         })
     }
 
-    fn push_event(&mut self, mut event: ItchEvent) {
-        loop {
-            match self.output.push(event) {
-                Ok(_) => break,
-                Err(Full(e)) => {
-                    event = e;
-                    std::hint::spin_loop();
-                }
-            }
-        }
+    fn push_event(&mut self, event: ItchEvent) {
+        self.output.try_push(event).ok();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ringbuf::{
+        HeapCons,
+        traits::{Consumer, Split},
+    };
     use zerocopy::IntoBytes;
 
-    fn make_handler() -> (ReceiverHandler, spsc::Consumer<ItchEvent>) {
-        let (tx, rx) = spsc::ring_buffer::<ItchEvent>(8);
+    fn make_handler() -> (ReceiverHandler, HeapCons<ItchEvent>) {
+        let (tx, rx) = ringbuf::HeapRb::<ItchEvent>::new(8).split();
         let socket = UdpSocket::bind("127.0.0.1:0").expect("err");
         (ReceiverHandler::new(tx, socket), rx)
     }
@@ -163,15 +158,15 @@ mod tests {
         let mut stock = [b' '; 8];
         stock[..4].copy_from_slice(b"TEST");
 
-        let msg = AddOrder::new(1, 12, 123, b'B', 10, stock, 99.into());
-        let bytes = msg.as_bytes();
+        let mut buf = [0u8; 36];
+        AddOrder::encode_into(&mut buf, 1, 12, 123, 0, b'B', 10, stock, 99);
 
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
+        let event = ReceiverHandler::parse_event(&buf).expect("err");
 
         match event {
             ItchEvent::AddOrder(v) => {
                 assert_eq!(v.shares.get(), 10);
-                assert_eq!(v.price.get(), 990000);
+                assert_eq!(v.price.get(), 99);
             }
             _ => panic!("wrong event"),
         }
@@ -210,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_parse_event_order_executed_with_price() {
-        let msg = OrderExecutedWithPrice::new(1, 1000, 5000, 10, 9999, b'Y', 100.0);
+        let msg = OrderExecutedWithPrice::new(1, 1000, 5000, 10, 9999, b'Y', 100);
         let bytes = msg.as_bytes();
         let event = ReceiverHandler::parse_event(bytes).expect("err");
 
@@ -218,7 +213,7 @@ mod tests {
             ItchEvent::OrderExecutedWithPrice(v) => {
                 assert_eq!(v.order_reference_number.get(), 5000);
                 assert_eq!(v.executed_shares.get(), 10);
-                assert_eq!(v.execution_price.get(), 1000000);
+                assert_eq!(v.execution_price.get(), 100);
                 assert_eq!(v.printable, b'Y');
             }
             _ => panic!("wrong event"),
@@ -243,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_parse_event_order_replace() {
-        let msg = OrderReplace::new(1, 1000, 5000, 5001, 20, 100.0);
+        let msg = OrderReplace::new(1, 1000, 5000, 5001, 20, 100);
         let bytes = msg.as_bytes();
         let event = ReceiverHandler::parse_event(bytes).expect("err");
 
@@ -252,7 +247,7 @@ mod tests {
                 assert_eq!(v.original_order_reference_number.get(), 5000);
                 assert_eq!(v.new_order_reference_number.get(), 5001);
                 assert_eq!(v.shares.get(), 20);
-                assert_eq!(v.price.get(), 1000000);
+                assert_eq!(v.price.get(), 100);
             }
             _ => panic!("wrong event"),
         }
@@ -304,11 +299,11 @@ mod tests {
         h.handle_packet(&packet);
 
         assert!(matches!(
-            rx.pop().expect("err"),
+            rx.try_pop().expect("err"),
             ItchEvent::TestBenchmark(_)
         ));
         assert!(matches!(
-            rx.pop().expect("err"),
+            rx.try_pop().expect("err"),
             ItchEvent::TestBenchmark(_)
         ));
     }
@@ -320,6 +315,6 @@ mod tests {
         let buf = [0u8; 10];
         h.handle_packet(&buf);
 
-        assert!(rx.pop().is_none());
+        assert!(rx.try_pop().is_none());
     }
 }
