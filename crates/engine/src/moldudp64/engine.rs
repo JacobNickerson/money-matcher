@@ -1,6 +1,6 @@
 use crate::{
     lob::market_events::{EventSink, MarketEvent, MarketEventType},
-    moldudp64_engine::sequencerpublisher::SequencerPublisher,
+    moldudp64::sequencerpublisher::SequencerPublisher,
 };
 use bytes::{Bytes, buf};
 use netlib::{

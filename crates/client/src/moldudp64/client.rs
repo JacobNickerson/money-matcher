@@ -1,4 +1,4 @@
-use crate::moldudp64_client::receiverhandler::ReceiverHandler;
+use crate::moldudp64::receiverhandler::ReceiverHandler;
 use netlib::itch_core::messages::ItchEvent;
 use ringbuf::{HeapCons, HeapProd, HeapRb, traits::Split};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
