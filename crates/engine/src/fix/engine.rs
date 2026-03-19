@@ -116,7 +116,7 @@ impl FixEngine {
                         test_req_id: session.test_req_counter,
                     };
 
-                    self.tmp_pending_heartbeats.push(( 
+                    self.tmp_pending_heartbeats.push((
                         *token,
                         FIXPayload::Engine(EngineMessage::TestRequest(test_request)),
                     ));

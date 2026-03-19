@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
 use ringbuf::{
-    HeapCons, HeapProd, HeapRb,
+    HeapCons, HeapProd,
     traits::{Consumer, Producer, Split},
 };
 

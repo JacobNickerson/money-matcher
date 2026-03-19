@@ -68,7 +68,7 @@ impl MoldEngine {
     }
 
     pub fn push_event(channel_tx: &mut HeapProd<Bytes>, buf: &[u8]) {
-        let mut bytes = Bytes::copy_from_slice(buf);
+        let bytes = Bytes::copy_from_slice(buf);
 
         channel_tx.try_push(bytes).ok();
     }
@@ -77,8 +77,8 @@ impl MoldEngine {
 impl EventSink for MoldEngine {
     fn push(&mut self, event: MarketEvent) {
         match event.kind {
-            MarketEventType::L1(e) => {}
-            MarketEventType::L2(e) => {}
+            MarketEventType::L1(_e) => {}
+            MarketEventType::L2(_e) => {}
             MarketEventType::L3(e) => {
                 let mut buf = [0u8; 36];
 

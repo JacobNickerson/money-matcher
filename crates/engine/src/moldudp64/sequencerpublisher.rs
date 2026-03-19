@@ -70,10 +70,8 @@ impl SequencerPublisher {
     pub fn run(mut self) {
         let mut loop_counter: u8 = 0;
         loop {
-            if loop_counter == 0 {
-                if Instant::now() >= self.next_flush {
-                    self.flush();
-                }
+            if loop_counter == 0 && Instant::now() >= self.next_flush {
+                self.flush();
             }
 
             loop_counter = loop_counter.wrapping_add(1);
