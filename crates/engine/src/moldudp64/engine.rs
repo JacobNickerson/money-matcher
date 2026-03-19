@@ -52,7 +52,7 @@ impl MoldEngine {
 
         let bind_addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
         socket.bind(&SockAddr::from(bind_addr)).expect("err");
-        socket.set_multicast_ttl_v4(1);
+        socket.set_multicast_ttl_v4(1).expect("err");
         socket
             .set_multicast_if_v4(&Ipv4Addr::LOCALHOST)
             .expect("err");
