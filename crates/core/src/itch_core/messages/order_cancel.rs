@@ -38,6 +38,22 @@ impl OrderCancel {
         }
     }
 
+    pub fn encode_into(
+        buf: &mut [u8],
+        stock_locate: u16,
+        tracking_number: u16,
+        timestamp: u64,
+        order_reference_number: u64,
+        canceled_shares: u32,
+    ) {
+        buf[0] = ITCH_MESSAGE_TYPE_ORDER_CANCEL;
+        buf[1..3].copy_from_slice(&stock_locate.to_be_bytes());
+        buf[3..5].copy_from_slice(&tracking_number.to_be_bytes());
+        buf[5..11].copy_from_slice(&encode_u48(timestamp));
+        buf[11..19].copy_from_slice(&order_reference_number.to_be_bytes());
+        buf[19..23].copy_from_slice(&canceled_shares.to_be_bytes());
+    }
+
     pub fn print(&self) {
         println!(
             "ITCH Message: OrderCancel | stock_locate={} | tracking_number={} | timestamp={:?} | order_ref={} | canceled_shares={}",

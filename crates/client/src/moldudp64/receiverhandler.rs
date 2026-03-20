@@ -1,7 +1,10 @@
 use core::{
     itch_core::{
         helpers::decode_u48,
-        messages::{ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE},
+        messages::{
+            ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
+            ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ITCH_MESSAGE_TYPE_ORDER_REPLACE,
+        },
     },
     lob_core::{
         market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
@@ -139,7 +142,55 @@ impl ReceiverHandler {
                     kind: MarketEventType::Trade(TradeEvent {
                         quantity: executed_shares.into(),
                         price: execution_price.into(),
-                        aggressor_side: OrderSide::Ask,
+                        aggressor_side: OrderSide::Ask, // PLACEHOLDER
+                    }),
+                })
+            }
+            ITCH_MESSAGE_TYPE_ORDER_CANCEL => {
+                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
+                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+
+                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+
+                let order_reference_number =
+                    u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+
+                // let canceled_shares = u32::from_be_bytes(message_data[19..23].try_into().unwrap());
+
+                Some(MarketEvent {
+                    timestamp,
+                    kind: MarketEventType::L3(L3Event {
+                        order_id: order_reference_number,
+                        side: OrderSide::Ask, // PLACEHOLDER
+                        timestamp,
+                        kind: OrderType::Cancel, // NEEDS QUANTITY
+                    }),
+                })
+            }
+            ITCH_MESSAGE_TYPE_ORDER_REPLACE => {
+                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
+                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+
+                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+
+                let original_order_reference_number =
+                    u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+                let new_order_reference_number =
+                    u64::from_be_bytes(message_data[19..27].try_into().unwrap());
+                let shares = u32::from_be_bytes(message_data[27..31].try_into().unwrap());
+                let price = u32::from_be_bytes(message_data[31..35].try_into().unwrap());
+
+                Some(MarketEvent {
+                    timestamp,
+                    kind: MarketEventType::L3(L3Event {
+                        order_id: new_order_reference_number,
+                        side: OrderSide::Ask, // PLACEHOLDER
+                        timestamp,
+                        kind: OrderType::Update {
+                            old_id: original_order_reference_number,
+                            qty: shares.into(),
+                            price: price.into(),
+                        },
                     }),
                 })
             }

@@ -51,6 +51,25 @@ impl OrderReplace {
         }
     }
 
+    pub fn encode_into(
+        buf: &mut [u8],
+        stock_locate: u16,
+        tracking_number: u16,
+        timestamp: u64,
+        original_order_reference_number: u64,
+        new_order_reference_number: u64,
+        shares: u32,
+        price: u32,
+    ) {
+        buf[0] = ITCH_MESSAGE_TYPE_ORDER_REPLACE;
+        buf[1..3].copy_from_slice(&stock_locate.to_be_bytes());
+        buf[3..5].copy_from_slice(&tracking_number.to_be_bytes());
+        buf[5..11].copy_from_slice(&encode_u48(timestamp));
+        buf[11..19].copy_from_slice(&original_order_reference_number.to_be_bytes());
+        buf[19..27].copy_from_slice(&new_order_reference_number.to_be_bytes());
+        buf[27..31].copy_from_slice(&shares.to_be_bytes());
+        buf[31..35].copy_from_slice(&price.to_be_bytes());
+    }
     pub fn print(&self) {
         println!(
             "ITCH Message: OrderReplace | stock_locate={} | tracking_number={} | timestamp={:?} | original_ref={} | new_ref={} | shares={} | price={:.4}",
