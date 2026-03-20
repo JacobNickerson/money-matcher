@@ -105,15 +105,20 @@ impl OrderBook {
     }
 
     /// Returns the quantities of the top n price levels on the specified side
-    pub fn get_top_levels(&self, side: OrderSide, n: usize) -> Vec<u64> {
+    pub fn get_top_levels(&self, side: OrderSide, n: usize) -> Vec<(Price, u64)> {
         match side {
-            OrderSide::Ask => self.ask_levels.values().take(n).map(|l| l.qty).collect(),
+            OrderSide::Ask => self
+                .ask_levels
+                .iter()
+                .take(n)
+                .map(|(p, l)| (*p, l.qty))
+                .collect(),
             OrderSide::Bid => self
                 .bid_levels
-                .values()
+                .iter()
                 .rev()
                 .take(n)
-                .map(|l| l.qty)
+                .map(|(p, l)| (*p, l.qty))
                 .collect(),
         }
     }

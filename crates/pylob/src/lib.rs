@@ -245,7 +245,7 @@ mod pylob {
         }
 
         /// Returns the quantities of the top n price levels on the specified side
-        pub fn get_top_levels(&self, side: PyOrderSide, n: usize) -> Vec<u64> {
+        pub fn get_top_levels(&self, side: PyOrderSide, n: usize) -> Vec<(u64,u64)> {
             self.inner.get_top_levels(OrderSide::from(side), n)
         }
     }
