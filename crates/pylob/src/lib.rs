@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3_stub_gen::define_stub_info_gatherer;
 mod limit_order_book;
 
 #[pymodule]
@@ -9,7 +10,9 @@ mod pylob {
         order::{LimitOrder, Order, OrderSide, OrderType},
     };
     use pyo3::prelude::*;
+    use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
+    #[gen_stub_pyclass_enum]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum PyOrderSide {
@@ -33,11 +36,13 @@ mod pylob {
         }
     }
 
+    #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct PyOrderType {
         inner: OrderType,
     }
+    #[gen_stub_pymethods]
     #[pymethods]
     impl PyOrderType {
         #[staticmethod]
@@ -69,11 +74,13 @@ mod pylob {
         }
     }
 
+    #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct PyOrder {
         inner: Order,
     }
+    #[gen_stub_pymethods]
     #[pymethods]
     impl PyOrder {
         #[new]
@@ -99,11 +106,13 @@ mod pylob {
         }
     }
 
+    #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct PyLimitOrder {
         inner: LimitOrder,
     }
+    #[gen_stub_pymethods]
     #[pymethods]
     impl PyLimitOrder {
         #[new]
@@ -124,11 +133,13 @@ mod pylob {
         }
     }
 
+    #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
     struct PyMarketEventType {
         inner: MarketEventType,
     }
+    #[gen_stub_pymethods]
     #[pymethods]
     impl PyMarketEventType {
         #[staticmethod]
@@ -159,12 +170,14 @@ mod pylob {
         }
     }
 
+    #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Copy, Clone, Debug)]
     struct PyMarketEvent {
         pub timestamp: u64,
         pub kind: PyMarketEventType,
     }
+    #[gen_stub_pymethods]
     #[pymethods]
     impl PyMarketEvent {
         #[new]
@@ -189,12 +202,14 @@ mod pylob {
         }
     }
 
+    #[gen_stub_pyclass]
     #[pyclass]
     /// A stripped down version of the OrderBook. Directly manages its state
     /// via MarketEvents instead of handling matching logic, trade execution, etc.
     struct PyOrderBook {
         inner: OrderBook,
     }
+    #[gen_stub_pymethods]
     #[pymethods]
     impl PyOrderBook {
         #[new]
@@ -250,3 +265,5 @@ mod pylob {
         }
     }
 }
+
+define_stub_info_gatherer!(stub_info);
