@@ -1,11 +1,11 @@
 use pyo3::prelude::*;
+mod limit_order_book;
 
-/// A Python module implemented in Rust.
 #[pymodule]
 mod pylob {
+    use crate::limit_order_book::OrderBook;
     use engine::lob::{
-        limitorderbook::OrderBook,
-        market_events::NullFeeds,
+        market_events::{LiquidityFlag, MarketEvent, MarketEventType, TradeEvent},
         order::{LimitOrder, Order, OrderSide, OrderType},
     };
     use pyo3::prelude::*;
@@ -90,12 +90,7 @@ mod pylob {
     }
     impl From<PyOrder> for Order {
         fn from(value: PyOrder) -> Self {
-            Order {
-                order_id: value.inner.order_id,
-                side: value.inner.side,
-                timestamp: value.inner.timestamp,
-                kind: value.inner.kind,
-            }
+            value.inner
         }
     }
     impl From<Order> for PyOrder {
@@ -120,13 +115,7 @@ mod pylob {
     }
     impl From<PyLimitOrder> for LimitOrder {
         fn from(value: PyLimitOrder) -> Self {
-            LimitOrder {
-                order_id: value.inner.order_id,
-                side: value.inner.side,
-                status: value.inner.status,
-                qty: value.inner.qty,
-                price: value.inner.price,
-            }
+            value.inner
         }
     }
     impl From<LimitOrder> for PyLimitOrder {
@@ -136,22 +125,128 @@ mod pylob {
     }
 
     #[pyclass]
+    #[derive(Debug, Clone, Copy)]
+    struct PyMarketEventType {
+        inner: MarketEventType,
+    }
+    #[pymethods]
+    impl PyMarketEventType {
+        #[staticmethod]
+        fn l3(event: PyLimitOrder) -> Self {
+            Self {
+                inner: MarketEventType::L3(LimitOrder::from(event)),
+            }
+        }
+        #[staticmethod]
+        fn trade(price: u64, quantity: u64, aggressor_side: PyOrderSide) -> Self {
+            Self {
+                inner: MarketEventType::Trade(TradeEvent {
+                    price,
+                    quantity,
+                    aggressor_side: OrderSide::from(aggressor_side),
+                }),
+            }
+        }
+    }
+    impl From<MarketEventType> for PyMarketEventType {
+        fn from(value: MarketEventType) -> Self {
+            Self { inner: value }
+        }
+    }
+    impl From<PyMarketEventType> for MarketEventType {
+        fn from(value: PyMarketEventType) -> Self {
+            value.inner
+        }
+    }
+
+    #[pyclass]
+    #[derive(Copy, Clone, Debug)]
+    struct PyMarketEvent {
+        pub timestamp: u64,
+        pub kind: PyMarketEventType,
+    }
+    #[pymethods]
+    impl PyMarketEvent {
+        #[new]
+        fn new(timestamp: u64, kind: PyMarketEventType) -> Self {
+            Self { timestamp, kind }
+        }
+    }
+    impl From<MarketEvent> for PyMarketEvent {
+        fn from(value: MarketEvent) -> Self {
+            Self {
+                timestamp: value.timestamp,
+                kind: PyMarketEventType::from(value.kind),
+            }
+        }
+    }
+    impl From<PyMarketEvent> for MarketEvent {
+        fn from(value: PyMarketEvent) -> Self {
+            Self {
+                timestamp: value.timestamp,
+                kind: MarketEventType::from(value.kind),
+            }
+        }
+    }
+
+    #[pyclass]
+    /// A stripped down version of the OrderBook. Directly manages its state
+    /// via MarketEvents instead of handling matching logic, trade execution, etc.
     struct PyOrderBook {
-        inner: OrderBook<NullFeeds>,
+        inner: OrderBook,
     }
     #[pymethods]
     impl PyOrderBook {
         #[new]
-        pub fn new() -> Self {
+        fn new() -> Self {
             Self {
-                inner: OrderBook::<NullFeeds>::new(NullFeeds {}),
+                inner: OrderBook::default(),
             }
         }
 
-        pub fn process_order(&mut self, order: PyOrder, time: u64) -> Option<PyLimitOrder> {
-            self.inner
-                .process_order(Order::from(order), time)
-                .map(PyLimitOrder::from)
+        /// Accepts a market event and updates the state of the book
+        pub fn process_event(&mut self, event: PyMarketEvent) {
+            self.inner.process_event(MarketEvent::from(event));
+        }
+
+        /// Returns the best bidding price or None if there are no bids
+        pub fn best_bid(&self) -> Option<u64> {
+            self.inner.best_bid()
+        }
+
+        /// Returns a tuple of (best_bid_price,qty) or None if there are no bids
+        pub fn best_bid_and_size(&self) -> Option<(u64, u64)> {
+            self.inner.best_bid_and_size()
+        }
+
+        /// Returns the best asking price or None if there are no bids
+        pub fn best_ask(&self) -> Option<u64> {
+            self.inner.best_ask()
+        }
+
+        /// Returns a tuple of (best_ask_price,qty) or None if there are no bids
+        pub fn best_ask_and_size(&self) -> Option<(u64, u64)> {
+            self.inner.best_ask_and_size()
+        }
+
+        /// Returns an average of the best asking and bidding prices or None if there are no bids or no orders
+        pub fn mid_price(&self) -> Option<f64> {
+            self.inner.mid_price()
+        }
+
+        /// Returns the difference between the best asking and bidding prices or None if there are no bids or no orders
+        pub fn spread(&self) -> Option<u64> {
+            self.inner.spread()
+        }
+
+        /// Returns the quantity of a given price level on the specified side
+        pub fn get_level(&self, price: u64, side: PyOrderSide) -> u64 {
+            self.inner.get_level(price, OrderSide::from(side))
+        }
+
+        /// Returns the quantities of the top n price levels on the specified side
+        pub fn get_top_levels(&self, side: PyOrderSide, n: usize) -> Vec<u64> {
+            self.inner.get_top_levels(OrderSide::from(side), n)
         }
     }
 }
