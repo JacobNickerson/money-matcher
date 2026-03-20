@@ -34,6 +34,7 @@
               pyPkgs.setuptools
               pyPkgs.wheel
               pkgs.maturin # maturin builds the PyO3 extension and installs into the env
+              pkgs.pyo3-stubgen
 
               pkg-config
             ];
