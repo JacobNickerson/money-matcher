@@ -1,6 +1,9 @@
 use crate::moldudp64::receiverhandler::ReceiverHandler;
 use core::lob_core::market_events::MarketEvent;
-use ringbuf::{HeapCons, HeapProd, HeapRb, traits::Split};
+use ringbuf::{
+    HeapCons, HeapProd, HeapRb,
+    traits::{Consumer, Split},
+};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
@@ -10,6 +13,8 @@ use std::{
 pub struct MoldClient {
     pub l3_rx: HeapCons<MarketEvent>,
     pub trade_rx: HeapCons<MarketEvent>,
+    next_l3: Option<MarketEvent>,
+    next_trade: Option<MarketEvent>,
 }
 
 impl MoldClient {
@@ -20,7 +25,12 @@ impl MoldClient {
         Self::start_receiver("233.100.10.3:9503".parse().unwrap(), l3_tx);
         Self::start_receiver("233.100.10.4:9504".parse().unwrap(), trade_tx);
 
-        Self { l3_rx, trade_rx }
+        Self {
+            l3_rx,
+            trade_rx,
+            next_l3: None,
+            next_trade: None,
+        }
     }
 
     fn start_receiver(addr: SocketAddr, tx: HeapProd<MarketEvent>) {
@@ -44,13 +54,33 @@ impl MoldClient {
             receiver_handler.run();
         });
     }
+
+    pub fn next_event(&mut self) -> Option<MarketEvent> {
+        if self.next_l3.is_none() {
+            self.next_l3 = self.l3_rx.try_pop();
+        }
+        if self.next_trade.is_none() {
+            self.next_trade = self.trade_rx.try_pop();
+        }
+
+        match (&self.next_l3, &self.next_trade) {
+            (Some(l3), Some(trade)) => {
+                if l3.timestamp <= trade.timestamp {
+                    self.next_l3.take()
+                } else {
+                    self.next_trade.take()
+                }
+            }
+            (Some(_), None) => self.next_l3.take(),
+            (None, Some(_)) => self.next_trade.take(),
+            (None, None) => None,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::lob_core::market_events::MarketEventType;
-    use ringbuf::traits::Consumer;
 
     #[test]
     #[ignore]
@@ -62,26 +92,8 @@ mod tests {
         }
 
         loop {
-            if let Some(event) = mold_client.l3_rx.try_pop() {
-                match event.kind {
-                    MarketEventType::L3(_s) => {
-                        println!("Received {:?}", event);
-                    }
-                    _ => {
-                        println!("received something..")
-                    }
-                }
-            }
-
-            if let Some(event) = mold_client.trade_rx.try_pop() {
-                match event.kind {
-                    MarketEventType::Trade(_s) => {
-                        println!("Received {:?}", event);
-                    }
-                    _ => {
-                        println!("received something..")
-                    }
-                }
+            if let Some(event) = mold_client.next_event() {
+                println!("Received {:?}", event);
             }
         }
     }

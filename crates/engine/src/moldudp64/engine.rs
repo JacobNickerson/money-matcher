@@ -144,32 +144,39 @@ mod tests {
         for _ in 0..50 {
             println!("");
         }
-        let l3_event = MarketEvent {
-            kind: MarketEventType::L3(L3Event {
-                order_id: 1,
-                side: OrderSide::Ask,
-                qty: 100,
-                price: 500,
-                status: OrderStatus::Active,
-            }),
-            timestamp: 0,
-        };
+
+        let mut i = 0;
 
         for _ in 0..5 {
+            i = i + 1;
+
+            let l3_event = MarketEvent {
+                kind: MarketEventType::L3(L3Event {
+                    order_id: i,
+                    side: OrderSide::Ask,
+                    qty: 100,
+                    price: 500,
+                    status: OrderStatus::Active,
+                }),
+                timestamp: i,
+            };
+
             println!("Sending {:?}", l3_event);
             server.push(l3_event.clone());
         }
 
-        let trade_event = MarketEvent {
-            kind: MarketEventType::Trade(TradeEvent {
-                price: 500,
-                quantity: 500,
-                aggressor_side: OrderSide::Ask,
-            }),
-            timestamp: 0,
-        };
-
         for _ in 0..5 {
+            i = i + 1;
+
+            let trade_event = MarketEvent {
+                kind: MarketEventType::Trade(TradeEvent {
+                    price: 500,
+                    quantity: 500,
+                    aggressor_side: OrderSide::Ask,
+                }),
+                timestamp: i,
+            };
+
             println!("Sending {:?}", trade_event);
             server.push(trade_event.clone());
         }
