@@ -1,6 +1,6 @@
 use crate::lob_core::{
     OrderId, Price, Timestamp,
-    market_orders::{LimitOrder, OrderSide},
+    market_orders::{Order, OrderSide},
 };
 use ringbuf::{HeapProd, traits::Producer};
 

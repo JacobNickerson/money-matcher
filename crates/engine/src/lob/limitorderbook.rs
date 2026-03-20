@@ -1,12 +1,12 @@
+use crate::lob::order::LimitOrder;
 use core::lob_core::{
     OrderId, Price, Timestamp,
     market_events::{
         ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
         MarketEventType, TradeEvent,
     },
-    market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
+    market_orders::{Order, OrderSide, OrderStatus, OrderType},
 };
-
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 #[derive(Debug, Default)]

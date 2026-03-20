@@ -151,14 +151,16 @@ mod tests {
             i = i + 1;
 
             let l3_event = MarketEvent {
+                timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
+                    timestamp: i,
                     side: OrderSide::Ask,
-                    qty: 100,
-                    price: 500,
-                    status: OrderStatus::Active,
+                    kind: OrderType::Limit {
+                        qty: 100,
+                        price: 500,
+                    },
                 }),
-                timestamp: i,
             };
 
             println!("Sending {:?}", l3_event);

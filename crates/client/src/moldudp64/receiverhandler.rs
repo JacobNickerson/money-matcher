@@ -5,7 +5,7 @@ use core::{
     },
     lob_core::{
         market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
-        market_orders::{OrderSide, OrderStatus},
+        market_orders::{OrderSide, OrderStatus, OrderType},
     },
     moldudp64_core::types::Header,
 };
@@ -110,10 +110,12 @@ impl ReceiverHandler {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: order_reference_number,
-                        status: OrderStatus::Active,
                         side: side.try_into().unwrap(),
-                        qty: shares.into(),
-                        price: price.into(),
+                        timestamp,
+                        kind: OrderType::Limit {
+                            qty: shares.into(),
+                            price: price.into(),
+                        },
                     }),
                 })
             }
@@ -153,8 +155,11 @@ impl ReceiverHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::itch_core::messages::{
-        add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice,
+    use core::{
+        itch_core::messages::{
+            add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice,
+        },
+        lob_core::market_orders::OrderType,
     };
     use ringbuf::{
         HeapCons,
@@ -181,8 +186,13 @@ mod tests {
         match event.kind {
             MarketEventType::L3(v) => {
                 assert_eq!(v.order_id, 5000);
-                assert_eq!(v.qty, 10);
-                assert_eq!(v.price, 99);
+                match v.kind {
+                    OrderType::Limit { qty, price } => {
+                        assert_eq!(qty, 10);
+                        assert_eq!(price, 99);
+                    }
+                    _ => panic!("wrong order type"),
+                }
             }
             _ => panic!("wrong event"),
         }
