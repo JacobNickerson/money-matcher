@@ -1,9 +1,13 @@
-use crate::{
-    lob::market_events::{EventSink, MarketEvent, MarketEventType},
-    moldudp64::sequencerpublisher::SequencerPublisher,
-};
 use bytes::Bytes;
-use netlib::{
+use core::lob_core::{
+    OrderId, Price, Timestamp,
+    market_events::{
+        ClientEvent, ClientEventType, EventSink, L1Event, L2Event, L3Event, LiquidityFlag,
+        MarketEvent, MarketEventType, TradeEvent,
+    },
+    market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
+};
+use core::{
     itch_core::messages::{add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice},
     moldudp64_core::types::Event,
 };
@@ -16,6 +20,8 @@ use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     thread,
 };
+
+use crate::moldudp64::sequencerpublisher::SequencerPublisher;
 
 pub struct MoldEngine {
     l3_tx: HeapProd<Event>,
@@ -87,7 +93,7 @@ impl EventSink for MoldEngine {
                     0,
                     self.current_tracking_number,
                     event.timestamp,
-                    0,
+                    e.order_id,
                     e.side as u8,
                     e.qty.try_into().unwrap(),
                     *b"   stock",
@@ -125,9 +131,9 @@ impl EventSink for MoldEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lob::{
-        market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
-        order::{OrderSide, OrderStatus},
+    use core::lob_core::{
+        market_events::{EventSink, L3Event, MarketEvent, MarketEventType, TradeEvent},
+        market_orders::{OrderSide, OrderStatus},
     };
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::lob::order::{OrderSide, OrderType};
+use core::lob_core::market_orders::{OrderSide, OrderType};
 use rand::Rng;
 use rand_distr::{Distribution, Uniform};
 

@@ -8,7 +8,7 @@ bytes = "1.11.1"
 circular-buffer = "1.2.0"
 fastrand = "2.3.0"
 mio = { version = "1.1.1", features = ["net", "os-poll"] }
-netlib = {path = "../netlib"}
+core = {path = "../core"}
 nexus-queue = "1.0.0"
 rand = "0.10.0"
 rand_chacha = "0.10.0"

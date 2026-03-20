@@ -1,7 +1,8 @@
-use crate::lob::order::{Order, OrderSide};
-use crate::lob::types::{OrderId, Price};
-use crate::lob::{order::LimitOrder, types::Timestamp};
-use ringbuf::{HeapProd, traits::*};
+use crate::lob_core::{
+    OrderId, Price, Timestamp,
+    market_orders::{LimitOrder, OrderSide},
+};
+use ringbuf::{HeapProd, traits::Producer};
 
 /// Event type representing a single L1 datapoint, ie information about the top of the book
 /// Emitted when the best price or size of the best price level changes

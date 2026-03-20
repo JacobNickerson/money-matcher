@@ -92,10 +92,22 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "core",
  "mio",
- "netlib",
  "ringbuf",
  "socket2",
+ "zerocopy",
+]
+
+[[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "itoa",
+ "mio",
+ "ringbuf",
  "zerocopy",
 ]
 
@@ -147,9 +159,9 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "circular-buffer",
+ "core",
  "fastrand",
  "mio",
- "netlib",
  "nexus-queue",
  "rand 0.10.0",
  "rand_chacha 0.10.0",
@@ -443,18 +455,6 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
-]
-
-[[package]]
-name = "netlib"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "chrono",
- "itoa",
- "mio",
- "ringbuf",
- "zerocopy",
 ]
 
 [[package]]

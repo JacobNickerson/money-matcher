@@ -1,9 +1,12 @@
-use crate::lob::market_events::{
-    ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
-    MarketEventType, TradeEvent,
+use core::lob_core::{
+    OrderId, Price, Timestamp,
+    market_events::{
+        ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
+        MarketEventType, TradeEvent,
+    },
+    market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
 };
-use crate::lob::order::{self, LimitOrder, Order, OrderSide, OrderStatus, OrderType};
-use crate::lob::types::{OrderId, Price, Timestamp};
+
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 #[derive(Debug, Default)]
@@ -536,7 +539,7 @@ impl<T: EventSink> OrderBook<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lob::market_events::{ClientEvent, L3Event, NullFeeds, SeparateEventFeeds};
+    use core::lob_core::market_events::{L3Event, NullFeeds, SeparateEventFeeds};
     use ringbuf::{HeapCons, HeapRb, traits::*};
 
     fn create_event_feeds(

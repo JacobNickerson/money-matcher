@@ -1,7 +1,7 @@
 use crate::data_generator::event_source::EventSource;
-use crate::lob::market_events::EventSink;
-use crate::lob::{limitorderbook::OrderBook, order::Order};
+use crate::lob::limitorderbook::OrderBook;
 use crate::simulator::latency_config::LatencyConfig;
+use core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};
 use std::collections::{BinaryHeap, HashMap};
@@ -84,13 +84,11 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        data_generator::{
-            event_source::PoissonSource, order_generators::GaussianOrderGenerator,
-            rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
-        },
-        lob::market_events::{MarketEvent, NullFeeds, SingleEventFeed},
+    use crate::data_generator::{
+        event_source::PoissonSource, order_generators::GaussianOrderGenerator,
+        rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
     };
+    use core::lob_core::market_events::{MarketEvent, NullFeeds, SingleEventFeed};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use ringbuf::HeapRb;

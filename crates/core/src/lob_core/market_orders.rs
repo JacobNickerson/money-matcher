@@ -1,5 +1,30 @@
-use crate::lob::types::{OrderId, Price, Timestamp};
+use crate::lob_core::{OrderId, Price, Timestamp};
 use std::cmp::Ordering;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+
+pub enum OrderSide {
+    Bid = b'B',
+    Ask = b'S',
+}
+
+impl TryFrom<u8> for OrderSide {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'B' => Ok(OrderSide::Bid),
+            b'S' => Ok(OrderSide::Ask),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderStatus {
+    Active,
+    Canceled,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Order {
@@ -8,6 +33,7 @@ pub struct Order {
     pub timestamp: Timestamp,
     pub kind: OrderType,
 }
+
 impl Order {
     #[inline(always)]
     pub fn new(order_id: OrderId, side: OrderSide, timestamp: Timestamp, kind: OrderType) -> Self {
@@ -19,6 +45,7 @@ impl Order {
         }
     }
 }
+
 impl PartialOrd for Order {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -40,6 +67,7 @@ pub struct LimitOrder {
     pub qty: u64,
     pub price: Price,
 }
+
 impl LimitOrder {
     const DEFAULT_STATUS: OrderStatus = OrderStatus::Active;
     #[inline(always)]
@@ -78,18 +106,6 @@ impl LimitOrder {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrderSide {
-    Bid,
-    Ask,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrderStatus {
-    Active,
-    Canceled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

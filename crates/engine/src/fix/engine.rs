@@ -10,7 +10,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 use ringbuf::HeapProd;
 use ringbuf::traits::{Consumer, Producer, Split};
 
-use netlib::fix_core::{
+use core::fix_core::{
     messages::{
         EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
         resend_request::ResendRequest, test_request::TestRequest,
@@ -408,7 +408,7 @@ impl FixEngineHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netlib::fix_core::messages::{
+    use core::fix_core::messages::{
         BusinessMessage, ReportMessage,
         execution_report::ExecutionReport,
         types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},

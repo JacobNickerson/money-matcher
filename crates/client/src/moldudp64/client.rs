@@ -1,5 +1,5 @@
 use crate::moldudp64::receiverhandler::ReceiverHandler;
-use netlib::itch_core::messages::ItchEvent;
+use core::lob_core::market_events::MarketEvent;
 use ringbuf::{HeapCons, HeapProd, HeapRb, traits::Split};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
@@ -8,14 +8,14 @@ use std::{
 };
 
 pub struct MoldClient {
-    pub l3_rx: HeapCons<ItchEvent>,
-    pub trade_rx: HeapCons<ItchEvent>,
+    pub l3_rx: HeapCons<MarketEvent>,
+    pub trade_rx: HeapCons<MarketEvent>,
 }
 
 impl MoldClient {
     pub fn start() -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<ItchEvent>::new(2048).split();
-        let (trade_tx, trade_rx) = HeapRb::<ItchEvent>::new(2048).split();
+        let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(2048).split();
+        let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(2048).split();
 
         Self::start_receiver("233.100.10.3:9503".parse().unwrap(), l3_tx);
         Self::start_receiver("233.100.10.4:9504".parse().unwrap(), trade_tx);
@@ -23,7 +23,7 @@ impl MoldClient {
         Self { l3_rx, trade_rx }
     }
 
-    fn start_receiver(addr: SocketAddr, tx: HeapProd<ItchEvent>) {
+    fn start_receiver(addr: SocketAddr, tx: HeapProd<MarketEvent>) {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
 
         socket.set_reuse_address(true).expect("err");
@@ -49,6 +49,7 @@ impl MoldClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::lob_core::market_events::MarketEventType;
     use ringbuf::traits::Consumer;
 
     #[test]
@@ -62,11 +63,10 @@ mod tests {
 
         loop {
             if let Some(event) = mold_client.l3_rx.try_pop() {
-                match event {
-                    ItchEvent::AddOrder(_s) => {
-                        println!("Received {:?}", _s);
+                match event.kind {
+                    MarketEventType::L3(_s) => {
+                        println!("Received {:?}", event);
                     }
-
                     _ => {
                         println!("received something..")
                     }
@@ -74,11 +74,10 @@ mod tests {
             }
 
             if let Some(event) = mold_client.trade_rx.try_pop() {
-                match event {
-                    ItchEvent::OrderExecutedWithPrice(_s) => {
-                        println!("Received {:?}", _s);
+                match event.kind {
+                    MarketEventType::Trade(_s) => {
+                        println!("Received {:?}", event);
                     }
-
                     _ => {
                         println!("received something..")
                     }

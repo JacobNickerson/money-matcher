@@ -2,7 +2,7 @@
 members = [
   "crates/engine",
   "crates/client",
-  "crates/netlib",
+  "crates/core",
   "crates/pylob",
 ]
 

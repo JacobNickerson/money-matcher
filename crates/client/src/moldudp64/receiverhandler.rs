@@ -1,12 +1,11 @@
-use netlib::{
-    itch_core::messages::{
-        ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
-        ITCH_MESSAGE_TYPE_ORDER_DELETE, ITCH_MESSAGE_TYPE_ORDER_EXECUTED,
-        ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ITCH_MESSAGE_TYPE_ORDER_REPLACE,
-        ITCH_MESSAGE_TYPE_TEST_BENCHMARK, ItchEvent, add_order::AddOrder,
-        order_cancel::OrderCancel, order_delete::OrderDelete, order_executed::OrderExecuted,
-        order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
-        test_benchmark::TestBenchmark,
+use core::{
+    itch_core::{
+        helpers::decode_u48,
+        messages::{ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE},
+    },
+    lob_core::{
+        market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
+        market_orders::{OrderSide, OrderStatus},
     },
     moldudp64_core::types::Header,
 };
@@ -16,22 +15,11 @@ use zerocopy::FromBytes;
 
 pub struct ReceiverHandler {
     socket: UdpSocket,
-    output: HeapProd<ItchEvent>,
-}
-
-macro_rules! itch {
-    ($type:expr, $data:expr, { $($type_const:path => $enum:ident ($struct:ty)),* $(,)? }) => {
-        match $type {
-            $(
-                $type_const => <$struct>::read_from_prefix($data).ok().map(|(m, _)| ItchEvent::$enum(m)),
-            )*
-            _ => None,
-        }
-    };
+    output: HeapProd<MarketEvent>,
 }
 
 impl ReceiverHandler {
-    pub fn new(output: HeapProd<ItchEvent>, socket: UdpSocket) -> Self {
+    pub fn new(output: HeapProd<MarketEvent>, socket: UdpSocket) -> Self {
         Self { socket, output }
     }
 
@@ -96,24 +84,68 @@ impl ReceiverHandler {
         true
     }
 
-    fn parse_event(message_data: &[u8]) -> Option<ItchEvent> {
+    fn parse_event(message_data: &[u8]) -> Option<MarketEvent> {
         if message_data.is_empty() {
             return None;
         }
 
-        let message_type = message_data[0];
-        itch!(message_type, message_data, {
-            ITCH_MESSAGE_TYPE_ADD_ORDER => AddOrder(AddOrder),
-            ITCH_MESSAGE_TYPE_ORDER_CANCEL => OrderCancel(OrderCancel),
-            ITCH_MESSAGE_TYPE_ORDER_DELETE => OrderDelete(OrderDelete),
-            ITCH_MESSAGE_TYPE_ORDER_EXECUTED => OrderExecuted(OrderExecuted),
-            ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => OrderExecutedWithPrice(OrderExecutedWithPrice),
-            ITCH_MESSAGE_TYPE_ORDER_REPLACE => OrderReplace(OrderReplace),
-            ITCH_MESSAGE_TYPE_TEST_BENCHMARK => TestBenchmark(TestBenchmark),
-        })
+        match message_data[0] {
+            ITCH_MESSAGE_TYPE_ADD_ORDER => {
+                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
+                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+
+                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+
+                let order_reference_number =
+                    u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+
+                let side = message_data[19];
+                let shares = u32::from_be_bytes(message_data[20..24].try_into().unwrap());
+
+                // let stock = &message_data[24..32];
+
+                let price = u32::from_be_bytes(message_data[32..36].try_into().unwrap());
+
+                Some(MarketEvent {
+                    timestamp,
+                    kind: MarketEventType::L3(L3Event {
+                        order_id: order_reference_number,
+                        status: OrderStatus::Active,
+                        side: side.try_into().unwrap(),
+                        qty: shares.into(),
+                        price: price.into(),
+                    }),
+                })
+            }
+            ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => {
+                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
+                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+
+                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+
+                // let order_reference_number = u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+
+                let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().unwrap());
+
+                // let match_number = u64::from_be_bytes(message_data[23..31].try_into().unwrap());
+                // let printable = message_data[31];
+
+                let execution_price = u32::from_be_bytes(message_data[32..36].try_into().unwrap());
+
+                Some(MarketEvent {
+                    timestamp,
+                    kind: MarketEventType::Trade(TradeEvent {
+                        quantity: executed_shares.into(),
+                        price: execution_price.into(),
+                        aggressor_side: OrderSide::Ask,
+                    }),
+                })
+            }
+            _ => None,
+        }
     }
 
-    fn push_event(&mut self, event: ItchEvent) {
+    fn push_event(&mut self, event: MarketEvent) {
         self.output.try_push(event).ok();
     }
 }
@@ -121,31 +153,18 @@ impl ReceiverHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::itch_core::messages::{
+        add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice,
+    };
     use ringbuf::{
         HeapCons,
         traits::{Consumer, Split},
     };
-    use zerocopy::IntoBytes;
 
-    fn make_handler() -> (ReceiverHandler, HeapCons<ItchEvent>) {
-        let (tx, rx) = ringbuf::HeapRb::<ItchEvent>::new(8).split();
+    fn make_handler() -> (ReceiverHandler, HeapCons<MarketEvent>) {
+        let (tx, rx) = ringbuf::HeapRb::<MarketEvent>::new(8).split();
         let socket = UdpSocket::bind("127.0.0.1:0").expect("err");
         (ReceiverHandler::new(tx, socket), rx)
-    }
-
-    #[test]
-    fn test_parse_event_test_benchmark() {
-        let msg = TestBenchmark::new(123);
-        let bytes = msg.as_bytes();
-
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
-
-        match event {
-            ItchEvent::TestBenchmark(v) => {
-                assert_eq!(v.timestamp, msg.timestamp);
-            }
-            _ => panic!("wrong event"),
-        }
     }
 
     #[test]
@@ -154,45 +173,16 @@ mod tests {
         stock[..4].copy_from_slice(b"TEST");
 
         let mut buf = [0u8; 36];
-        AddOrder::encode_into(&mut buf, 1, 12, 123, 0, b'B', 10, stock, 99);
+        AddOrder::encode_into(&mut buf, 1, 12, 123, 5000, b'B', 10, stock, 99);
 
         let event = ReceiverHandler::parse_event(&buf).expect("err");
 
-        match event {
-            ItchEvent::AddOrder(v) => {
-                assert_eq!(v.shares.get(), 10);
-                assert_eq!(v.price.get(), 99);
-            }
-            _ => panic!("wrong event"),
-        }
-    }
-
-    #[test]
-    fn test_parse_event_order_cancel() {
-        let msg = OrderCancel::new(1, 1000, 5000, 10);
-        let bytes = msg.as_bytes();
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
-
-        match event {
-            ItchEvent::OrderCancel(v) => {
-                assert_eq!(v.stock_locate.get(), 1);
-                assert_eq!(v.order_reference_number.get(), 5000);
-                assert_eq!(v.canceled_shares.get(), 10);
-            }
-            _ => panic!("wrong event"),
-        }
-    }
-
-    #[test]
-    fn test_parse_event_order_delete() {
-        let msg = OrderDelete::new(1, 1000, 5000);
-        let bytes = msg.as_bytes();
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
-
-        match event {
-            ItchEvent::OrderDelete(v) => {
-                assert_eq!(v.stock_locate.get(), 1);
-                assert_eq!(v.order_reference_number.get(), 5000);
+        assert_eq!(event.timestamp, 123);
+        match event.kind {
+            MarketEventType::L3(v) => {
+                assert_eq!(v.order_id, 5000);
+                assert_eq!(v.qty, 10);
+                assert_eq!(v.price, 99);
             }
             _ => panic!("wrong event"),
         }
@@ -200,107 +190,18 @@ mod tests {
 
     #[test]
     fn test_parse_event_order_executed_with_price() {
-        let msg = OrderExecutedWithPrice::new(1, 1000, 5000, 10, 9999, b'Y', 100);
-        let bytes = msg.as_bytes();
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
+        let mut buf = [0u8; 36];
+        OrderExecutedWithPrice::encode_into(&mut buf, 1, 1000, 123, 5000, 10, 9999, b'Y', 100);
+        let event = ReceiverHandler::parse_event(&buf).expect("err");
 
-        match event {
-            ItchEvent::OrderExecutedWithPrice(v) => {
-                assert_eq!(v.order_reference_number.get(), 5000);
-                assert_eq!(v.executed_shares.get(), 10);
-                assert_eq!(v.execution_price.get(), 100);
-                assert_eq!(v.printable, b'Y');
+        assert_eq!(event.timestamp, 123);
+        match event.kind {
+            MarketEventType::Trade(v) => {
+                assert_eq!(v.quantity, 10);
+                assert_eq!(v.price, 100);
             }
             _ => panic!("wrong event"),
         }
-    }
-
-    #[test]
-    fn test_parse_event_order_executed() {
-        let msg = OrderExecuted::new(1, 1000, 5000, 100, 9999);
-        let bytes = msg.as_bytes();
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
-
-        match event {
-            ItchEvent::OrderExecuted(v) => {
-                assert_eq!(v.order_reference_number.get(), 5000);
-                assert_eq!(v.executed_shares.get(), 100);
-                assert_eq!(v.match_number.get(), 9999);
-            }
-            _ => panic!("wrong event"),
-        }
-    }
-
-    #[test]
-    fn test_parse_event_order_replace() {
-        let msg = OrderReplace::new(1, 1000, 5000, 5001, 20, 100);
-        let bytes = msg.as_bytes();
-        let event = ReceiverHandler::parse_event(bytes).expect("err");
-
-        match event {
-            ItchEvent::OrderReplace(v) => {
-                assert_eq!(v.original_order_reference_number.get(), 5000);
-                assert_eq!(v.new_order_reference_number.get(), 5001);
-                assert_eq!(v.shares.get(), 20);
-                assert_eq!(v.price.get(), 100);
-            }
-            _ => panic!("wrong event"),
-        }
-    }
-
-    #[test]
-    fn test_handle_message_updates_offset() {
-        let (mut h, _rx) = make_handler();
-
-        let msg = TestBenchmark::new(123);
-        let bytes = msg.as_bytes();
-
-        let mut buf = Vec::with_capacity(256);
-        buf.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
-        buf.extend_from_slice(bytes);
-
-        let mut offset = 0;
-        let ok = h.handle_message(&buf, buf.len(), &mut offset);
-
-        assert!(ok);
-        assert_eq!(offset, buf.len());
-    }
-
-    #[test]
-    fn test_handle_packet_multiple_messages() {
-        let (mut h, mut rx) = make_handler();
-
-        let msg1 = TestBenchmark::new(1);
-        let msg2 = TestBenchmark::new(2);
-
-        let bytes1 = msg1.as_bytes();
-        let bytes2 = msg2.as_bytes();
-
-        let header = Header {
-            session_id: [b'A'; 10],
-            sequence_number: 1u64.to_be_bytes(),
-            message_count: (2u16).to_be_bytes(),
-        };
-
-        let mut packet = Vec::new();
-        packet.extend_from_slice(header.as_bytes());
-
-        packet.extend_from_slice(&(bytes1.len() as u16).to_be_bytes());
-        packet.extend_from_slice(bytes1);
-
-        packet.extend_from_slice(&(bytes2.len() as u16).to_be_bytes());
-        packet.extend_from_slice(bytes2);
-
-        h.handle_packet(&packet);
-
-        assert!(matches!(
-            rx.try_pop().expect("err"),
-            ItchEvent::TestBenchmark(_)
-        ));
-        assert!(matches!(
-            rx.try_pop().expect("err"),
-            ItchEvent::TestBenchmark(_)
-        ));
     }
 
     #[test]
