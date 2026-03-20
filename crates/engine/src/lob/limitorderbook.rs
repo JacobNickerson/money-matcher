@@ -95,6 +95,10 @@ impl<T: EventSink> OrderBook<T> {
     /// UpdateOrders cancel the previously existing order and resubmit a new order
     pub fn process_order(&mut self, order: Order, time: Timestamp) -> Option<LimitOrder> {
         // TODO: Update return type to be more informative
+        self.event_sink.push(MarketEvent {
+            timestamp: time,
+            kind: MarketEventType::L3(order),
+        });
         let order = match order.kind {
             OrderType::Limit { qty, price } => {
                 let order = self.add_order_and_emit_events(LimitOrder::new(order), time);
@@ -203,8 +207,6 @@ impl<T: EventSink> OrderBook<T> {
                 },
             }),
         ));
-        self.event_sink
-            .push(MarketEvent::new(time, MarketEventType::L3(order)));
         self.event_sink.push(MarketEvent::new(
             time,
             MarketEventType::Client(ClientEvent {
@@ -252,8 +254,6 @@ impl<T: EventSink> OrderBook<T> {
             .cancel_order(old_order_id)
             .map(|_| self.add_order_and_emit_events(order, time));
         if let Some(_) = x {
-            self.event_sink
-                .push(MarketEvent::new(time, MarketEventType::L3(order)));
             self.event_sink.push(MarketEvent::new(
                 time,
                 MarketEventType::Client(ClientEvent {
@@ -313,8 +313,6 @@ impl<T: EventSink> OrderBook<T> {
                         total_size: total_qty,
                     }),
                 ));
-                self.event_sink
-                    .push(MarketEvent::new(time, MarketEventType::L3(*order)));
                 self.event_sink.push(MarketEvent::new(
                     time,
                     MarketEventType::Client(ClientEvent {

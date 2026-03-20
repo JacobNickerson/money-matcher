@@ -1,4 +1,4 @@
-use crate::lob::order::OrderSide;
+use crate::lob::order::{Order, OrderSide};
 use crate::lob::types::{OrderId, Price};
 use crate::lob::{order::LimitOrder, types::Timestamp};
 use ringbuf::{HeapProd, traits::*};
@@ -24,7 +24,7 @@ pub struct L2Event {
 
 /// Event type representing a single L3 data point, ie an individual order
 /// Emitted on every order received by the limit order book
-pub type L3Event = LimitOrder;
+pub type L3Event = Order;
 
 /// Event type representing an executed trade
 /// Emitted every time a trade is executed
