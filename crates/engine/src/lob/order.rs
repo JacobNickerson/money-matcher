@@ -43,13 +43,39 @@ pub struct LimitOrder {
 impl LimitOrder {
     const DEFAULT_STATUS: OrderStatus = OrderStatus::Active;
     #[inline(always)]
-    pub fn new(order: Order, qty: u64, price: Price) -> Self {
-        Self {
-            order_id: order.order_id,
-            side: order.side,
-            status: Self::DEFAULT_STATUS,
-            qty,
-            price,
+    pub fn new(order: Order) -> Self {
+        match order.kind {
+            OrderType::Limit { qty, price } => Self {
+                order_id: order.order_id,
+                side: order.side,
+                status: Self::DEFAULT_STATUS,
+                qty,
+                price,
+            },
+            OrderType::Market { qty } => Self {
+                order_id: order.order_id,
+                side: order.side,
+                status: Self::DEFAULT_STATUS,
+                qty,
+                price: match order.side {
+                    OrderSide::Ask => 0,
+                    OrderSide::Bid => u64::MAX,
+                },
+            },
+            OrderType::Update {
+                qty,
+                old_id: _,
+                price,
+            } => Self {
+                order_id: order.order_id,
+                side: order.side,
+                status: Self::DEFAULT_STATUS,
+                qty,
+                price,
+            },
+            _ => {
+                panic!("LimitOrder cannot be constructed from an Order representing a cancel");
+            }
         }
     }
 }

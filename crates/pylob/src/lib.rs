@@ -107,9 +107,9 @@ mod pylob {
     #[pymethods]
     impl PyLimitOrder {
         #[new]
-        fn new(order: PyOrder, qty: u64, price: u64) -> Self {
+        fn new(order: PyOrder) -> Self {
             Self {
-                inner: LimitOrder::new(Order::from(order), qty, price),
+                inner: LimitOrder::new(Order::from(order)),
             }
         }
     }
