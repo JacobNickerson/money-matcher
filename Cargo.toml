@@ -3,6 +3,7 @@ members = [
   "crates/engine",
   "crates/client",
   "crates/netlib",
+  "crates/pylob",
 ]
 
 resolver = "2"
