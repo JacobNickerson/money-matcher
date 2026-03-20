@@ -1,4 +1,4 @@
-use crate::itch_core::helpers::{decode_u48, encode_price, encode_u48};
+use crate::itch_core::helpers::{decode_u48, encode_u48};
 use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_ADD_ORDER, ItchMessage};
 use std::str::from_utf8;
 use zerocopy::byteorder::{BigEndian, U16, U32, U64};
@@ -40,7 +40,7 @@ impl AddOrder {
         buy_sell_indicator: u8,
         shares: u32,
         stock: [u8; 8],
-        price: f64,
+        price: u32,
     ) -> Self {
         Self {
             message_type: ITCH_MESSAGE_TYPE_ADD_ORDER,
@@ -51,8 +51,30 @@ impl AddOrder {
             buy_sell_indicator,
             shares: U32::new(shares),
             stock,
-            price: U32::new(encode_price(price)),
+            price: U32::new(price),
         }
+    }
+
+    pub fn encode_into(
+        buf: &mut [u8],
+        stock_locate: u16,
+        tracking_number: u16,
+        timestamp: u64,
+        order_reference_number: u64,
+        buy_sell_indicator: u8,
+        shares: u32,
+        stock: [u8; 8],
+        price: u32,
+    ) {
+        buf[0] = ITCH_MESSAGE_TYPE_ADD_ORDER;
+        buf[1..3].copy_from_slice(&stock_locate.to_be_bytes());
+        buf[3..5].copy_from_slice(&tracking_number.to_be_bytes());
+        buf[5..11].copy_from_slice(&encode_u48(timestamp));
+        buf[11..19].copy_from_slice(&order_reference_number.to_be_bytes());
+        buf[19] = buy_sell_indicator;
+        buf[20..24].copy_from_slice(&shares.to_be_bytes());
+        buf[24..32].copy_from_slice(&stock);
+        buf[32..36].copy_from_slice(&price.to_be_bytes());
     }
 
     pub fn print(&self) {
@@ -87,7 +109,7 @@ mod tests {
     #[test]
     fn test_add_order_initial_state() {
         let stock_bytes = *b"STOCK   ";
-        let price_val = 100.0;
+        let price_val = 100;
 
         let msg = AddOrder::new(1, 1000, 5000, b'B', 10, stock_bytes, price_val);
 
@@ -98,14 +120,14 @@ mod tests {
         assert_eq!(msg.buy_sell_indicator, b'B');
         assert_eq!(msg.shares.get(), 10);
         assert_eq!(msg.stock, stock_bytes);
-        assert_eq!(msg.price.get(), 1000000);
+        assert_eq!(msg.price.get(), 100);
 
         msg.print();
     }
 
     #[test]
     fn test_add_order_trait_updates() {
-        let mut msg = AddOrder::new(0, 0, 0, b'S', 0, *b"STOCK   ", 0.0);
+        let mut msg = AddOrder::new(0, 0, 0, b'S', 0, *b"STOCK   ", 0);
 
         msg.set_tracking_number(5);
         msg.set_stock_locate(10);

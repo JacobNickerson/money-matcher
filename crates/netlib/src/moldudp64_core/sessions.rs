@@ -3,22 +3,24 @@ use std::collections::HashMap;
 pub struct SessionTable {
     pub sessions: HashMap<SessionID, SequenceNumber>,
     pub current_session: SessionID,
+    pub id_prefix: String, // "MM_L#"
 }
 
 impl Default for SessionTable {
     fn default() -> Self {
-        Self::new()
+        Self::new("MM_L0".to_string())
     }
 }
 
 impl SessionTable {
     #[inline(always)]
-    pub fn new() -> SessionTable {
-        let current_session = SessionTable::make_session_id(1);
+    pub fn new(id_prefix: String) -> SessionTable {
+        let current_session = SessionTable::make_session_id(1, &id_prefix);
 
         let mut table = SessionTable {
             sessions: HashMap::new(),
             current_session,
+            id_prefix,
         };
 
         table.add_session(current_session, 0_u64.to_be_bytes());
@@ -28,12 +30,12 @@ impl SessionTable {
 
     #[inline(always)]
     pub fn generate_session_id(&mut self) -> SessionID {
-        Self::make_session_id(self.sessions.len() + 1)
+        Self::make_session_id(self.sessions.len() + 1, &self.id_prefix)
     }
 
     #[inline(always)]
-    pub fn make_session_id(index: usize) -> SessionID {
-        let s = format!("MM{:08}", index);
+    pub fn make_session_id(index: usize, id_prefix: &String) -> SessionID {
+        let s = format!("{}_{:04}", id_prefix, index);
         let mut session_id = [b' '; 10];
 
         session_id.copy_from_slice(s.as_bytes());
@@ -74,9 +76,10 @@ mod tests {
 
     #[test]
     fn test_new_initial_state() {
-        let st = SessionTable::new();
+        let id_prefix = "MM_L0".to_string();
+        let st = SessionTable::new(id_prefix);
 
-        let s1 = SessionTable::make_session_id(1);
+        let s1 = SessionTable::make_session_id(1, &st.id_prefix);
 
         assert_eq!(st.sessions.len(), 1);
         assert_eq!(st.get_current_session(), s1);
@@ -85,20 +88,22 @@ mod tests {
 
     #[test]
     fn test_make_session_id_values() {
-        let s1 = SessionTable::make_session_id(1);
-        let s12 = SessionTable::make_session_id(12);
-        let s123 = SessionTable::make_session_id(123);
+        let id_prefix = "MM_L0".to_string();
+        let s1 = SessionTable::make_session_id(1, &id_prefix);
+        let s12 = SessionTable::make_session_id(12, &id_prefix);
+        let s123 = SessionTable::make_session_id(123, &id_prefix);
 
-        assert_eq!(&s1, b"MM00000001");
-        assert_eq!(&s12, b"MM00000012");
-        assert_eq!(&s123, b"MM00000123");
+        assert_eq!(&s1, b"MM_L0_0001");
+        assert_eq!(&s12, b"MM_L0_0012");
+        assert_eq!(&s123, b"MM_L0_0123");
     }
 
     #[test]
     fn test_add_session_updates_current() {
-        let mut st = SessionTable::new();
+        let id_prefix = "MM_L0".to_string();
+        let mut st = SessionTable::new(id_prefix);
 
-        let s2 = SessionTable::make_session_id(2);
+        let s2 = SessionTable::make_session_id(2, &st.id_prefix);
         let n1 = 12_u64.to_be_bytes();
 
         st.add_session(s2, n1);
@@ -110,7 +115,8 @@ mod tests {
 
     #[test]
     fn test_remove_session_removes_entry() {
-        let mut st = SessionTable::new();
+        let id_prefix = "MM_L0".to_string();
+        let mut st = SessionTable::new(id_prefix);
         let s1 = st.get_current_session();
 
         st.remove_session(&s1);
@@ -120,7 +126,8 @@ mod tests {
 
     #[test]
     fn test_next_sequence_single_session() {
-        let mut st = SessionTable::new();
+        let id_prefix = "MM_L0".to_string();
+        let mut st = SessionTable::new(id_prefix);
         let s1 = st.get_current_session();
 
         let n1 = st.next_sequence(s1);
@@ -132,10 +139,11 @@ mod tests {
 
     #[test]
     fn test_next_sequence_multiple_sessions() {
-        let mut st = SessionTable::new();
+        let id_prefix = "MM_L0".to_string();
+        let mut st: SessionTable = SessionTable::new(id_prefix);
 
         let s1 = st.get_current_session();
-        let s2 = SessionTable::make_session_id(2);
+        let s2 = SessionTable::make_session_id(2, &st.id_prefix);
 
         st.add_session(s2, 1_u64.to_be_bytes());
 

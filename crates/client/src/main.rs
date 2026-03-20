@@ -1,5 +1,5 @@
 mod fix;
-mod moldudp64_client;
+mod moldudp64;
 fn main() {
     println!("Hello, world!");
 }

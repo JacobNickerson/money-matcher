@@ -94,8 +94,8 @@ dependencies = [
  "bytes",
  "mio",
  "netlib",
- "nexus-queue",
  "ringbuf",
+ "socket2",
  "zerocopy",
 ]
 
@@ -135,6 +135,7 @@ dependencies = [
  "rand_distr",
  "ringbuf",
  "smallrand",
+ "socket2",
  "zerocopy",
 ]
 
@@ -606,6 +607,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2e5b1e23874ff06dec699124a868c3cda0ea421585a152857c24bd881c7f6be"
 dependencies = [
  "getrandom 0.3.4",
+]
+
+[[package]]
+name = "socket2"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
+dependencies = [
+ "libc",
+ "windows-sys",
 ]
 
 [[package]]
