@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use engine::lob::limitorderbook::OrderBook;
 
 /// A Python module implemented in Rust.
 #[pymodule]

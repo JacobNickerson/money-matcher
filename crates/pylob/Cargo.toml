@@ -10,3 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.27.0"
+engine = { path = "../engine" }
