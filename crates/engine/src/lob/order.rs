@@ -1,4 +1,5 @@
 use crate::lob::types::{OrderId, Price, Timestamp};
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Order {
@@ -18,6 +19,18 @@ impl Order {
         }
     }
 }
+impl PartialOrd for Order {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Order {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.timestamp
+            .cmp(&other.timestamp)
+            .then_with(|| self.order_id.cmp(&other.order_id))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrder {
@@ -30,13 +43,39 @@ pub struct LimitOrder {
 impl LimitOrder {
     const DEFAULT_STATUS: OrderStatus = OrderStatus::Active;
     #[inline(always)]
-    pub fn new(order: Order, qty: u64, price: Price) -> Self {
-        Self {
-            order_id: order.order_id,
-            side: order.side,
-            status: Self::DEFAULT_STATUS,
-            qty,
-            price,
+    pub fn new(order: Order) -> Self {
+        match order.kind {
+            OrderType::Limit { qty, price } => Self {
+                order_id: order.order_id,
+                side: order.side,
+                status: Self::DEFAULT_STATUS,
+                qty,
+                price,
+            },
+            OrderType::Market { qty } => Self {
+                order_id: order.order_id,
+                side: order.side,
+                status: Self::DEFAULT_STATUS,
+                qty,
+                price: match order.side {
+                    OrderSide::Ask => 0,
+                    OrderSide::Bid => u64::MAX,
+                },
+            },
+            OrderType::Update {
+                qty,
+                old_id: _,
+                price,
+            } => Self {
+                order_id: order.order_id,
+                side: order.side,
+                status: Self::DEFAULT_STATUS,
+                qty,
+                price,
+            },
+            _ => {
+                panic!("LimitOrder cannot be constructed from an Order representing a cancel");
+            }
         }
     }
 }

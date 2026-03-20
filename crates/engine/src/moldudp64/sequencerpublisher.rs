@@ -1,16 +1,17 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use netlib::moldudp64_core::sessions::SessionTable;
 use netlib::moldudp64_core::types::Event;
-use nexus_queue::spsc;
-use std::net::UdpSocket;
+use ringbuf::{HeapCons, traits::Consumer};
+use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 pub struct SequencerPublisher {
-    input: spsc::Consumer<Event>,
+    input: HeapCons<Event>,
 
     sequence_number: u64,
     session_table: SessionTable,
 
+    multicast_group: SocketAddr,
     socket: UdpSocket,
     packet: BytesMut,
 
@@ -24,7 +25,12 @@ pub struct SequencerPublisher {
 }
 
 impl SequencerPublisher {
-    pub fn new(input: spsc::Consumer<Event>, socket: UdpSocket) -> Self {
+    pub fn new(
+        input: HeapCons<Event>,
+        multicast_group: SocketAddr,
+        socket: UdpSocket,
+        session_id: String,
+    ) -> Self {
         let mut packet = BytesMut::with_capacity(1400);
         packet.resize(20, 0);
 
@@ -33,7 +39,8 @@ impl SequencerPublisher {
         Self {
             input,
             sequence_number: 1,
-            session_table: SessionTable::new(),
+            session_table: SessionTable::new(session_id),
+            multicast_group,
             socket,
             packet,
             current_session: None,
@@ -49,8 +56,10 @@ impl SequencerPublisher {
         if self.message_count > 0 {
             self.process_header();
 
-            let addr = "127.0.0.1:8081";
-            let _len = self.socket.send_to(&self.packet, addr).expect("err");
+            let _len = self
+                .socket
+                .send_to(&self.packet, self.multicast_group)
+                .expect("err");
 
             self.reset();
         }
@@ -59,12 +68,15 @@ impl SequencerPublisher {
     }
 
     pub fn run(mut self) {
+        let mut loop_counter: u8 = 0;
         loop {
-            if Instant::now() >= self.next_flush {
+            if loop_counter == 0 && Instant::now() >= self.next_flush {
                 self.flush();
             }
 
-            if let Some(event) = self.input.pop() {
+            loop_counter = loop_counter.wrapping_add(1);
+
+            if let Some(event) = self.input.try_pop() {
                 self.process_event(event);
             }
 
@@ -122,10 +134,16 @@ impl SequencerPublisher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ringbuf::{HeapRb, traits::Split};
 
     fn make_publisher() -> SequencerPublisher {
-        let (_tx, rx) = spsc::ring_buffer::<Event>(8);
-        SequencerPublisher::new(rx, UdpSocket::bind("0.0.0.0:0").expect("err"))
+        let (_tx, rx) = HeapRb::<Event>::new(8).split();
+        SequencerPublisher::new(
+            rx,
+            SocketAddr::V4("233.100.10.100:9600".parse().unwrap()),
+            UdpSocket::bind("0.0.0.0:0").expect("err"),
+            "MM_L0".to_string(),
+        )
     }
 
     #[test]

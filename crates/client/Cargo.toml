@@ -6,8 +6,7 @@ edition = "2024"
 [dependencies]
 bytes = "1.11.1"
 netlib = {path = "../netlib"}
-nexus-queue = "1.0.0"
 zerocopy = { version = "0.8.39", features = ["derive"] }
-itoa = "1.0.17"
 mio = { version = "1.1.1", features = ["net", "os-poll"] }
 ringbuf = "0.4.8"
+socket2 = "0.6.3"
