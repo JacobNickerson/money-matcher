@@ -632,6 +632,7 @@ dependencies = [
 name = "pylob"
 version = "0.1.0"
 dependencies = [
+ "core",
  "engine",
  "pyo3",
  "pyo3-stub-gen",

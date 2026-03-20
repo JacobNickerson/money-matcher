@@ -5,10 +5,11 @@ mod limit_order_book;
 #[pymodule]
 mod pylob {
     use crate::limit_order_book::OrderBook;
-    use engine::lob::{
-        market_events::{LiquidityFlag, MarketEvent, MarketEventType, TradeEvent},
-        order::{LimitOrder, Order, OrderSide, OrderType},
+    use core::lob_core::{
+        market_events::{MarketEvent, MarketEventType, TradeEvent},
+        market_orders::{Order, OrderSide, OrderType},
     };
+    use engine::lob::order::LimitOrder;
     use pyo3::prelude::*;
     use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
