@@ -97,25 +97,17 @@ impl<T: EventSink> OrderBook<T> {
         // TODO: Update return type to be more informative
         let order = match order.kind {
             OrderType::Limit { qty, price } => {
-                let order =
-                    self.add_order_and_emit_events(LimitOrder::new(order, qty, price), time);
+                let order = self.add_order_and_emit_events(LimitOrder::new(order), time);
                 Some(order)
             }
             OrderType::Market { qty } => {
-                let mut order = LimitOrder::new(
-                    order,
-                    qty,
-                    match order.side {
-                        OrderSide::Ask => 0,        // SELL
-                        OrderSide::Bid => u64::MAX, // BUY
-                    },
-                );
+                let mut order = LimitOrder::new(order);
                 self.match_order(&mut order, time);
                 Some(order)
             }
             OrderType::Cancel => self.cancel_order_and_emit_events(order.order_id, time),
             OrderType::Update { old_id, qty, price } => {
-                self.update_order(LimitOrder::new(order, qty, price), old_id, time)
+                self.update_order(LimitOrder::new(order), old_id, time)
             }
         };
         self.generate_l1_events(time);

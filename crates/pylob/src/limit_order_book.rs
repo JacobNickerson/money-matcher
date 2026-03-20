@@ -1,0 +1,125 @@
+use engine::lob::market_events::{MarketEvent, MarketEventType};
+use engine::lob::order::{LimitOrder, OrderSide};
+use engine::lob::types::{OrderId, Price};
+use std::collections::{BTreeMap, HashMap};
+
+#[derive(Default)]
+struct Level {
+    pub qty: u64,
+    pub order_count: u64,
+}
+
+/// A stripped down version of the OrderBook. Directly manages its state
+/// via MarketEvents instead of handling matching logic, trade execution, etc.
+#[derive(Default)]
+pub struct OrderBook {
+    user_orders: HashMap<OrderId, LimitOrder>,
+    bid_levels: BTreeMap<Price, Level>,
+    ask_levels: BTreeMap<Price, Level>,
+}
+impl OrderBook {
+    /// Accepts a market event and updates the state of the book
+    pub fn process_event(&mut self, event: MarketEvent) {
+        match event.kind {
+            MarketEventType::L3(event) => {
+                let level = match event.side {
+                    OrderSide::Ask => self.ask_levels.entry(event.price).or_default(),
+                    OrderSide::Bid => self.bid_levels.entry(event.price).or_default(),
+                };
+                level.qty += event.qty;
+                level.order_count += 1;
+            }
+            MarketEventType::Trade(event) => {
+                //  SAFETY: A trade being made should always have an order that exists on the maker side at the given price level
+                let level = match event.aggressor_side {
+                    OrderSide::Ask => self.bid_levels.get_mut(&event.price).unwrap(),
+                    OrderSide::Bid => self.ask_levels.get_mut(&event.price).unwrap(),
+                };
+                level.qty -= event.quantity;
+                level.order_count -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns the best bidding price or None if there are no bids
+    pub fn best_bid(&self) -> Option<Price> {
+        if let Some((price, _)) = self.bid_levels.last_key_value() {
+            Some(*price)
+        } else {
+            None
+        }
+    }
+
+    /// Returns a tuple of (best_bid_price,qty) or None if there are no bids
+    pub fn best_bid_and_size(&self) -> Option<(Price, u64)> {
+        if let Some((price, best)) = self.bid_levels.last_key_value() {
+            Some((*price, best.qty))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the best asking price or None if there are no bids
+    pub fn best_ask(&self) -> Option<Price> {
+        if let Some((price, _)) = self.ask_levels.first_key_value() {
+            Some(*price)
+        } else {
+            None
+        }
+    }
+
+    /// Returns a tuple of (best_ask_price,qty) or None if there are no bids
+    pub fn best_ask_and_size(&self) -> Option<(Price, u64)> {
+        if let Some((price, best)) = self.ask_levels.first_key_value() {
+            Some((*price, best.qty))
+        } else {
+            None
+        }
+    }
+
+    /// Returns an average of the best asking and bidding prices or None if there are no bids or no orders
+    pub fn mid_price(&self) -> Option<f64> {
+        if let (Some(best_bid), Some(best_ask)) = (self.best_bid(), self.best_ask()) {
+            Some((best_ask as f64 + best_bid as f64) / 2.0)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the difference between the best asking and bidding prices or None if there are no bids or no orders
+    pub fn spread(&self) -> Option<Price> {
+        if let (Some(best_bid), Some(best_ask)) = (self.best_bid(), self.best_ask()) {
+            Some(best_ask - best_bid)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the quantity of a given price level on the specified side
+    pub fn get_level(&self, price: Price, side: OrderSide) -> u64 {
+        match side {
+            OrderSide::Ask => self.ask_levels.get(&price).map(|l| l.qty).unwrap_or(0),
+            OrderSide::Bid => self.bid_levels.get(&price).map(|l| l.qty).unwrap_or(0),
+        }
+    }
+
+    /// Returns the quantities of the top n price levels on the specified side
+    pub fn get_top_levels(&self, side: OrderSide, n: usize) -> Vec<(Price, u64)> {
+        match side {
+            OrderSide::Ask => self
+                .ask_levels
+                .iter()
+                .take(n)
+                .map(|(p, l)| (*p, l.qty))
+                .collect(),
+            OrderSide::Bid => self
+                .bid_levels
+                .iter()
+                .rev()
+                .take(n)
+                .map(|(p, l)| (*p, l.qty))
+                .collect(),
+        }
+    }
+}
