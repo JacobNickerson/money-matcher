@@ -3,8 +3,12 @@ use pyo3::prelude::*;
 /// A Python module implemented in Rust.
 #[pymodule]
 mod pylob {
+    use engine::lob::{
+        limitorderbook::OrderBook,
+        market_events::NullFeeds,
+        order::{LimitOrder, Order, OrderSide, OrderType},
+    };
     use pyo3::prelude::*;
-    use engine::lob::{limitorderbook::OrderBook, market_events::NullFeeds, order::{LimitOrder, Order, OrderType, OrderSide}};
 
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,16 +19,16 @@ mod pylob {
     impl From<PyOrderSide> for OrderSide {
         fn from(value: PyOrderSide) -> Self {
             match value {
-                PyOrderSide::Bid => OrderSide::Bid, 
-                PyOrderSide::Ask => OrderSide::Ask, 
+                PyOrderSide::Bid => OrderSide::Bid,
+                PyOrderSide::Ask => OrderSide::Ask,
             }
         }
     }
     impl From<OrderSide> for PyOrderSide {
         fn from(value: OrderSide) -> Self {
             match value {
-                OrderSide::Bid => PyOrderSide::Bid, 
-                OrderSide::Ask => PyOrderSide::Ask, 
+                OrderSide::Bid => PyOrderSide::Bid,
+                OrderSide::Ask => PyOrderSide::Ask,
             }
         }
     }
@@ -38,29 +42,37 @@ mod pylob {
     impl PyOrderType {
         #[staticmethod]
         fn limit(qty: u64, price: u64) -> Self {
-            Self { inner: OrderType::Limit { qty, price } }
+            Self {
+                inner: OrderType::Limit { qty, price },
+            }
         }
 
         #[staticmethod]
         fn market(qty: u64) -> Self {
-            Self { inner: OrderType::Market { qty } }
+            Self {
+                inner: OrderType::Market { qty },
+            }
         }
 
         #[staticmethod]
         fn update(old_id: u64, qty: u64, price: u64) -> Self {
-            Self { inner: OrderType::Update { old_id, qty, price } }
+            Self {
+                inner: OrderType::Update { old_id, qty, price },
+            }
         }
 
         #[staticmethod]
         fn cancel() -> Self {
-            Self { inner: OrderType::Cancel {} }
+            Self {
+                inner: OrderType::Cancel {},
+            }
         }
     }
 
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct PyOrder {
-        inner: Order
+        inner: Order,
     }
     #[pymethods]
     impl PyOrder {
@@ -72,7 +84,7 @@ mod pylob {
                     side: OrderSide::from(side),
                     timestamp,
                     kind: kind.inner,
-                }
+                },
             }
         }
     }
@@ -82,36 +94,30 @@ mod pylob {
                 order_id: value.inner.order_id,
                 side: value.inner.side,
                 timestamp: value.inner.timestamp,
-                kind: value.inner.kind, 
+                kind: value.inner.kind,
             }
         }
     }
     impl From<Order> for PyOrder {
         fn from(value: Order) -> Self {
-            PyOrder {
-                inner: value  
-            }
+            PyOrder { inner: value }
         }
     }
 
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct PyLimitOrder {
-        inner: LimitOrder
+        inner: LimitOrder,
     }
     #[pymethods]
     impl PyLimitOrder {
         #[new]
         fn new(order: PyOrder, qty: u64, price: u64) -> Self {
             Self {
-                inner: LimitOrder::new(
-                    Order::from(order),
-                    qty,
-                    price,
-                )
+                inner: LimitOrder::new(Order::from(order), qty, price),
             }
         }
-    } 
+    }
     impl From<PyLimitOrder> for LimitOrder {
         fn from(value: PyLimitOrder) -> Self {
             LimitOrder {
@@ -125,29 +131,27 @@ mod pylob {
     }
     impl From<LimitOrder> for PyLimitOrder {
         fn from(value: LimitOrder) -> Self {
-            PyLimitOrder {
-                inner: value  
-            }
+            PyLimitOrder { inner: value }
         }
     }
 
     #[pyclass]
     struct PyOrderBook {
-        inner: OrderBook<NullFeeds>
+        inner: OrderBook<NullFeeds>,
     }
     #[pymethods]
     impl PyOrderBook {
         #[new]
         pub fn new() -> Self {
             Self {
-                inner: OrderBook::<NullFeeds>::new(
-                    NullFeeds {}
-                )
+                inner: OrderBook::<NullFeeds>::new(NullFeeds {}),
             }
         }
 
         pub fn process_order(&mut self, order: PyOrder, time: u64) -> Option<PyLimitOrder> {
-            self.inner.process_order(Order::from(order), time).map(PyLimitOrder::from)
+            self.inner
+                .process_order(Order::from(order), time)
+                .map(PyLimitOrder::from)
         }
     }
 }
