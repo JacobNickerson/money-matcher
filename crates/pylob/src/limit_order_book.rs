@@ -1,9 +1,9 @@
-use core::lob_core::{
-    OrderId, Price,
-    market_events::{EventSink, L3Event, MarketEvent, MarketEventType, TradeEvent},
-    market_orders::{Order, OrderSide, OrderStatus, OrderType},
-};
 use engine::lob::order::LimitOrder;
+use mm_core::lob_core::{
+    OrderId, Price,
+    market_events::{MarketEvent, MarketEventType},
+    market_orders::{OrderSide, OrderType},
+};
 use std::collections::{BTreeMap, HashMap};
 
 #[derive(Default)]
@@ -24,21 +24,24 @@ impl OrderBook {
     /// Accepts a market event and updates the state of the book
     pub fn process_event(&mut self, event: MarketEvent) {
         match event.kind {
-            MarketEventType::L3(event) => {
-                let level = match event.side {
-                    OrderSide::Ask => self.ask_levels.entry(event.price).or_default(),
-                    OrderSide::Bid => self.bid_levels.entry(event.price).or_default(),
-                };
-                level.qty += event.qty;
-                level.order_count += 1;
-            }
-            MarketEventType::Trade(event) => {
+            MarketEventType::L3(e) => match e.kind {
+                OrderType::Limit { qty, price } => {
+                    let level = match e.side {
+                        OrderSide::Ask => self.ask_levels.entry(price).or_default(),
+                        OrderSide::Bid => self.bid_levels.entry(price).or_default(),
+                    };
+                    level.qty += qty;
+                    level.order_count += 1;
+                }
+                _ => {}
+            },
+            MarketEventType::Trade(e) => {
                 //  SAFETY: A trade being made should always have an order that exists on the maker side at the given price level
-                let level = match event.aggressor_side {
-                    OrderSide::Ask => self.bid_levels.get_mut(&event.price).unwrap(),
-                    OrderSide::Bid => self.ask_levels.get_mut(&event.price).unwrap(),
+                let level = match e.aggressor_side {
+                    OrderSide::Ask => self.bid_levels.get_mut(&e.price).unwrap(),
+                    OrderSide::Bid => self.ask_levels.get_mut(&e.price).unwrap(),
                 };
-                level.qty -= event.quantity;
+                level.qty -= e.quantity;
                 level.order_count -= 1;
             }
             _ => {}

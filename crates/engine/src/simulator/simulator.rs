@@ -1,7 +1,7 @@
 use crate::data_generator::event_source::EventSource;
 use crate::lob::limitorderbook::OrderBook;
 use crate::simulator::latency_config::LatencyConfig;
-use core::lob_core::{market_events::EventSink, market_orders::Order};
+use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};
 use std::collections::{BinaryHeap, HashMap};
@@ -88,7 +88,7 @@ mod tests {
         event_source::PoissonSource, order_generators::GaussianOrderGenerator,
         rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
     };
-    use core::lob_core::market_events::{MarketEvent, NullFeeds, SingleEventFeed};
+    use mm_core::lob_core::market_events::{MarketEvent, NullFeeds, SingleEventFeed};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use ringbuf::HeapRb;

@@ -1,6 +1,6 @@
 use circular_buffer::CircularBuffer;
 use fastrand;
-use core::lob_core::{
+use mm_core::lob_core::{
     OrderId, Price,
     market_orders::{Order, OrderSide, OrderType},
 };

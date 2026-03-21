@@ -1,5 +1,5 @@
 use crate::lob::order::LimitOrder;
-use core::lob_core::{
+use mm_core::lob_core::{
     OrderId, Price, Timestamp,
     market_events::{
         ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
@@ -539,7 +539,7 @@ impl<T: EventSink> OrderBook<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::lob_core::market_events::{L3Event, NullFeeds, SeparateEventFeeds};
+    use mm_core::lob_core::market_events::{L3Event, NullFeeds, SeparateEventFeeds};
     use ringbuf::{HeapCons, HeapRb, traits::*};
 
     fn create_event_feeds(

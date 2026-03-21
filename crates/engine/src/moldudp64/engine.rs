@@ -1,9 +1,9 @@
 use bytes::Bytes;
-use core::{
+use mm_core::{
     itch_core::messages::{add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice},
     moldudp64_core::types::Event,
 };
-use core::{
+use mm_core::{
     itch_core::messages::{order_cancel::OrderCancel, order_replace::OrderReplace},
     lob_core::{
         OrderId, Price, Timestamp,
@@ -168,7 +168,7 @@ impl EventSink for MoldEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::lob_core::{
+    use mm_core::lob_core::{
         market_events::{EventSink, L3Event, MarketEvent, MarketEventType, TradeEvent},
         market_orders::{OrderSide, OrderStatus},
     };

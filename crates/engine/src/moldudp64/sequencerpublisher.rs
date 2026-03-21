@@ -1,6 +1,6 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use core::moldudp64_core::sessions::SessionTable;
-use core::moldudp64_core::types::Event;
+use mm_core::moldudp64_core::sessions::SessionTable;
+use mm_core::moldudp64_core::types::Event;
 use ringbuf::{HeapCons, traits::Consumer};
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};

@@ -92,22 +92,10 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "core",
  "mio",
+ "mm_core",
  "ringbuf",
  "socket2",
- "zerocopy",
-]
-
-[[package]]
-name = "core"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "chrono",
- "itoa",
- "mio",
- "ringbuf",
  "zerocopy",
 ]
 
@@ -159,10 +147,9 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "circular-buffer",
- "core",
  "fastrand",
  "mio",
- "nexus-queue",
+ "mm_core",
  "rand 0.10.0",
  "rand_chacha 0.10.0",
  "rand_distr",
@@ -443,6 +430,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm_core"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "itoa",
+ "mio",
+ "ringbuf",
+ "zerocopy",
+]
+
+[[package]]
 name = "ndarray"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -455,15 +454,6 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
-]
-
-[[package]]
-name = "nexus-queue"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "448259cb57565bbae23c5129d390b01574e1b7e83fa740cb963e2efe2ebe7612"
-dependencies = [
- "crossbeam-utils",
 ]
 
 [[package]]
@@ -632,8 +622,8 @@ dependencies = [
 name = "pylob"
 version = "0.1.0"
 dependencies = [
- "core",
  "engine",
+ "mm_core",
  "pyo3",
  "pyo3-stub-gen",
 ]

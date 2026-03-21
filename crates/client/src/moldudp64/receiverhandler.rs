@@ -1,4 +1,4 @@
-use core::{
+use mm_core::{
     itch_core::{
         helpers::decode_u48,
         messages::{
@@ -206,7 +206,7 @@ impl ReceiverHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::{
+    use mm_core::{
         itch_core::messages::{
             add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice,
         },
