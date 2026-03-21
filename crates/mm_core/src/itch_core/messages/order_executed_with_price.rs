@@ -68,7 +68,7 @@ impl OrderExecutedWithPrice {
         printable: u8,
         execution_price: u32,
     ) {
-        buf[0] = b'C';
+        buf[0] = ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE;
         buf[1..3].copy_from_slice(&stock_locate.to_be_bytes());
         buf[3..5].copy_from_slice(&tracking_number.to_be_bytes());
         buf[5..11].copy_from_slice(&encode_u48(timestamp));

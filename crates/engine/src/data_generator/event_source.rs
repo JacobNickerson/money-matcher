@@ -1,9 +1,8 @@
-use rand::Rng;
-
 use crate::data_generator::order_generators::OrderGenerator;
 use crate::data_generator::rate_controllers::RateController;
 use crate::data_generator::type_selectors::TypeSelector;
-use crate::lob::order::Order;
+use mm_core::lob_core::market_orders::Order;
+use rand::Rng;
 
 pub trait EventSource {
     fn next_event(&mut self) -> Order;

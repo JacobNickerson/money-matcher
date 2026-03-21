@@ -9,7 +9,7 @@ use ringbuf::{
     traits::{Consumer, Producer, Split},
 };
 
-use netlib::fix_core::{
+use mm_core::fix_core::{
     messages::{
         EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
         resend_request::ResendRequest, test_request::TestRequest, types::EncryptMethod,
@@ -357,7 +357,7 @@ impl FixClientHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netlib::fix_core::messages::{
+    use mm_core::fix_core::messages::{
         BusinessMessage, ReportMessage,
         new_order_single::NewOrderSingle,
         types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},

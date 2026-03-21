@@ -1,36 +1,7 @@
-use crate::lob::types::{OrderId, Price, Timestamp};
-use std::cmp::Ordering;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Order {
-    pub order_id: OrderId,
-    pub side: OrderSide,
-    pub timestamp: Timestamp,
-    pub kind: OrderType,
-}
-impl Order {
-    #[inline(always)]
-    pub fn new(order_id: OrderId, side: OrderSide, timestamp: Timestamp, kind: OrderType) -> Self {
-        Self {
-            order_id,
-            side,
-            timestamp,
-            kind,
-        }
-    }
-}
-impl PartialOrd for Order {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Order {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.timestamp
-            .cmp(&other.timestamp)
-            .then_with(|| self.order_id.cmp(&other.order_id))
-    }
-}
+use mm_core::lob_core::{
+    OrderId, Price,
+    market_orders::{Order, OrderSide, OrderStatus, OrderType},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrder {
@@ -40,6 +11,7 @@ pub struct LimitOrder {
     pub qty: u64,
     pub price: Price,
 }
+
 impl LimitOrder {
     const DEFAULT_STATUS: OrderStatus = OrderStatus::Active;
     #[inline(always)]
@@ -78,33 +50,4 @@ impl LimitOrder {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrderSide {
-    Bid,
-    Ask,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrderStatus {
-    Active,
-    Canceled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrderType {
-    Limit {
-        qty: u64,
-        price: Price,
-    },
-    Market {
-        qty: u64,
-    },
-    Update {
-        old_id: OrderId,
-        qty: u64,
-        price: Price,
-    },
-    Cancel,
 }
