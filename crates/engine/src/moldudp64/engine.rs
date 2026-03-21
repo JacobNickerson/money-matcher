@@ -170,7 +170,7 @@ mod tests {
     use super::*;
     use mm_core::lob_core::{
         market_events::{EventSink, L3Event, MarketEvent, MarketEventType, TradeEvent},
-        market_orders::{OrderSide, OrderStatus},
+        market_orders::OrderSide,
     };
 
     #[test]
@@ -232,8 +232,8 @@ mod tests {
                     side: OrderSide::Ask,
                     kind: OrderType::Update {
                         old_id: i - 1,
-                        qty: 50,
-                        price: 550,
+                        qty: i,
+                        price: i,
                     },
                 }),
             };
@@ -247,8 +247,8 @@ mod tests {
 
             let trade_event = MarketEvent {
                 kind: MarketEventType::Trade(TradeEvent {
-                    price: 500,
-                    quantity: 500,
+                    price: i,
+                    quantity: i,
                     aggressor_side: OrderSide::Ask,
                 }),
                 timestamp: i,

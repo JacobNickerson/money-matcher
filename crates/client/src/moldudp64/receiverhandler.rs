@@ -14,7 +14,6 @@ use mm_core::{
 };
 use ringbuf::{HeapProd, traits::Producer};
 use std::net::UdpSocket;
-use zerocopy::FromBytes;
 
 pub struct ReceiverHandler {
     socket: UdpSocket,
@@ -39,17 +38,28 @@ impl ReceiverHandler {
     }
 
     fn handle_packet(&mut self, bytes: &[u8]) {
-        let len: usize = bytes.len();
+        let len = bytes.len();
+
         if len < 20 {
             return;
         }
 
-        let header = match Header::read_from_prefix(bytes) {
-            Ok(v) => v.0,
+        let _session_id: &[u8; 10] = match bytes[0..10].try_into() {
+            Ok(x) => x,
             Err(_) => return,
         };
 
-        let mc = u16::from_be_bytes(header.message_count) as usize;
+        let _sequence_number: &[u8; 8] = match bytes[10..18].try_into() {
+            Ok(x) => x,
+            Err(_) => return,
+        };
+
+        let mc_bytes: &[u8; 2] = match bytes[18..20].try_into() {
+            Ok(x) => x,
+            Err(_) => return,
+        };
+
+        let mc = u16::from_be_bytes(*mc_bytes) as usize;
         let mut offset = 20;
 
         for _ in 0..mc {
@@ -94,20 +104,48 @@ impl ReceiverHandler {
 
         match message_data[0] {
             ITCH_MESSAGE_TYPE_ADD_ORDER => {
-                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
-                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
 
-                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
 
-                let order_reference_number =
-                    u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let timestamp = decode_u48(*timestamp_bytes);
+
+                let order_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let order_reference_number = u64::from_be_bytes(*order_ref_bytes);
 
                 let side = message_data[19];
-                let shares = u32::from_be_bytes(message_data[20..24].try_into().unwrap());
 
-                // let stock = &message_data[24..32];
+                let shares_bytes: &[u8; 4] = match message_data[20..24].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let shares = u32::from_be_bytes(*shares_bytes);
 
-                let price = u32::from_be_bytes(message_data[32..36].try_into().unwrap());
+                let _stock: &[u8; 8] = match message_data[24..32].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+
+                let price_bytes: &[u8; 4] = match message_data[32..36].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let price = u32::from_be_bytes(*price_bytes);
 
                 Some(MarketEvent {
                     timestamp,
@@ -123,19 +161,49 @@ impl ReceiverHandler {
                 })
             }
             ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => {
-                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
-                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
 
-                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
 
-                // let order_reference_number = u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let timestamp = decode_u48(*timestamp_bytes);
 
-                let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().unwrap());
+                let order_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _order_reference_number = u64::from_be_bytes(*order_ref_bytes);
 
-                // let match_number = u64::from_be_bytes(message_data[23..31].try_into().unwrap());
-                // let printable = message_data[31];
+                let executed_shares_bytes: &[u8; 4] = match message_data[19..23].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let executed_shares = u32::from_be_bytes(*executed_shares_bytes);
 
-                let execution_price = u32::from_be_bytes(message_data[32..36].try_into().unwrap());
+                let match_number_bytes: &[u8; 8] = match message_data[23..31].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _match_number = u64::from_be_bytes(*match_number_bytes);
+
+                let _printable = message_data[31];
+
+                let execution_price_bytes: &[u8; 4] = match message_data[32..36].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let execution_price = u32::from_be_bytes(*execution_price_bytes);
 
                 Some(MarketEvent {
                     timestamp,
@@ -147,15 +215,35 @@ impl ReceiverHandler {
                 })
             }
             ITCH_MESSAGE_TYPE_ORDER_CANCEL => {
-                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
-                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
 
-                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
 
-                let order_reference_number =
-                    u64::from_be_bytes(message_data[11..19].try_into().unwrap());
+                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let timestamp = decode_u48(*timestamp_bytes);
 
-                // let canceled_shares = u32::from_be_bytes(message_data[19..23].try_into().unwrap());
+                let order_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let order_reference_number = u64::from_be_bytes(*order_ref_bytes);
+
+                let canceled_shares_bytes: &[u8; 4] = match message_data[19..23].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _canceled_shares = u32::from_be_bytes(*canceled_shares_bytes);
 
                 Some(MarketEvent {
                     timestamp,
@@ -168,17 +256,47 @@ impl ReceiverHandler {
                 })
             }
             ITCH_MESSAGE_TYPE_ORDER_REPLACE => {
-                // let stock_locate = u16::from_be_bytes(message_data[1..3].try_into().unwrap());
-                // let tracking_number = u16::from_be_bytes(message_data[3..5].try_into().unwrap());
+                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
 
-                let timestamp = decode_u48(message_data[5..11].try_into().unwrap());
+                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
 
-                let original_order_reference_number =
-                    u64::from_be_bytes(message_data[11..19].try_into().unwrap());
-                let new_order_reference_number =
-                    u64::from_be_bytes(message_data[19..27].try_into().unwrap());
-                let shares = u32::from_be_bytes(message_data[27..31].try_into().unwrap());
-                let price = u32::from_be_bytes(message_data[31..35].try_into().unwrap());
+                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let timestamp = decode_u48(*timestamp_bytes);
+
+                let original_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let original_order_reference_number = u64::from_be_bytes(*original_ref_bytes);
+
+                let new_ref_bytes: &[u8; 8] = match message_data[19..27].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let new_order_reference_number = u64::from_be_bytes(*new_ref_bytes);
+
+                let shares_bytes: &[u8; 4] = match message_data[27..31].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let shares = u32::from_be_bytes(*shares_bytes);
+
+                let price_bytes: &[u8; 4] = match message_data[31..35].try_into() {
+                    Ok(b) => b,
+                    Err(_) => return None,
+                };
+                let price = u32::from_be_bytes(*price_bytes);
 
                 Some(MarketEvent {
                     timestamp,

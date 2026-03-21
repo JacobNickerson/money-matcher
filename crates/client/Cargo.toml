@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 bytes = "1.11.1"
 mm_core = {path = "../mm_core"}
-zerocopy = { version = "0.8.39", features = ["derive"] }
 mio = { version = "1.1.1", features = ["net", "os-poll"] }
 ringbuf = "0.4.8"
 socket2 = "0.6.3"

@@ -96,7 +96,6 @@ dependencies = [
  "mm_core",
  "ringbuf",
  "socket2",
- "zerocopy",
 ]
 
 [[package]]
@@ -156,7 +155,6 @@ dependencies = [
  "ringbuf",
  "smallrand",
  "socket2",
- "zerocopy",
 ]
 
 [[package]]
@@ -438,7 +436,6 @@ dependencies = [
  "itoa",
  "mio",
  "ringbuf",
- "zerocopy",
 ]
 
 [[package]]
