@@ -4,8 +4,8 @@ use std::str::from_utf8;
 pub fn write_fix_message(
     msg_type: &'static [u8],
     outbound_sequence_number: &u32,
-    sender_comp_id: &String,
-    target_comp_id: &String,
+    sender_comp_id: &str,
+    target_comp_id: &str,
     body: &Vec<u8>,
 ) -> Vec<u8> {
     let mut buf = Vec::with_capacity(256);
@@ -29,8 +29,8 @@ pub fn write_header(
     write_buf: &mut Vec<u8>,
     msg_type: &'static [u8],
     outbound_sequence_number: &u32,
-    sender_comp_id: &String,
-    target_comp_id: &String,
+    sender_comp_id: &str,
+    target_comp_id: &str,
 ) {
     let mut itoa_buf = itoa::Buffer::new();
 

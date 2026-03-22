@@ -1,13 +1,16 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{FIX_MESSAGE_TYPE_TEST_REQUEST, FIXMessage, TAG_TEST_REQ_ID},
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// The test request message forces a heartbeat from the opposing application.
 ///
 /// `MsgType = 1`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct TestRequest {
     pub test_req_id: u32,

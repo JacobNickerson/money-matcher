@@ -1,6 +1,6 @@
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
@@ -23,13 +23,12 @@ const SESSION: Token = Token(1);
 pub struct FixClient {
     session: Option<Session>,
     server_addr: SocketAddr,
-    comp_id: String,
-    target_comp_id: String,
+    comp_id: Arc<str>,
+    target_comp_id: Arc<str>,
     heart_bt_int: u16,
     encrypt_method: EncryptMethod,
     outbound_rx: HeapCons<FIXEvent>,
     lob_tx: HeapProd<FIXEvent>,
-    waker: Arc<Waker>,
     poll: Poll,
     poll_events: Vec<FIXEvent>,
 }
@@ -41,38 +40,36 @@ impl FixClient {
         target_comp_id: String,
         heart_bt_int: u16,
         encrypt_method: EncryptMethod,
-        lob_tx: HeapProd<FIXEvent>,
     ) -> io::Result<(Self, FixClientHandler)> {
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE)?);
 
+        let (lob_tx, lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
         let (outbound_tx, outbound_rx) = ringbuf::HeapRb::<FIXEvent>::new(1024).split();
 
+        let comp_id_arc: Arc<str> = comp_id.into();
+
         let handler = FixClientHandler {
-            comp_id: comp_id.clone(),
-            outbound_tx,
-            waker: waker.clone(),
+            comp_id: Arc::clone(&comp_id_arc),
+            outbound_tx: Mutex::new(outbound_tx),
+            lob_rx: Mutex::new(lob_rx),
+            waker,
         };
 
         let client = Self {
             session: None,
             server_addr,
-            comp_id,
-            target_comp_id,
+            comp_id: Arc::clone(&comp_id_arc),
+            target_comp_id: Arc::from(target_comp_id),
             heart_bt_int,
             encrypt_method,
             outbound_rx,
             lob_tx,
-            waker,
             poll,
             poll_events: Vec::new(),
         };
 
         Ok((client, handler))
-    }
-
-    pub fn get_waker(&self) -> Arc<Waker> {
-        self.waker.clone()
     }
 
     pub fn connect(&mut self) -> io::Result<()> {
@@ -89,8 +86,8 @@ impl FixClient {
 
         let mut session = Session::new(SESSION, stream);
         session.state = Some(SessionState {
-            comp_id: self.comp_id.clone(),
-            target_comp_id: self.target_comp_id.clone(),
+            comp_id: Arc::clone(&self.comp_id),
+            target_comp_id: Arc::clone(&self.target_comp_id),
             heart_bt_int: self.heart_bt_int,
             encrypt_method: self.encrypt_method,
             ..Default::default()
@@ -229,7 +226,7 @@ impl FixClient {
         for event in events {
             match event.payload {
                 FIXPayload::Engine(EngineMessage::Logon(logon)) => {
-                    self.finalize_logon(event.comp_id, logon)
+                    self.finalize_logon(Arc::clone(&event.comp_id), logon)
                 }
                 FIXPayload::Engine(EngineMessage::ResendRequest(resend_request)) => {
                     self.resend_messages(&resend_request);
@@ -299,7 +296,7 @@ impl FixClient {
         }
     }
 
-    fn finalize_logon(&mut self, _comp_id: String, logon: Logon) {
+    fn finalize_logon(&mut self, _comp_id: Arc<str>, logon: Logon) {
         let Some(session) = self.session.as_mut() else {
             return;
         };
@@ -337,20 +334,25 @@ impl FixClient {
 }
 
 pub struct FixClientHandler {
-    comp_id: String,
-    outbound_tx: HeapProd<FIXEvent>,
+    comp_id: Arc<str>,
+    outbound_tx: Mutex<HeapProd<FIXEvent>>,
+    lob_rx: Mutex<HeapCons<FIXEvent>>,
     waker: Arc<Waker>,
 }
 
 impl FixClientHandler {
     pub fn send_message(&mut self, payload: FIXPayload) {
         let event = FIXEvent {
-            comp_id: self.comp_id.clone(),
+            comp_id: Arc::clone(&self.comp_id),
             payload,
         };
 
-        self.outbound_tx.try_push(event).ok();
+        self.outbound_tx.lock().unwrap().try_push(event).ok();
         self.waker.wake().ok();
+    }
+
+    pub fn next_report(&mut self) -> Option<FIXEvent> {
+        self.lob_rx.lock().unwrap().try_pop()
     }
 }
 
@@ -358,11 +360,10 @@ impl FixClientHandler {
 mod tests {
     use super::*;
     use mm_core::fix_core::messages::{
-        BusinessMessage, ReportMessage,
+        BusinessMessage,
         new_order_single::NewOrderSingle,
         types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
     };
-    use ringbuf::{HeapRb, traits::Split};
     use std::thread;
 
     #[test]
@@ -371,7 +372,6 @@ mod tests {
         for _ in 0..50 {
             println!("");
         }
-        let (lob_tx, mut lob_rx) = HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let (mut client, mut handler) = FixClient::new(
@@ -380,7 +380,6 @@ mod tests {
             "ENGINE01".to_string(),
             10,
             EncryptMethod::None,
-            lob_tx,
         )
         .unwrap();
 
@@ -411,20 +410,6 @@ mod tests {
         handler.send_message(FIXPayload::Business(BusinessMessage::NewOrderSingle(
             (order),
         )));
-
-        loop {
-            if let Some(cmd) = lob_rx.try_pop() {
-                match cmd.payload {
-                    FIXPayload::Report(msg) => match msg {
-                        ReportMessage::ExecutionReport(r) => {
-                            println!("Read ExecutionReport | {:?} |", r);
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-        }
 
         client_thread.join().unwrap();
     }

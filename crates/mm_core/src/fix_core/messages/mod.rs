@@ -4,6 +4,9 @@ use crate::fix_core::messages::{
     order_cancel_reject::OrderCancelReject, resend_request::ResendRequest,
     test_request::TestRequest,
 };
+use pyo3::{ffi::getter, pyclass, pymethods};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pymethods};
+use std::sync::Arc;
 
 pub trait FIXMessage {
     const MESSAGE_TYPE: &'static [u8];
@@ -81,12 +84,26 @@ pub const TAG_CXL_REJ_RESPONSE_TO: &[u8] = b"434";
 pub const TAG_ENCRYPT_METHOD: &[u8] = b"98";
 pub const TAG_HEART_BT_INT: &[u8] = b"108";
 
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct FIXEvent {
-    pub comp_id: String,
+    pub comp_id: Arc<str>,
+    #[pyo3(get, set)]
     pub payload: FIXPayload,
 }
 
+#[gen_stub_pymethods]
+#[pymethods]
+impl FIXEvent {
+    #[getter]
+    pub fn comp_id(&self) -> &str {
+        &self.comp_id
+    }
+}
+
+#[gen_stub_pyclass_complex_enum]
+#[pyclass()]
 #[derive(Debug, Clone)]
 pub enum FIXPayload {
     Engine(EngineMessage),
@@ -112,6 +129,8 @@ impl FIXPayload {
     }
 }
 
+#[gen_stub_pyclass_complex_enum]
+#[pyclass()]
 #[derive(Debug, Clone)]
 pub enum ReportMessage {
     ExecutionReport(ExecutionReport),
@@ -134,6 +153,8 @@ impl ReportMessage {
     }
 }
 
+#[gen_stub_pyclass_complex_enum]
+#[pyclass()]
 #[derive(Debug, Clone)]
 pub enum BusinessMessage {
     NewOrderSingle(NewOrderSingle),
@@ -156,6 +177,8 @@ impl BusinessMessage {
     }
 }
 
+#[gen_stub_pyclass_complex_enum]
+#[pyclass()]
 #[derive(Debug, Clone)]
 pub enum EngineMessage {
     Logon(Logon),

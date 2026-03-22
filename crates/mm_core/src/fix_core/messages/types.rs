@@ -1,9 +1,12 @@
+use pyo3::pyclass;
+
 /// Tag 40 - OrdType
 /// `1` = Market
 /// `2` = Limit
 /// `3` = Stop
 /// `4` = Stop Limit
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrdType {
     Market = b'1',
@@ -29,6 +32,7 @@ impl TryFrom<u8> for OrdType {
 /// `1` = Buy
 /// `2` = Sell
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
     Buy = b'1',
@@ -50,6 +54,7 @@ impl TryFrom<u8> for Side {
 /// `0` = Open
 /// `C` = Close
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenClose {
     Open = b'0',
@@ -71,6 +76,7 @@ impl TryFrom<u8> for OpenClose {
 /// `0` = Put
 /// `1` = Call
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PutOrCall {
     Put = b'0',
@@ -92,6 +98,7 @@ impl TryFrom<u8> for PutOrCall {
 /// `1` = Order Cancel Request
 /// `2` = Order Cancel Replace Request
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CxlRejResponseTo {
     OrderCancelRequest = b'1',
@@ -120,6 +127,7 @@ impl TryFrom<u8> for CxlRejResponseTo {
 /// `8` = Rejected
 /// `E` = Pending Replace
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrdStatus {
     New = b'0',
@@ -157,6 +165,7 @@ impl TryFrom<u8> for OrdStatus {
 /// `2` = Correct
 /// `3` = Status
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecTransType {
     New = b'0',
@@ -190,6 +199,7 @@ impl TryFrom<u8> for ExecTransType {
 /// `D` = Restated
 /// `E` = Pending Replace
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecType {
     New = b'0',
@@ -235,6 +245,7 @@ impl TryFrom<u8> for ExecType {
 /// `8` = Customer Professional
 /// `9` = Joint Back Office
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CustomerOrFirm {
     Customer = b'0',
@@ -277,6 +288,7 @@ impl TryFrom<u8> for CustomerOrFirm {
 /// `5` = PGP/DES-MD5
 /// `6` = PEM/DES-MD5
 #[repr(u8)]
+#[pyclass(eq, eq_int)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EncryptMethod {
     #[default]

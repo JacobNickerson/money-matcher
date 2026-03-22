@@ -8,9 +8,8 @@ use mm_core::{
     },
     lob_core::{
         market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
-        market_orders::{OrderSide, OrderStatus, OrderType},
+        market_orders::{OrderSide, OrderType},
     },
-    moldudp64_core::types::Header,
 };
 use ringbuf::{HeapProd, traits::Producer};
 use std::net::UdpSocket;

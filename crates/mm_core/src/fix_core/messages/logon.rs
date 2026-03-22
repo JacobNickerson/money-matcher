@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{
@@ -7,10 +5,15 @@ use crate::fix_core::{
         types::EncryptMethod,
     },
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// The logon message authenticates a user establishing a connection to a remote system.
 ///
 /// `MsgType = A`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct Logon {
     pub encrypt_method: EncryptMethod,

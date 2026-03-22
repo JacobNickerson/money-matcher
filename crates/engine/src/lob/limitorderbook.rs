@@ -1,11 +1,10 @@
-use crate::lob::order::LimitOrder;
 use mm_core::lob_core::{
     OrderId, Price, Timestamp,
     market_events::{
         ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
         MarketEventType, TradeEvent,
     },
-    market_orders::{Order, OrderSide, OrderStatus, OrderType},
+    market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
@@ -103,19 +102,21 @@ impl<T: EventSink> OrderBook<T> {
             kind: MarketEventType::L3(order),
         });
         let order = match order.kind {
-            OrderType::Limit { qty, price } => {
+            OrderType::Limit { qty: _, price: _ } => {
                 let order = self.add_order_and_emit_events(LimitOrder::new(order), time);
                 Some(order)
             }
-            OrderType::Market { qty } => {
+            OrderType::Market { qty: _ } => {
                 let mut order = LimitOrder::new(order);
                 self.match_order(&mut order, time);
                 Some(order)
             }
             OrderType::Cancel => self.cancel_order_and_emit_events(order.order_id, time),
-            OrderType::Update { old_id, qty, price } => {
-                self.update_order(LimitOrder::new(order), old_id, time)
-            }
+            OrderType::Update {
+                old_id,
+                qty: _,
+                price: _,
+            } => self.update_order(LimitOrder::new(order), old_id, time),
         };
         self.generate_l1_events(time);
         order
@@ -256,7 +257,7 @@ impl<T: EventSink> OrderBook<T> {
         let x = self
             .cancel_order(old_order_id)
             .map(|_| self.add_order_and_emit_events(order, time));
-        if let Some(_) = x {
+        if x.is_some() {
             self.event_sink.push(MarketEvent::new(
                 time,
                 MarketEventType::Client(ClientEvent {

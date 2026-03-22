@@ -1,13 +1,16 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{FIX_MESSAGE_TYPE_RESEND_REQUEST, FIXMessage, TAG_BEGIN_SEQ_NO, TAG_END_SEQ_NO},
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// The resend request is sent by the receiving application to initiate the retransmission of messages.
 ///
 /// `MsgType = 2`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct ResendRequest {
     pub begin_seq_no: u32,
