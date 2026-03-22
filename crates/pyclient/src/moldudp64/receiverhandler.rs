@@ -103,48 +103,16 @@ impl ReceiverHandler {
 
         match message_data[0] {
             ITCH_MESSAGE_TYPE_ADD_ORDER => {
-                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
+                if message_data.len() < 36 {
+                    return None;
+                }
 
-                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
-
-                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let timestamp = decode_u48(*timestamp_bytes);
-
-                let order_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let order_reference_number = u64::from_be_bytes(*order_ref_bytes);
-
+                let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
+                let order_reference_number =
+                    u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let side = message_data[19];
-
-                let shares_bytes: &[u8; 4] = match message_data[20..24].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let shares = u32::from_be_bytes(*shares_bytes);
-
-                let _stock: &[u8; 8] = match message_data[24..32].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-
-                let price_bytes: &[u8; 4] = match message_data[32..36].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let price = u32::from_be_bytes(*price_bytes);
+                let shares = u32::from_be_bytes(message_data[20..24].try_into().ok()?);
+                let price = u32::from_be_bytes(message_data[32..36].try_into().ok()?);
 
                 Some(MarketEvent {
                     timestamp,
@@ -160,49 +128,13 @@ impl ReceiverHandler {
                 })
             }
             ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE => {
-                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
+                if message_data.len() < 36 {
+                    return None;
+                }
 
-                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
-
-                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let timestamp = decode_u48(*timestamp_bytes);
-
-                let order_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _order_reference_number = u64::from_be_bytes(*order_ref_bytes);
-
-                let executed_shares_bytes: &[u8; 4] = match message_data[19..23].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let executed_shares = u32::from_be_bytes(*executed_shares_bytes);
-
-                let match_number_bytes: &[u8; 8] = match message_data[23..31].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _match_number = u64::from_be_bytes(*match_number_bytes);
-
-                let _printable = message_data[31];
-
-                let execution_price_bytes: &[u8; 4] = match message_data[32..36].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let execution_price = u32::from_be_bytes(*execution_price_bytes);
+                let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
+                let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
+                let execution_price = u32::from_be_bytes(message_data[32..36].try_into().ok()?);
 
                 Some(MarketEvent {
                     timestamp,
@@ -213,98 +145,25 @@ impl ReceiverHandler {
                     }),
                 })
             }
-            ITCH_MESSAGE_TYPE_ORDER_CANCEL => {
-                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
-
-                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
-
-                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let timestamp = decode_u48(*timestamp_bytes);
-
-                let order_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let order_reference_number = u64::from_be_bytes(*order_ref_bytes);
-
-                let canceled_shares_bytes: &[u8; 4] = match message_data[19..23].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _canceled_shares = u32::from_be_bytes(*canceled_shares_bytes);
-
-                Some(MarketEvent {
-                    timestamp,
-                    kind: MarketEventType::L3(L3Event {
-                        order_id: order_reference_number,
-                        side: OrderSide::Ask, // PLACEHOLDER
-                        timestamp,
-                        kind: OrderType::Cancel, // NEEDS QUANTITY
-                    }),
-                })
-            }
             ITCH_MESSAGE_TYPE_ORDER_REPLACE => {
-                let stock_locate_bytes: &[u8; 2] = match message_data[1..3].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _stock_locate = u16::from_be_bytes(*stock_locate_bytes);
+                if message_data.len() < 35 {
+                    return None;
+                }
 
-                let tracking_number_bytes: &[u8; 2] = match message_data[3..5].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let _tracking_number = u16::from_be_bytes(*tracking_number_bytes);
-
-                let timestamp_bytes: &[u8; 6] = match message_data[5..11].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let timestamp = decode_u48(*timestamp_bytes);
-
-                let original_ref_bytes: &[u8; 8] = match message_data[11..19].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let original_order_reference_number = u64::from_be_bytes(*original_ref_bytes);
-
-                let new_ref_bytes: &[u8; 8] = match message_data[19..27].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let new_order_reference_number = u64::from_be_bytes(*new_ref_bytes);
-
-                let shares_bytes: &[u8; 4] = match message_data[27..31].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let shares = u32::from_be_bytes(*shares_bytes);
-
-                let price_bytes: &[u8; 4] = match message_data[31..35].try_into() {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let price = u32::from_be_bytes(*price_bytes);
+                let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
+                let original_order_ref = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
+                let new_order_ref = u64::from_be_bytes(message_data[19..27].try_into().ok()?);
+                let shares = u32::from_be_bytes(message_data[27..31].try_into().ok()?);
+                let price = u32::from_be_bytes(message_data[31..35].try_into().ok()?);
 
                 Some(MarketEvent {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
-                        order_id: new_order_reference_number,
+                        order_id: new_order_ref,
                         side: OrderSide::Ask, // PLACEHOLDER
                         timestamp,
                         kind: OrderType::Update {
-                            old_id: original_order_reference_number,
+                            old_id: original_order_ref,
                             qty: shares.into(),
                             price: price.into(),
                         },
