@@ -18,7 +18,6 @@ pub const ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE: u8 = b'C';
 pub const ITCH_MESSAGE_TYPE_ORDER_EXECUTED: u8 = b'E';
 pub const ITCH_MESSAGE_TYPE_ORDER_REPLACE: u8 = b'U';
 
-
 pub enum ItchEvent {
     AddOrder(AddOrder),
     OrderCancel(OrderCancel),
