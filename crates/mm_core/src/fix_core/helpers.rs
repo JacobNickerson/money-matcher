@@ -1,5 +1,6 @@
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use std::str::from_utf8;
+use time::macros::format_description;
+use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 
 pub fn write_fix_message(
     msg_type: &'static [u8],
@@ -177,27 +178,39 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
     Some(read_buffer.drain(0..total_len).collect())
 }
 
+fn get_local_now() -> OffsetDateTime {
+    OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc())
+}
+
 pub fn get_timestamp() -> String {
-    let now = Local::now();
-    now.format("%Y%m%d-%H:%M:%S.%3f").to_string()
+    let now = get_local_now();
+    let format =
+        format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
+    now.format(&format).unwrap_or_default()
 }
 
 pub fn convert_timestamp(value: &[u8]) -> Option<u64> {
-    let timestamp = from_utf8(value).ok()?;
-    let ndt = NaiveDateTime::parse_from_str(timestamp, "%Y%m%d-%H:%M:%S%.3f").ok()?;
-    Some(Utc.from_utc_datetime(&ndt).timestamp_millis() as u64)
+    let timestamp_str = from_utf8(value).ok()?;
+    let format =
+        format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
+
+    let parsed = PrimitiveDateTime::parse(timestamp_str, &format).ok()?;
+    let offset_dt = parsed.assume_utc();
+
+    Some((offset_dt.unix_timestamp_nanos() / 1_000_000) as u64)
 }
 
 pub fn get_maturity_month_year() -> String {
-    let now = Local::now();
-    now.format("%Y%m").to_string()
+    let now = get_local_now();
+    let format = format_description!("[year][month]");
+    now.format(&format).unwrap_or_default()
 }
 
 pub fn get_maturity_month_year_day() -> String {
-    let now = Local::now();
-    now.format("%Y%m%d").to_string()
+    let now = get_local_now();
+    let format = format_description!("[year][month][day]");
+    now.format(&format).unwrap_or_default()
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
