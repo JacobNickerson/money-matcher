@@ -23,16 +23,13 @@ impl OrderBook {
     /// Accepts a market event and updates the state of the book
     pub fn process_event(&mut self, event: MarketEvent) {
         match event.kind {
-            MarketEventType::L3(e) => match e.kind {
-                OrderType::Limit { qty, price } => {
-                    let level = match e.side {
-                        OrderSide::Ask => self.ask_levels.entry(price).or_default(),
-                        OrderSide::Bid => self.bid_levels.entry(price).or_default(),
-                    };
-                    level.qty += qty;
-                    level.order_count += 1;
-                }
-                _ => {}
+            MarketEventType::L3(e) => if let OrderType::Limit { qty, price } = e.kind {
+                let level = match e.side {
+                    OrderSide::Ask => self.ask_levels.entry(price).or_default(),
+                    OrderSide::Bid => self.bid_levels.entry(price).or_default(),
+                };
+                level.qty += qty;
+                level.order_count += 1;
             },
             MarketEventType::Trade(e) => {
                 //  SAFETY: A trade being made should always have an order that exists on the maker side at the given price level

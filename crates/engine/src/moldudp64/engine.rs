@@ -103,7 +103,7 @@ impl EventSink for MoldEngine {
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
                     Self::push_event(&mut self.l3_tx, &buf);
                 }
-                OrderType::Cancel {} => {
+                OrderType::Cancel => {
                     let mut buf = [0u8; 23];
 
                     OrderCancel::encode_into(

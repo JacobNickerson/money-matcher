@@ -24,7 +24,7 @@ mod pyclient {
             market_orders::{LimitOrder, Order, OrderSide, OrderType},
         },
     };
-    use pyo3::{IntoPyObjectExt, prelude::*};
+    use pyo3::prelude::*;
     use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
     #[gen_stub_pyclass_enum]
@@ -351,7 +351,7 @@ mod pyclient {
                 maturity_day: 10,
             };
 
-            let payload = FIXPayload::Business(BusinessMessage::NewOrderSingle((order)));
+            let payload = FIXPayload::Business(BusinessMessage::NewOrderSingle(order ));
 
             self.handler.send_message(payload);
         }

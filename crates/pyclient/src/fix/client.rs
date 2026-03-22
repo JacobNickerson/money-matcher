@@ -53,7 +53,7 @@ impl FixClient {
             comp_id: Arc::clone(&comp_id_arc),
             outbound_tx: Mutex::new(outbound_tx),
             lob_rx: Mutex::new(lob_rx),
-            waker: waker,
+            waker,
         };
 
         let client = Self {
