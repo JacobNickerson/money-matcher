@@ -112,9 +112,11 @@ impl<T: EventSink> OrderBook<T> {
                 Some(order)
             }
             OrderType::Cancel => self.cancel_order_and_emit_events(order.order_id, time),
-            OrderType::Update { old_id, qty: _, price: _ } => {
-                self.update_order(LimitOrder::new(order), old_id, time)
-            }
+            OrderType::Update {
+                old_id,
+                qty: _,
+                price: _,
+            } => self.update_order(LimitOrder::new(order), old_id, time),
         };
         self.generate_l1_events(time);
         order

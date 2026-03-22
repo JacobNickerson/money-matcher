@@ -351,7 +351,7 @@ mod pyclient {
                 maturity_day: 10,
             };
 
-            let payload = FIXPayload::Business(BusinessMessage::NewOrderSingle(order ));
+            let payload = FIXPayload::Business(BusinessMessage::NewOrderSingle(order));
 
             self.handler.send_message(payload);
         }
