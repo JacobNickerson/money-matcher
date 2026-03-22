@@ -1,8 +1,7 @@
-use engine::lob::order::LimitOrder;
 use mm_core::lob_core::{
     OrderId, Price,
     market_events::{MarketEvent, MarketEventType},
-    market_orders::{OrderSide, OrderType},
+    market_orders::{LimitOrder, OrderSide, OrderType},
 };
 use std::collections::{BTreeMap, HashMap};
 

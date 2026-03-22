@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     helpers::get_timestamp,
     iterator::FixIterator,
@@ -12,6 +10,9 @@ use crate::fix_core::{
         types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
     },
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// The Execution Report message is used to:
 /// • confirm the receipt of an order
@@ -23,6 +24,8 @@ use crate::fix_core::{
 /// • report trade busts or other post-trade corrections
 ///
 /// `MsgType = 8`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct ExecutionReport {
     pub cl_ord_id: u64,

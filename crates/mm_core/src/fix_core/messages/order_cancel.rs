@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     helpers::get_timestamp,
     iterator::FixIterator,
@@ -8,9 +6,14 @@ use crate::fix_core::{
         TAG_ORIG_CL_ORD_ID, TAG_TRANSACT_TIME,
     },
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 /// The Order Cancel Request message is used to cancel a regular or multi-leg order.
 ///
 /// `MsgType = F`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct OrderCancel {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.

@@ -6,12 +6,8 @@ use mm_core::{
 use mm_core::{
     itch_core::messages::{order_cancel::OrderCancel, order_replace::OrderReplace},
     lob_core::{
-        OrderId, Price, Timestamp,
-        market_events::{
-            ClientEvent, ClientEventType, EventSink, L1Event, L2Event, L3Event, LiquidityFlag,
-            MarketEvent, MarketEventType, TradeEvent,
-        },
-        market_orders::{Order, OrderSide, OrderStatus, OrderType},
+        market_events::{EventSink, MarketEvent, MarketEventType},
+        market_orders::OrderType,
     },
 };
 use ringbuf::{

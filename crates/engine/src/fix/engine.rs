@@ -22,9 +22,9 @@ const LISTENER: Token = Token(0);
 const WAKE: Token = Token(1);
 
 pub struct FixEngine {
-    comp_id: String,
+    comp_id: Arc<str>,
     connections: HashMap<Token, Session>,
-    sessions: HashMap<String, (Token, SessionState)>,
+    sessions: HashMap<Arc<str>, (Token, SessionState)>,
     listener: TcpListener,
     lob_tx: ringbuf::HeapProd<FIXEvent>,
     outbound_rx: ringbuf::HeapCons<FIXEvent>,
@@ -54,7 +54,7 @@ impl FixEngine {
         };
 
         let mut engine = Self {
-            comp_id,
+            comp_id: Arc::from(comp_id),
             connections: HashMap::new(),
             sessions: HashMap::new(),
             listener,
@@ -274,7 +274,7 @@ impl FixEngine {
         for event in events {
             match event.payload {
                 FIXPayload::Engine(EngineMessage::Logon(ref logon)) => {
-                    self.finalize_logon(token, event.comp_id.clone(), logon)
+                    self.finalize_logon(token, Arc::clone(&event.comp_id), logon)
                 }
                 FIXPayload::Engine(EngineMessage::ResendRequest(ref resend_request)) => {
                     self.resend_messages(token, resend_request);
@@ -351,19 +351,22 @@ impl FixEngine {
         }
     }
 
-    fn finalize_logon(&mut self, token: Token, comp_id: String, logon: &Logon) {
-        let stored = self.sessions.entry(comp_id.clone()).or_insert_with(|| {
-            (
-                token,
-                SessionState {
-                    comp_id: comp_id.clone(),
-                    target_comp_id: "ENGINE01".to_string(),
-                    encrypt_method: logon.encrypt_method,
-                    heart_bt_int: logon.heart_bt_int,
-                    ..Default::default()
-                },
-            )
-        });
+    fn finalize_logon(&mut self, token: Token, comp_id: Arc<str>, logon: &Logon) {
+        let stored = self
+            .sessions
+            .entry(Arc::clone(&comp_id))
+            .or_insert_with(|| {
+                (
+                    token,
+                    SessionState {
+                        comp_id: Arc::clone(&comp_id),
+                        target_comp_id: Arc::from("ENGINE01"),
+                        encrypt_method: logon.encrypt_method,
+                        heart_bt_int: logon.heart_bt_int,
+                        ..Default::default()
+                    },
+                )
+            });
 
         let (stored_token, stored_state) = stored;
 
@@ -378,7 +381,6 @@ impl FixEngine {
 
         if let Some(session) = self.connections.get_mut(&token) {
             let state = session.state.insert(stored_state.clone());
-            state.comp_id = comp_id.clone();
             state.logged_in = true;
         }
 
@@ -387,7 +389,7 @@ impl FixEngine {
             heart_bt_int: stored_state.heart_bt_int,
         };
         self.send_outbound_message(FIXEvent {
-            comp_id,
+            comp_id: Arc::clone(&comp_id),
             payload: FIXPayload::Engine(EngineMessage::Logon(logon_confirmation)),
         });
     }

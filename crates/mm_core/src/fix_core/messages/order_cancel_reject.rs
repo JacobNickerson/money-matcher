@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{
@@ -8,10 +6,15 @@ use crate::fix_core::{
         types::{CxlRejResponseTo, OrdStatus},
     },
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// An Order Cancel Reject message is returned by the exchange in the event of an invalid cancel or modify request.
 ///
 /// `MsgType = 9`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct OrderCancelReject {
     pub cl_ord_id: u64,

@@ -7,12 +7,13 @@ use ringbuf::{
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+    sync::Mutex,
     thread,
 };
 
 pub struct MoldClient {
-    pub l3_rx: HeapCons<MarketEvent>,
-    pub trade_rx: HeapCons<MarketEvent>,
+    pub l3_rx: Mutex<HeapCons<MarketEvent>>,
+    pub trade_rx: Mutex<HeapCons<MarketEvent>>,
     next_l3: Option<MarketEvent>,
     next_trade: Option<MarketEvent>,
 }
@@ -26,8 +27,8 @@ impl MoldClient {
         Self::start_receiver("233.100.10.4:9504".parse().unwrap(), trade_tx);
 
         Self {
-            l3_rx,
-            trade_rx,
+            l3_rx: Mutex::new(l3_rx),
+            trade_rx: Mutex::new(trade_rx),
             next_l3: None,
             next_trade: None,
         }
@@ -57,10 +58,10 @@ impl MoldClient {
 
     pub fn next_event(&mut self) -> Option<MarketEvent> {
         if self.next_l3.is_none() {
-            self.next_l3 = self.l3_rx.try_pop();
+            self.next_l3 = self.l3_rx.lock().unwrap().try_pop();
         }
         if self.next_trade.is_none() {
-            self.next_trade = self.trade_rx.try_pop();
+            self.next_trade = self.trade_rx.lock().unwrap().try_pop();
         }
 
         match (&self.next_l3, &self.next_trade) {

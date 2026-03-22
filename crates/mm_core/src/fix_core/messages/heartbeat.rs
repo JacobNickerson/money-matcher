@@ -1,13 +1,16 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{FIX_MESSAGE_TYPE_HEARTBEAT, FIXMessage, TAG_TEST_REQ_ID},
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// During periods of message inactivity, FIX applications will generate Heartbeat messages at regular time intervals.
 ///
 /// `MsgType = 0`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct Heartbeat {
     pub test_req_id: Option<u32>,

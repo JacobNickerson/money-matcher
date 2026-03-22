@@ -1,16 +1,30 @@
 use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
-mod limit_order_book;
+mod fix;
+mod lob;
+mod moldudp64;
 
 #[pymodule]
-mod pylob {
-    use crate::limit_order_book::OrderBook;
-    use engine::lob::order::LimitOrder;
-    use mm_core::lob_core::{
-        market_events::{MarketEvent, MarketEventType, TradeEvent},
-        market_orders::{Order, OrderSide, OrderType},
+mod pyclient {
+    use std::net::SocketAddr;
+
+    use crate::{
+        fix::client::{FixClient, FixClientHandler},
+        lob::limit_order_book::OrderBook,
+        moldudp64::client::MoldClient,
     };
-    use pyo3::prelude::*;
+    use mm_core::{
+        fix_core::messages::{
+            BusinessMessage, FIXEvent, FIXPayload,
+            new_order_single::NewOrderSingle,
+            types::{CustomerOrFirm, EncryptMethod, OpenClose, OrdType, PutOrCall, Side},
+        },
+        lob_core::{
+            market_events::{MarketEvent, MarketEventType, TradeEvent},
+            market_orders::{LimitOrder, Order, OrderSide, OrderType},
+        },
+    };
+    use pyo3::{IntoPyObjectExt, prelude::*};
     use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
     #[gen_stub_pyclass_enum]
@@ -263,6 +277,83 @@ mod pylob {
         /// Returns the quantities of the top n price levels on the specified side
         pub fn get_top_levels(&self, side: PyOrderSide, n: usize) -> Vec<(u64, u64)> {
             self.inner.get_top_levels(OrderSide::from(side), n)
+        }
+    }
+
+    #[gen_stub_pyclass]
+    #[pyclass]
+    struct PyMoldClient {
+        inner: MoldClient,
+    }
+
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl PyMoldClient {
+        #[staticmethod]
+        pub fn start() -> Self {
+            Self {
+                inner: MoldClient::start(),
+            }
+        }
+
+        pub fn next_event(&mut self) -> Option<PyMarketEvent> {
+            self.inner.next_event().map(PyMarketEvent::from)
+        }
+    }
+
+    #[gen_stub_pyclass]
+    #[pyclass]
+    pub struct PyFixClient {
+        handler: FixClientHandler,
+    }
+
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl PyFixClient {
+        #[staticmethod]
+        pub fn start(server_addr: String, comp_id: String, target_comp_id: String) -> Self {
+            let addr: SocketAddr = server_addr.parse().unwrap();
+
+            let (mut client, handler) =
+                FixClient::new(addr, comp_id, target_comp_id, 10, EncryptMethod::None).unwrap();
+
+            client.connect().unwrap();
+
+            std::thread::spawn(move || {
+                client.run();
+            });
+
+            Self { handler }
+        }
+
+        pub fn next_report(&mut self) -> Option<FIXEvent> {
+            self.handler.next_report()
+        }
+
+        pub fn send_message(&mut self, payload: FIXPayload) {
+            self.handler.send_message(payload);
+        }
+
+        pub fn send_generic_message(&mut self) {
+            let order = NewOrderSingle {
+                cl_ord_id: 1,
+                handl_inst: 1,
+                qty: 10,
+                ord_type: OrdType::Limit,
+                price: 666,
+                side: Side::Buy,
+                symbol: "OSISTRING".to_string(),
+                open_close: OpenClose::Open,
+                security_type: "OPT".to_string(),
+                put_or_call: PutOrCall::Call,
+                strike_price: 10,
+                customer_or_firm: CustomerOrFirm::Customer,
+                maturity_day: 10,
+            };
+
+            let payload = FIXPayload::Business(BusinessMessage::NewOrderSingle((order)));
+
+            self.handler.send_message(payload);
         }
     }
 }

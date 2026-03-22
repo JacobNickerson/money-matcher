@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Write};
 use std::str::from_utf8;
+use std::sync::Arc;
 use std::time::Instant;
 
 use mio::{Token, net::TcpStream};
@@ -41,8 +42,8 @@ pub struct Session {
 
 #[derive(Clone)]
 pub struct SessionState {
-    pub comp_id: String,
-    pub target_comp_id: String,
+    pub comp_id: Arc<str>,
+    pub target_comp_id: Arc<str>,
     pub inbound_seq_num: u32,
     pub outbound_seq_num: u32,
     pub logged_in: bool,
@@ -54,8 +55,8 @@ pub struct SessionState {
 impl Default for SessionState {
     fn default() -> Self {
         Self {
-            comp_id: String::new(),
-            target_comp_id: String::new(),
+            comp_id: Arc::from(""),
+            target_comp_id: Arc::from(""),
             inbound_seq_num: 0,
             outbound_seq_num: 0,
             encrypt_method: EncryptMethod::None,
@@ -141,7 +142,7 @@ impl Session {
             for (tag, value) in FixIterator::new(&msg) {
                 match tag {
                     TAG_SENDER_COMP_ID => {
-                        comp_id = from_utf8(value).ok().map(str::to_owned);
+                        comp_id = from_utf8(value).ok();
                     }
                     TAG_MSG_SEQ_NUM => {
                         msg_seq_num = from_utf8(value).ok().and_then(|v| v.parse().ok())
@@ -206,6 +207,7 @@ impl Session {
             println!("Process Inbound Message | {:?}", parsed);
 
             if let Ok(payload) = parsed {
+                let comp_id: Arc<str> = Arc::from(comp_id);
                 let req = FIXEvent { comp_id, payload };
                 match req.payload {
                     FIXPayload::Engine(_) => engine_events.push(req),
@@ -225,7 +227,7 @@ impl Session {
     ) -> Result<(), &'static str> {
         let state = self.state.as_mut().ok_or("Missing SenderCompID")?;
         let sender_comp_id = state.target_comp_id.clone();
-        let target_comp_id = state.comp_id.clone();
+        let target_comp_id = Arc::clone(&state.comp_id);
 
         let seq_num = match override_seq_num {
             Some(seq) => seq,

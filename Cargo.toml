@@ -1,9 +1,8 @@
 [workspace]
 members = [
   "crates/engine",
-  "crates/client",
   "crates/mm_core",
-  "crates/pylob",
+  "crates/pyclient",
 ]
 
 resolver = "2"

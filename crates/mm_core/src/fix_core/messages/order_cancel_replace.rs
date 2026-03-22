@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use crate::fix_core::{
     helpers::{get_maturity_month_year, get_timestamp},
     iterator::FixIterator,
@@ -11,10 +9,15 @@ use crate::fix_core::{
         types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
     },
 };
+use pyo3::pyclass;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
+use std::str::from_utf8;
 
 /// The Order Cancel Replace Request message is used to modify a regular order.
 ///
 /// `MsgType = G`
+#[gen_stub_pyclass]
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct OrderCancelReplace {
     /// Maximum 20 characters. Any value exceeding 20 characters will be rejected.
