@@ -17,8 +17,6 @@ pub struct Heartbeat {
 }
 
 impl FIXMessage for Heartbeat {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_HEARTBEAT;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
 

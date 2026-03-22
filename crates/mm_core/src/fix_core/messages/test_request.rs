@@ -17,8 +17,6 @@ pub struct TestRequest {
 }
 
 impl FIXMessage for TestRequest {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_TEST_REQUEST;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::new();

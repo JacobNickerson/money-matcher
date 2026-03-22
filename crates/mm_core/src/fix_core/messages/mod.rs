@@ -4,20 +4,19 @@ use crate::fix_core::messages::{
     order_cancel_reject::OrderCancelReject, resend_request::ResendRequest,
     test_request::TestRequest,
 };
-use pyo3::{ffi::getter, pyclass, pymethods};
+use pyo3::{pyclass, pymethods};
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pymethods};
 use std::sync::Arc;
 
 pub trait FIXMessage {
-    const MESSAGE_TYPE: &'static [u8];
     fn as_bytes(&self) -> Vec<u8>;
-    fn from_bytes(msg: &[u8]) -> Result<Self, &'static str>
+    fn from_bytes(msg: &[u8]) -> Result<Self, &str>
     where
         Self: Sized;
 }
 
 pub struct FixFrame {
-    pub msg_type: &'static [u8],
+    pub msg_type: u8,
     pub body: Vec<u8>,
 }
 
@@ -32,15 +31,15 @@ pub mod resend_request;
 pub mod test_request;
 pub mod types;
 
-pub const FIX_MESSAGE_TYPE_HEARTBEAT: &[u8] = b"0";
-pub const FIX_MESSAGE_TYPE_TEST_REQUEST: &[u8] = b"1";
-pub const FIX_MESSAGE_TYPE_EXECUTION_REPORT: &[u8] = b"8";
-pub const FIX_MESSAGE_TYPE_NEW_ORDER: &[u8] = b"D";
-pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT: &[u8] = b"9";
-pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE: &[u8] = b"G";
-pub const FIX_MESSAGE_TYPE_ORDER_CANCEL: &[u8] = b"F";
-pub const FIX_MESSAGE_TYPE_LOGON: &[u8] = b"A";
-pub const FIX_MESSAGE_TYPE_RESEND_REQUEST: &[u8] = b"2";
+pub const FIX_MESSAGE_TYPE_HEARTBEAT: u8 = b'0';
+pub const FIX_MESSAGE_TYPE_TEST_REQUEST: u8 = b'1';
+pub const FIX_MESSAGE_TYPE_EXECUTION_REPORT: u8 = b'8';
+pub const FIX_MESSAGE_TYPE_NEW_ORDER: u8 = b'D';
+pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT: u8 = b'9';
+pub const FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE: u8 = b'G';
+pub const FIX_MESSAGE_TYPE_ORDER_CANCEL: u8 = b'F';
+pub const FIX_MESSAGE_TYPE_LOGON: u8 = b'A';
+pub const FIX_MESSAGE_TYPE_RESEND_REQUEST: u8 = b'2';
 
 pub const TAG_POSS_DUP_FLAG: &[u8] = b"43";
 pub const TAG_BEGIN_SEQ_NO: &[u8] = b"7";
@@ -112,7 +111,7 @@ pub enum FIXPayload {
 }
 
 impl FIXPayload {
-    pub fn message_type(&self) -> &'static [u8] {
+    pub fn message_type(&self) -> u8 {
         match self {
             FIXPayload::Engine(msg) => msg.message_type(),
             FIXPayload::Business(msg) => msg.message_type(),
@@ -138,10 +137,10 @@ pub enum ReportMessage {
 }
 
 impl ReportMessage {
-    pub fn message_type(&self) -> &'static [u8] {
+    pub fn message_type(&self) -> u8 {
         match self {
-            ReportMessage::ExecutionReport(_) => ExecutionReport::MESSAGE_TYPE,
-            ReportMessage::OrderCancelReject(_) => OrderCancelReject::MESSAGE_TYPE,
+            ReportMessage::ExecutionReport(_) => FIX_MESSAGE_TYPE_EXECUTION_REPORT,
+            ReportMessage::OrderCancelReject(_) => FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT,
         }
     }
 
@@ -162,10 +161,10 @@ pub enum BusinessMessage {
 }
 
 impl BusinessMessage {
-    pub fn message_type(&self) -> &'static [u8] {
+    pub fn message_type(&self) -> u8 {
         match self {
-            BusinessMessage::NewOrderSingle(_) => NewOrderSingle::MESSAGE_TYPE,
-            BusinessMessage::OrderCancel(_) => OrderCancel::MESSAGE_TYPE,
+            BusinessMessage::NewOrderSingle(_) => FIX_MESSAGE_TYPE_NEW_ORDER,
+            BusinessMessage::OrderCancel(_) => FIX_MESSAGE_TYPE_ORDER_CANCEL,
         }
     }
 
@@ -188,12 +187,12 @@ pub enum EngineMessage {
 }
 
 impl EngineMessage {
-    pub fn message_type(&self) -> &'static [u8] {
+    pub fn message_type(&self) -> u8 {
         match self {
-            EngineMessage::Logon(_) => Logon::MESSAGE_TYPE,
-            EngineMessage::Heartbeat(_) => Heartbeat::MESSAGE_TYPE,
-            EngineMessage::TestRequest(_) => TestRequest::MESSAGE_TYPE,
-            EngineMessage::ResendRequest(_) => ResendRequest::MESSAGE_TYPE,
+            EngineMessage::Logon(_) => FIX_MESSAGE_TYPE_LOGON,
+            EngineMessage::Heartbeat(_) => FIX_MESSAGE_TYPE_HEARTBEAT,
+            EngineMessage::TestRequest(_) => FIX_MESSAGE_TYPE_TEST_REQUEST,
+            EngineMessage::ResendRequest(_) => FIX_MESSAGE_TYPE_RESEND_REQUEST,
         }
     }
 

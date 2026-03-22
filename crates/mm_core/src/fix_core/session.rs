@@ -136,7 +136,7 @@ impl Session {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
             let mut comp_id = None;
             let mut msg_seq_num = None;
-            let mut msg_type = None;
+            let mut msg_type: Option<u8> = None;
             let mut poss_dup_flag = false;
 
             for (tag, value) in FixIterator::new(&msg) {
@@ -147,7 +147,7 @@ impl Session {
                     TAG_MSG_SEQ_NUM => {
                         msg_seq_num = from_utf8(value).ok().and_then(|v| v.parse().ok())
                     }
-                    TAG_MSG_TYPE => msg_type = Some(value),
+                    TAG_MSG_TYPE => msg_type = Some(value[0]),
                     TAG_POSS_DUP_FLAG => poss_dup_flag = value == b"Y",
                     _ => {}
                 }
@@ -308,7 +308,7 @@ mod tests {
     fn test_extract_message_empty_body() {
         let mut session = make_session();
 
-        let msg_type = b"0";
+        let msg_type = b'0';
         let seq_num = 1;
         let sender = "A";
         let target = "B";

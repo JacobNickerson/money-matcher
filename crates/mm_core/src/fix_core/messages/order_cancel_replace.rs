@@ -45,8 +45,6 @@ pub struct OrderCancelReplace {
 }
 
 impl FIXMessage for OrderCancelReplace {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL_REPLACE;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);

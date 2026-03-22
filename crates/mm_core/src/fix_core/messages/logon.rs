@@ -22,8 +22,6 @@ pub struct Logon {
 }
 
 impl FIXMessage for Logon {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_LOGON;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::new();

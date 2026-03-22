@@ -49,8 +49,6 @@ pub struct ExecutionReport {
 }
 
 impl FIXMessage for ExecutionReport {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_EXECUTION_REPORT;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);

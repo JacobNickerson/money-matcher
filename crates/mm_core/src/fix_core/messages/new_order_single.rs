@@ -41,8 +41,6 @@ pub struct NewOrderSingle {
 }
 
 impl FIXMessage for NewOrderSingle {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_NEW_ORDER;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);

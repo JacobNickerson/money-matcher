@@ -3,7 +3,7 @@ use time::macros::format_description;
 use time::{OffsetDateTime, PrimitiveDateTime};
 
 pub fn write_fix_message(
-    msg_type: &'static [u8],
+    msg_type: u8,
     outbound_sequence_number: &u32,
     sender_comp_id: &str,
     target_comp_id: &str,
@@ -14,8 +14,7 @@ pub fn write_fix_message(
     let seq_str = itoa_buf.format(*outbound_sequence_number);
     let timestamp = get_timestamp();
 
-    let body_length = 20
-        + msg_type.len()
+    let body_length = 21
         + seq_str.len()
         + sender_comp_id.len()
         + timestamp.len()
@@ -33,7 +32,7 @@ pub fn write_fix_message(
 
     // Message Type
     buf.extend_from_slice(b"35=");
-    buf.extend_from_slice(msg_type);
+    buf.push(msg_type);
     buf.push(0x01);
 
     // Message Sequence Number
