@@ -1,7 +1,5 @@
-use crate::itch_core::helpers::{decode_u48, encode_u48};
-use crate::itch_core::messages::{ITCH_MESSAGE_TYPE_ORDER_EXECUTED, ItchMessage};
-use zerocopy::byteorder::{BigEndian, U16, U32, U64};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use crate::itch_core::helpers::encode_u48;
+use crate::itch_core::messages::ITCH_MESSAGE_TYPE_ORDER_EXECUTED;
 
 /// This message is sent whenever an order on the book is executed in whole or in part.
 ///
@@ -10,92 +8,35 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 /// By combining the executions from both types of Order Executed Messages and the Trade Message, it is possible to build a complete view of all non-cross executions that happen on Nasdaq.
 /// Cross execution information is available in one bulk print per symbol via the Cross Trade Message.
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
-pub struct OrderExecuted {
-    /// Message Type "E" = Order Executed Message
-    pub(crate) message_type: u8,
-    /// Locate code identifying the security
-    pub stock_locate: U16<BigEndian>,
-    /// Nasdaq internal tracking number
-    pub tracking_number: U16<BigEndian>,
-    /// Nanoseconds since midnight
-    pub timestamp: [u8; 6],
-    /// The unique reference number assigned to the new order at the time of receipt
-    pub order_reference_number: U64<BigEndian>,
-    /// The number of shares executed
-    pub executed_shares: U32<BigEndian>,
-    /// The Nasdaq generated day unique Match Number of this execution
-    pub match_number: U64<BigEndian>,
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OrderExecuted {}
 
 impl OrderExecuted {
-    pub fn new(
+    /// Encodes an OrderExecuted message directly into a provided byte buffer.
+    ///
+    /// # Arguments
+    /// * `buf` - The destination byte slice (must be at least 31 bytes)
+    /// * `stock_locate` - Locate code identifying the security
+    /// * `tracking_number` - Nasdaq internal tracking number
+    /// * `timestamp` - Nanoseconds since midnight
+    /// * `order_reference_number` - The unique reference number assigned to the new order at the time of receipt
+    /// * `executed_shares` - The number of shares executed
+    /// * `match_number` - The Nasdaq generated day unique Match Number of this execution
+    pub fn encode_into(
+        buf: &mut [u8],
         stock_locate: u16,
+        tracking_number: u16,
         timestamp: u64,
         order_reference_number: u64,
         executed_shares: u32,
         match_number: u64,
-    ) -> Self {
-        Self {
-            message_type: ITCH_MESSAGE_TYPE_ORDER_EXECUTED,
-            stock_locate: U16::new(stock_locate),
-            tracking_number: U16::new(0),
-            timestamp: encode_u48(timestamp),
-            order_reference_number: U64::new(order_reference_number),
-            executed_shares: U32::new(executed_shares),
-            match_number: U64::new(match_number),
-        }
-    }
-
-    pub fn print(&self) {
-        println!(
-            "ITCH Message: OrderExecuted | stock_locate={} | tracking_number={} | timestamp={:?} | order_ref={} | executed_shares={} | match_number={}",
-            self.stock_locate.get(),
-            self.tracking_number.get(),
-            decode_u48(self.timestamp),
-            self.order_reference_number.get(),
-            self.executed_shares.get(),
-            self.match_number.get(),
-        );
-    }
-}
-
-impl ItchMessage for OrderExecuted {
-    fn set_tracking_number(&mut self, n: u16) {
-        self.tracking_number = U16::new(n);
-    }
-
-    fn set_stock_locate(&mut self, n: u16) {
-        self.stock_locate = U16::new(n);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_order_executed_initial_state() {
-        let msg = OrderExecuted::new(1, 1000, 5000, 100, 9999);
-
-        assert_eq!(msg.message_type, ITCH_MESSAGE_TYPE_ORDER_EXECUTED);
-        assert_eq!(msg.stock_locate.get(), 1);
-        assert_eq!(msg.tracking_number.get(), 0);
-        assert_eq!(msg.order_reference_number.get(), 5000);
-        assert_eq!(msg.executed_shares.get(), 100);
-        assert_eq!(msg.match_number.get(), 9999);
-
-        msg.print();
-    }
-
-    #[test]
-    fn test_order_executed_trait_updates() {
-        let mut msg = OrderExecuted::new(0, 0, 0, 0, 0);
-
-        msg.set_tracking_number(5);
-        msg.set_stock_locate(10);
-
-        assert_eq!(msg.tracking_number.get(), 5);
-        assert_eq!(msg.stock_locate.get(), 10);
+    ) {
+        buf[0] = ITCH_MESSAGE_TYPE_ORDER_EXECUTED;
+        buf[1..3].copy_from_slice(&stock_locate.to_be_bytes());
+        buf[3..5].copy_from_slice(&tracking_number.to_be_bytes());
+        buf[5..11].copy_from_slice(&encode_u48(timestamp));
+        buf[11..19].copy_from_slice(&order_reference_number.to_be_bytes());
+        buf[19..23].copy_from_slice(&executed_shares.to_be_bytes());
+        buf[23..31].copy_from_slice(&match_number.to_be_bytes());
     }
 }
