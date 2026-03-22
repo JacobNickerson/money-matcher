@@ -1,6 +1,6 @@
 use std::str::from_utf8;
 use time::macros::format_description;
-use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
+use time::{OffsetDateTime, PrimitiveDateTime};
 
 pub fn write_fix_message(
     msg_type: &'static [u8],
@@ -9,73 +9,65 @@ pub fn write_fix_message(
     target_comp_id: &str,
     body: &Vec<u8>,
 ) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(256);
-
-    write_header(
-        &mut buf,
-        msg_type,
-        outbound_sequence_number,
-        sender_comp_id,
-        target_comp_id,
-    );
-
-    buf.extend_from_slice(body);
-
-    write_wrapper(&mut buf);
-
-    buf
-}
-
-pub fn write_header(
-    write_buf: &mut Vec<u8>,
-    msg_type: &'static [u8],
-    outbound_sequence_number: &u32,
-    sender_comp_id: &str,
-    target_comp_id: &str,
-) {
     let mut itoa_buf = itoa::Buffer::new();
+
+    let seq_str = itoa_buf.format(*outbound_sequence_number);
+    let timestamp = get_timestamp();
+
+    let body_length = 20
+        + msg_type.len()
+        + seq_str.len()
+        + sender_comp_id.len()
+        + timestamp.len()
+        + target_comp_id.len()
+        + body.len();
+
+    let mut buf = Vec::with_capacity(body_length + 30);
+
+    buf.extend_from_slice(b"8=FIX.4.2\x01");
+
+    // BodyLength
+    buf.extend_from_slice(b"9=");
+    buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
+    buf.push(0x01);
 
     // Message Type
-    write_buf.extend_from_slice(b"35=");
-    write_buf.extend_from_slice(msg_type);
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"35=");
+    buf.extend_from_slice(msg_type);
+    buf.push(0x01);
 
     // Message Sequence Number
-    write_buf.extend_from_slice(b"34=");
-    write_buf.extend_from_slice(itoa_buf.format(*outbound_sequence_number).as_bytes());
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"34=");
+    buf.extend_from_slice(itoa_buf.format(*outbound_sequence_number).as_bytes());
+    buf.push(0x01);
 
     // Sender Comp ID
-    write_buf.extend_from_slice(b"49=");
-    write_buf.extend_from_slice(sender_comp_id.as_bytes());
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"49=");
+    buf.extend_from_slice(sender_comp_id.as_bytes());
+    buf.push(0x01);
 
     // Sending Time
-    write_buf.extend_from_slice(b"52=");
-    write_buf.extend_from_slice(get_timestamp().as_bytes());
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"52=");
+    buf.extend_from_slice(timestamp.as_bytes());
+    buf.push(0x01);
 
     // Target Comp ID
-    write_buf.extend_from_slice(b"56=");
-    write_buf.extend_from_slice(target_comp_id.as_bytes());
-    write_buf.push(0x01);
-}
+    buf.extend_from_slice(b"56=");
+    buf.extend_from_slice(target_comp_id.as_bytes());
+    buf.push(0x01);
 
-pub fn write_wrapper(write_buf: &mut Vec<u8>) {
-    let body_length = write_buf.len();
-    let mut itoa_buf = itoa::Buffer::new();
-    let mut final_buf: Vec<u8> = Vec::with_capacity(body_length + 64);
+    // Body
+    buf.extend_from_slice(body);
 
-    final_buf.extend_from_slice(b"8=FIX.4.2\x01");
+    // Trailer
+    let checksum: u32 = calculate_checksum(buf.as_slice());
+    buf.extend_from_slice(b"10=");
+    buf.push(b'0' + (checksum / 100) as u8);
+    buf.push(b'0' + ((checksum / 10) % 10) as u8);
+    buf.push(b'0' + (checksum % 10) as u8);
+    buf.push(0x01);
 
-    final_buf.extend_from_slice(b"9=");
-    final_buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
-    final_buf.push(0x01);
-
-    final_buf.extend_from_slice(write_buf);
-    *write_buf = final_buf;
-
-    write_trailer(write_buf);
+    buf
 }
 
 pub fn calculate_checksum(message: &[u8]) -> u32 {
@@ -86,16 +78,6 @@ pub fn calculate_checksum(message: &[u8]) -> u32 {
     }
 
     sum % 256
-}
-
-pub fn write_trailer(write_buf: &mut Vec<u8>) {
-    // Checksum
-    let checksum: u32 = calculate_checksum(write_buf.as_slice());
-    write_buf.extend_from_slice(b"10=");
-    write_buf.push(b'0' + (checksum / 100) as u8);
-    write_buf.push(b'0' + ((checksum / 10) % 10) as u8);
-    write_buf.push(b'0' + (checksum % 10) as u8);
-    write_buf.push(0x01);
 }
 
 pub fn print_message(message: &Vec<u8>) {
@@ -124,14 +106,14 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
         return None;
     };
 
-    let first_delimiter = read_buffer.windows(1).position(|f| f == b"\x01")?;
+    let first_delimiter = read_buffer.iter().position(|&b| b == 0x01)?;
     if !read_buffer[first_delimiter + 1..].starts_with(b"9=") {
         return invalidate_message(read_buffer);
     }
     let body_len_start = first_delimiter + 1;
     let body_len_end = read_buffer[body_len_start..]
         .iter()
-        .position(|&f| f == b'\x01')?
+        .position(|&b| b == 0x01)?
         + body_len_start;
 
     let body_len: usize = match from_utf8(&read_buffer[body_len_start + 2..body_len_end])
@@ -217,45 +199,10 @@ mod tests {
     use crate::fix_core::messages::FIX_MESSAGE_TYPE_NEW_ORDER;
 
     #[test]
-    fn test_write_header_field_values() {
-        let mut buf = Vec::with_capacity(256);
-
-        write_header(
-            &mut buf,
-            &FIX_MESSAGE_TYPE_NEW_ORDER,
-            &1,
-            &"str1".to_string(),
-            &"str2".to_string(),
-        );
-
-        let s = String::from_utf8_lossy(&buf);
-
-        assert!(s.contains("35=D"));
-        assert!(s.contains("34=1"));
-        assert!(s.contains("49=str1"));
-        assert!(s.contains("52="));
-        assert!(s.contains("56=str2"));
-        assert!(buf.contains(&0x01));
-    }
-
-    #[test]
     fn test_calculate_checksum() {
         let b = b"ABC";
         let c: u32 = (b'A' as u32 + b'B' as u32 + b'C' as u32) % 256;
 
         assert_eq!(calculate_checksum(b), c);
-    }
-
-    #[test]
-    fn test_write_trailer_appends_checksum() {
-        let mut buf = Vec::with_capacity(256);
-        buf.extend_from_slice(b"35=D\x01");
-
-        write_trailer(&mut buf);
-
-        let s = String::from_utf8_lossy(&buf);
-
-        assert!(s.contains("10="));
-        assert!(buf.ends_with(&[0x01]));
     }
 }
