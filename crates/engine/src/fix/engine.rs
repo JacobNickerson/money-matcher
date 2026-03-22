@@ -1,15 +1,6 @@
-use std::collections::HashMap;
-use std::io;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
-use ringbuf::HeapProd;
-use ringbuf::traits::{Consumer, Producer, Split};
-
 use mm_core::fix_core::{
     messages::{
         EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
@@ -17,6 +8,13 @@ use mm_core::fix_core::{
     },
     session::{Session, SessionState},
 };
+use ringbuf::HeapProd;
+use ringbuf::traits::{Consumer, Producer, Split};
+use std::collections::HashMap;
+use std::io;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 const LISTENER: Token = Token(0);
 const WAKE: Token = Token(1);
@@ -413,7 +411,7 @@ mod tests {
     use mm_core::fix_core::messages::{
         BusinessMessage, ReportMessage,
         execution_report::ExecutionReport,
-        types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
+        types::{ExecTransType, ExecType, OrdStatus},
     };
     use std::thread;
 

@@ -49,72 +49,72 @@ impl FIXMessage for OrderCancelReplace {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);
 
-        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_HANDL_INST);
+        buf.extend_from_slice(itoa_buf.format(TAG_HANDL_INST).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.handl_inst).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORDER_QTY);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORDER_QTY).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORD_TYPE);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORD_TYPE).as_bytes());
         buf.push(b'=');
         buf.push(self.ord_type as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORIG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORIG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SIDE);
+        buf.extend_from_slice(itoa_buf.format(TAG_SIDE).as_bytes());
         buf.push(b'=');
         buf.push(self.side as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SYMBOL);
+        buf.extend_from_slice(itoa_buf.format(TAG_SYMBOL).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.symbol.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_TRANSACT_TIME);
+        buf.extend_from_slice(itoa_buf.format(TAG_TRANSACT_TIME).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_OPEN_CLOSE);
+        buf.extend_from_slice(itoa_buf.format(TAG_OPEN_CLOSE).as_bytes());
         buf.push(b'=');
         buf.push(self.open_close as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SECURITY_TYPE);
+        buf.extend_from_slice(itoa_buf.format(TAG_SECURITY_TYPE).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.security_type.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_MATURITY_MONTH_YEAR);
+        buf.extend_from_slice(itoa_buf.format(TAG_MATURITY_MONTH_YEAR).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(get_maturity_month_year().as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_PUT_OR_CALL);
+        buf.extend_from_slice(itoa_buf.format(TAG_PUT_OR_CALL).as_bytes());
         buf.push(b'=');
         buf.push(self.put_or_call as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_STRIKE_PRICE);
+        buf.extend_from_slice(itoa_buf.format(TAG_STRIKE_PRICE).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.strike_price).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_CUSTOMER_OR_FIRM);
+        buf.extend_from_slice(itoa_buf.format(TAG_CUSTOMER_OR_FIRM).as_bytes());
         buf.push(b'=');
         buf.push(self.customer_or_firm as u8);
         buf.push(0x01);

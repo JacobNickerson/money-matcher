@@ -26,12 +26,12 @@ impl FIXMessage for Logon {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::new();
 
-        buf.extend_from_slice(TAG_ENCRYPT_METHOD);
+        buf.extend_from_slice(itoa_buf.format(TAG_ENCRYPT_METHOD).as_bytes());
         buf.push(b'=');
         buf.push(self.encrypt_method as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_HEART_BT_INT);
+        buf.extend_from_slice(itoa_buf.format(TAG_HEART_BT_INT).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.heart_bt_int).as_bytes());
         buf.push(0x01);

@@ -29,22 +29,22 @@ impl FIXMessage for OrderCancel {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);
 
-        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORDER_QTY);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORDER_QTY).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.qty).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORIG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORIG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_TRANSACT_TIME);
+        buf.extend_from_slice(itoa_buf.format(TAG_TRANSACT_TIME).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);

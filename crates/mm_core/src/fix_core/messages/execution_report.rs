@@ -53,97 +53,97 @@ impl FIXMessage for ExecutionReport {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);
 
-        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_CUM_QTY);
+        buf.extend_from_slice(itoa_buf.format(TAG_CUM_QTY).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cum_qty).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_EXEC_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_EXEC_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.exec_id.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_EXEC_TRANS_TYPE);
+        buf.extend_from_slice(itoa_buf.format(TAG_EXEC_TRANS_TYPE).as_bytes());
         buf.push(b'=');
         buf.push(self.exec_trans_type as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORDER_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORDER_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.order_id.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORDER_QTY);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORDER_QTY).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.order_qty).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORD_STATUS);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORD_STATUS).as_bytes());
         buf.push(b'=');
         buf.push(self.ord_status as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SECURITY_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_SECURITY_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.security_id.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SIDE);
+        buf.extend_from_slice(itoa_buf.format(TAG_SIDE).as_bytes());
         buf.push(b'=');
         buf.push(self.side as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SYMBOL);
+        buf.extend_from_slice(itoa_buf.format(TAG_SYMBOL).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.symbol.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_TRANSACT_TIME);
+        buf.extend_from_slice(itoa_buf.format(TAG_TRANSACT_TIME).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(get_timestamp().as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_OPEN_CLOSE);
+        buf.extend_from_slice(itoa_buf.format(TAG_OPEN_CLOSE).as_bytes());
         buf.push(b'=');
         buf.push(self.open_close as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_EXEC_TYPE);
+        buf.extend_from_slice(itoa_buf.format(TAG_EXEC_TYPE).as_bytes());
         buf.push(b'=');
         buf.push(self.exec_type as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_LEAVES_QTY);
+        buf.extend_from_slice(itoa_buf.format(TAG_LEAVES_QTY).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.leaves_qty).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_SECURITY_TYPE);
+        buf.extend_from_slice(itoa_buf.format(TAG_SECURITY_TYPE).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.security_type.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_PUT_OR_CALL);
+        buf.extend_from_slice(itoa_buf.format(TAG_PUT_OR_CALL).as_bytes());
         buf.push(b'=');
         buf.push(self.put_or_call as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_STRIKE_PRICE);
+        buf.extend_from_slice(itoa_buf.format(TAG_STRIKE_PRICE).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.strike_price).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_CUSTOMER_OR_FIRM);
+        buf.extend_from_slice(itoa_buf.format(TAG_CUSTOMER_OR_FIRM).as_bytes());
         buf.push(b'=');
         buf.push(self.customer_or_firm as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_MATURITY_DATE);
+        buf.extend_from_slice(itoa_buf.format(TAG_MATURITY_DATE).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.maturity_date.as_bytes());
         buf.push(0x01);

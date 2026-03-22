@@ -23,7 +23,7 @@ impl FIXMessage for Heartbeat {
         if let Some(test_req_id) = self.test_req_id {
             let mut itoa_buf = itoa::Buffer::new();
 
-            buf.extend_from_slice(TAG_TEST_REQ_ID);
+            buf.extend_from_slice(itoa_buf.format(TAG_TEST_REQ_ID).as_bytes());
             buf.push(b'=');
             buf.extend_from_slice(itoa_buf.format(test_req_id).as_bytes());
             buf.push(0x01);
