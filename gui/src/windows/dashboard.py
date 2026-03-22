@@ -1,3 +1,5 @@
+import os
+import sys
 import pandas as pd
 from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
@@ -14,6 +16,13 @@ from PyQt5.QtCore import (
 
 import models.order_book_model as order_book_model
 import models.trade_history_model as trade_history_model
+
+pylob_dir = os.path.relpath('../../crates/pylob')
+
+if pylob_dir not in sys.path:
+    sys.path.append(pylob_dir)
+
+import pylob
 
 class MarketEvents(QWidget):
     def __init__(self):
@@ -179,9 +188,61 @@ class OrderBook(QWidget):
                 border: none;
             }                      
         """)
-        
-        self.loadTestData()
+        self.rust_book = pylob.PyOrderBook()
+        #self.loadTestData()
+        self.load_order_book()
         self.layout().addWidget(self.table)
+
+    def load_order_book(self):
+        self.rust_book = pylob.PyOrderBook()
+
+        bid_data = [
+            (1, 1000000, 120, 49990),
+            (2, 1000001, 80, 49980),
+            (3, 1000002, 150, 49970),
+            (4, 1000003, 90, 49960),
+            (5, 1000004, 110, 49950),
+            (6, 1000005, 75, 49940),
+            (7, 1000006, 130, 49930),
+        ]
+
+        ask_data = [
+            (8, 1000007, 100, 50010),
+            (9, 1000008, 95, 50020),
+            (10, 1000009, 140, 50030),
+            (11, 1000010, 85, 50040),
+            (12, 1000011, 160, 50050),
+            (13, 1000012, 70, 50060),
+            (14, 1000013, 125, 50070),
+        ]
+
+        for order_id, ts, qty, price in bid_data:
+            self.add_limit_order(order_id, pylob.PyOrderSide.Bid, ts, qty, price)
+
+        for order_id, ts, qty, price in ask_data:
+            self.add_limit_order(order_id, pylob.PyOrderSide.Ask, ts, qty, price)
+
+        raw_asks = self.rust_book.get_top_levels(pylob.PyOrderSide.Ask, 7)
+        raw_bids = self.rust_book.get_top_levels(pylob.PyOrderSide.Bid, 7)
+
+        asks = [(price, qty, price * qty) for price, qty in raw_asks]
+        bids = [(price, qty, price * qty) for price, qty in raw_bids]
+
+        model = order_book_model.OrderBookModel(asks, bids)
+        self.table.setModel(model)
+        self.table.resizeColumnsToContents()
+
+    def add_limit_order(self, order_id, side, timestamp, qty, price):
+        order = pylob.PyOrder(
+            order_id=order_id,
+            side=side,
+            timestamp=timestamp,
+            kind=pylob.PyOrderType.limit(qty=qty, price=price),
+        )
+        limit_order = pylob.PyLimitOrder(order)
+        event_kind = pylob.PyMarketEventType.l3(limit_order)
+        event = pylob.PyMarketEvent(timestamp=timestamp, kind=event_kind)
+        self.rust_book.process_event(event)
 
     def loadTestData(self):
         asks = [(100.50 + i, 1.5 + i*0.1, (100.50 + i) * (1.5 + i*0.1)) for i in range(10)]
