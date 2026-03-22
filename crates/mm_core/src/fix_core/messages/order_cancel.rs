@@ -1,10 +1,7 @@
 use crate::fix_core::{
     helpers::get_timestamp,
     iterator::FixIterator,
-    messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL, FIXMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY,
-        TAG_ORIG_CL_ORD_ID, TAG_TRANSACT_TIME,
-    },
+    messages::{FIXMessage, TAG_CL_ORD_ID, TAG_ORDER_QTY, TAG_ORIG_CL_ORD_ID, TAG_TRANSACT_TIME},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;

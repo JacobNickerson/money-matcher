@@ -1,9 +1,6 @@
 use crate::fix_core::{
     iterator::FixIterator,
-    messages::{
-        FIX_MESSAGE_TYPE_LOGON, FIXMessage, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT,
-        types::EncryptMethod,
-    },
+    messages::{FIXMessage, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, types::EncryptMethod},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;

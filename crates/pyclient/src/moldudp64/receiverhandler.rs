@@ -2,8 +2,8 @@ use mm_core::{
     itch_core::{
         helpers::decode_u48,
         messages::{
-            ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
-            ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ITCH_MESSAGE_TYPE_ORDER_REPLACE,
+            ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
+            ITCH_MESSAGE_TYPE_ORDER_REPLACE,
         },
     },
     lob_core::{

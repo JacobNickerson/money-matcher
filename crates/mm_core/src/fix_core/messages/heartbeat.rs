@@ -1,6 +1,6 @@
 use crate::fix_core::{
     iterator::FixIterator,
-    messages::{FIX_MESSAGE_TYPE_HEARTBEAT, FIXMessage, TAG_TEST_REQ_ID},
+    messages::{FIXMessage, TAG_TEST_REQ_ID},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
@@ -36,11 +36,8 @@ impl FIXMessage for Heartbeat {
         let mut test_req_id: Option<u32> = None;
 
         for (tag, value) in FixIterator::new(msg) {
-            match tag {
-                TAG_TEST_REQ_ID => {
-                    test_req_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
-                }
-                _ => {}
+            if tag == TAG_TEST_REQ_ID {
+                test_req_id = from_utf8(value).ok().and_then(|v| v.parse().ok());
             }
         }
 

@@ -1,8 +1,8 @@
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT, FIXMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO,
-        TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID, TAG_TEXT,
+        FIXMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO, TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID,
+        TAG_TEXT,
         types::{CxlRejResponseTo, OrdStatus},
     },
 };

@@ -1,6 +1,6 @@
 use crate::fix_core::{
     iterator::FixIterator,
-    messages::{FIX_MESSAGE_TYPE_RESEND_REQUEST, FIXMessage, TAG_BEGIN_SEQ_NO, TAG_END_SEQ_NO},
+    messages::{FIXMessage, TAG_BEGIN_SEQ_NO, TAG_END_SEQ_NO},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
