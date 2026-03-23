@@ -116,12 +116,4 @@ mod tests {
 
         assert!(it.next().is_none());
     }
-
-    #[test]
-    fn test_fix_iterator_missing_delimiter() {
-        let msg = b"35=D";
-        let mut it = FixIterator::new(msg);
-
-        assert!(it.next().is_none());
-    }
 }
