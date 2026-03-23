@@ -1,0 +1,318 @@
+use pyo3::pyclass;
+
+/// Tag 40 - OrdType
+/// `1` = Market
+/// `2` = Limit
+/// `3` = Stop
+/// `4` = Stop Limit
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrdType {
+    Market = b'1',
+    Limit = b'2',
+    Stop = b'3',
+    StopLimit = b'4',
+}
+
+impl TryFrom<u8> for OrdType {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'1' => Ok(Self::Market),
+            b'2' => Ok(Self::Limit),
+            b'3' => Ok(Self::Stop),
+            b'4' => Ok(Self::StopLimit),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 54 - Side
+/// `1` = Buy
+/// `2` = Sell
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Buy = b'1',
+    Sell = b'2',
+}
+
+impl TryFrom<u8> for Side {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'1' => Ok(Self::Buy),
+            b'2' => Ok(Self::Sell),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 77 - OpenClose
+/// `0` = Open
+/// `C` = Close
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenClose {
+    Open = b'0',
+    Close = b'C',
+}
+
+impl TryFrom<u8> for OpenClose {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::Open),
+            b'C' => Ok(Self::Close),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 201 - PutOrCall
+/// `0` = Put
+/// `1` = Call
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutOrCall {
+    Put = b'0',
+    Call = b'1',
+}
+
+impl TryFrom<u8> for PutOrCall {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::Put),
+            b'1' => Ok(Self::Call),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 434 - CxlRejResponseTo
+/// `1` = Order Cancel Request
+/// `2` = Order Cancel Replace Request
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CxlRejResponseTo {
+    OrderCancelRequest = b'1',
+    OrderCancelReplaceRequest = b'2',
+}
+
+impl TryFrom<u8> for CxlRejResponseTo {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'1' => Ok(Self::OrderCancelRequest),
+            b'2' => Ok(Self::OrderCancelReplaceRequest),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 39 - OrdStatus
+/// `0` = New
+/// `1` = Partially Filled
+/// `2` = Filled
+/// `3` = Done For Day
+/// `4` = Canceled
+/// `5` = Replaced
+/// `6` = Pending Cancel
+/// `8` = Rejected
+/// `E` = Pending Replace
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrdStatus {
+    New = b'0',
+    PartiallyFilled = b'1',
+    Filled = b'2',
+    DoneForDay = b'3',
+    Canceled = b'4',
+    Replaced = b'5',
+    PendingCancel = b'6',
+    Rejected = b'8',
+    PendingReplace = b'E',
+}
+
+impl TryFrom<u8> for OrdStatus {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::New),
+            b'1' => Ok(Self::PartiallyFilled),
+            b'2' => Ok(Self::Filled),
+            b'3' => Ok(Self::DoneForDay),
+            b'4' => Ok(Self::Canceled),
+            b'5' => Ok(Self::Replaced),
+            b'6' => Ok(Self::PendingCancel),
+            b'8' => Ok(Self::Rejected),
+            b'E' => Ok(Self::PendingReplace),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 20 - ExecTransType
+/// `0` = New
+/// `1` = Cancel
+/// `2` = Correct
+/// `3` = Status
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecTransType {
+    New = b'0',
+    Cancel = b'1',
+    Correct = b'2',
+    Status = b'3',
+}
+
+impl TryFrom<u8> for ExecTransType {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::New),
+            b'1' => Ok(Self::Cancel),
+            b'2' => Ok(Self::Correct),
+            b'3' => Ok(Self::Status),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 150 - ExecType
+/// `0` = New
+/// `1` = Partially Filled
+/// `2` = Filled
+/// `3` = Done For Day
+/// `4` = Canceled
+/// `5` = Replace
+/// `6` = Pending Cancel
+/// `8` = Rejected
+/// `D` = Restated
+/// `E` = Pending Replace
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecType {
+    New = b'0',
+    PartiallyFilled = b'1',
+    Filled = b'2',
+    DoneForDay = b'3',
+    Canceled = b'4',
+    Replace = b'5',
+    PendingCancel = b'6',
+    Rejected = b'8',
+    Restated = b'D',
+    PendingReplace = b'E',
+}
+
+impl TryFrom<u8> for ExecType {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::New),
+            b'1' => Ok(Self::PartiallyFilled),
+            b'2' => Ok(Self::Filled),
+            b'3' => Ok(Self::DoneForDay),
+            b'4' => Ok(Self::Canceled),
+            b'5' => Ok(Self::Replace),
+            b'6' => Ok(Self::PendingCancel),
+            b'8' => Ok(Self::Rejected),
+            b'D' => Ok(Self::Restated),
+            b'E' => Ok(Self::PendingReplace),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 204 - CustomerOrFirm
+/// `0` = Customer
+/// `1` = Proprietary Firm
+/// `2` = Broker/Dealer Firm
+/// `3` = Broker/Dealer Customer
+/// `4` = ISE Market Maker
+/// `5` = Far Market Maker
+/// `6` = Retail Customer
+/// `7` = Proprietary Customer
+/// `8` = Customer Professional
+/// `9` = Joint Back Office
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CustomerOrFirm {
+    Customer = b'0',
+    ProprietaryFirm = b'1',
+    BrokerDealerFirm = b'2',
+    BrokerDealerCustomer = b'3',
+    IseMarketMaker = b'4',
+    FarMarketMaker = b'5',
+    RetailCustomer = b'6',
+    ProprietaryCustomer = b'7',
+    CustomerProfessional = b'8',
+    JointBackOffice = b'9',
+}
+
+impl TryFrom<u8> for CustomerOrFirm {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::Customer),
+            b'1' => Ok(Self::ProprietaryFirm),
+            b'2' => Ok(Self::BrokerDealerFirm),
+            b'3' => Ok(Self::BrokerDealerCustomer),
+            b'4' => Ok(Self::IseMarketMaker),
+            b'5' => Ok(Self::FarMarketMaker),
+            b'6' => Ok(Self::RetailCustomer),
+            b'7' => Ok(Self::ProprietaryCustomer),
+            b'8' => Ok(Self::CustomerProfessional),
+            b'9' => Ok(Self::JointBackOffice),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Tag 98 - EncryptMethod
+/// `0` = None
+/// `1` = PKCS (proprietary)
+/// `2` = DES (ECB mode)
+/// `3` = PKCS/DES (proprietary)
+/// `4` = PGP/DES (defunct)
+/// `5` = PGP/DES-MD5
+/// `6` = PEM/DES-MD5
+#[repr(u8)]
+#[pyclass(eq, eq_int)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EncryptMethod {
+    #[default]
+    None = b'0',
+    PKCS = b'1',
+    DES = b'2',
+    PKCS_DES = b'3',
+    PGP_DES = b'4',
+    PGP_DES_MD5 = b'5',
+    PEM_DES_MD5 = b'6',
+}
+
+impl TryFrom<u8> for EncryptMethod {
+    type Error = ();
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            b'0' => Ok(Self::None),
+            b'1' => Ok(Self::PKCS),
+            b'2' => Ok(Self::DES),
+            b'3' => Ok(Self::PKCS_DES),
+            b'4' => Ok(Self::PGP_DES),
+            b'5' => Ok(Self::PGP_DES_MD5),
+            b'6' => Ok(Self::PEM_DES_MD5),
+            _ => Err(()),
+        }
+    }
+}

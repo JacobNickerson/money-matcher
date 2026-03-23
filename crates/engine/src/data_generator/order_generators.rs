@@ -1,7 +1,9 @@
-use crate::lob::order::{Order, OrderSide, OrderType};
-use crate::lob::types::{OrderId, Price};
 use circular_buffer::CircularBuffer;
 use fastrand;
+use mm_core::lob_core::{
+    OrderId, Price,
+    market_orders::{Order, OrderSide, OrderType},
+};
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 

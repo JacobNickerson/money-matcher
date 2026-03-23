@@ -1,9 +1,11 @@
-use crate::lob::market_events::{
-    ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
-    MarketEventType, TradeEvent,
+use mm_core::lob_core::{
+    OrderId, Price, Timestamp,
+    market_events::{
+        ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
+        MarketEventType, TradeEvent,
+    },
+    market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
 };
-use crate::lob::order::{self, LimitOrder, Order, OrderSide, OrderStatus, OrderType};
-use crate::lob::types::{OrderId, Price, Timestamp};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 #[derive(Debug, Default)]
@@ -95,20 +97,26 @@ impl<T: EventSink> OrderBook<T> {
     /// UpdateOrders cancel the previously existing order and resubmit a new order
     pub fn process_order(&mut self, order: Order, time: Timestamp) -> Option<LimitOrder> {
         // TODO: Update return type to be more informative
+        self.event_sink.push(MarketEvent {
+            timestamp: time,
+            kind: MarketEventType::L3(order),
+        });
         let order = match order.kind {
-            OrderType::Limit { qty, price } => {
+            OrderType::Limit { qty: _, price: _ } => {
                 let order = self.add_order_and_emit_events(LimitOrder::new(order), time);
                 Some(order)
             }
-            OrderType::Market { qty } => {
+            OrderType::Market { qty: _ } => {
                 let mut order = LimitOrder::new(order);
                 self.match_order(&mut order, time);
                 Some(order)
             }
             OrderType::Cancel => self.cancel_order_and_emit_events(order.order_id, time),
-            OrderType::Update { old_id, qty, price } => {
-                self.update_order(LimitOrder::new(order), old_id, time)
-            }
+            OrderType::Update {
+                old_id,
+                qty: _,
+                price: _,
+            } => self.update_order(LimitOrder::new(order), old_id, time),
         };
         self.generate_l1_events(time);
         order
@@ -203,8 +211,6 @@ impl<T: EventSink> OrderBook<T> {
                 },
             }),
         ));
-        self.event_sink
-            .push(MarketEvent::new(time, MarketEventType::L3(order)));
         self.event_sink.push(MarketEvent::new(
             time,
             MarketEventType::Client(ClientEvent {
@@ -251,9 +257,7 @@ impl<T: EventSink> OrderBook<T> {
         let x = self
             .cancel_order(old_order_id)
             .map(|_| self.add_order_and_emit_events(order, time));
-        if let Some(_) = x {
-            self.event_sink
-                .push(MarketEvent::new(time, MarketEventType::L3(order)));
+        if x.is_some() {
             self.event_sink.push(MarketEvent::new(
                 time,
                 MarketEventType::Client(ClientEvent {
@@ -313,8 +317,6 @@ impl<T: EventSink> OrderBook<T> {
                         total_size: total_qty,
                     }),
                 ));
-                self.event_sink
-                    .push(MarketEvent::new(time, MarketEventType::L3(*order)));
                 self.event_sink.push(MarketEvent::new(
                     time,
                     MarketEventType::Client(ClientEvent {
@@ -538,7 +540,7 @@ impl<T: EventSink> OrderBook<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lob::market_events::{ClientEvent, L3Event, NullFeeds, SeparateEventFeeds};
+    use mm_core::lob_core::market_events::{L3Event, NullFeeds, SeparateEventFeeds};
     use ringbuf::{HeapCons, HeapRb, traits::*};
 
     fn create_event_feeds(
