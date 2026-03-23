@@ -31,6 +31,7 @@ pub struct NewOrderSingle {
     pub side: Side,
     /// OSI symbol for a series.
     pub symbol: String,
+    pub transact_time: Option<String>,
     pub open_close: OpenClose,
     /// `OPT`
     pub security_type: String,
@@ -82,7 +83,11 @@ impl FIXMessage for NewOrderSingle {
 
         buf.extend_from_slice(itoa_buf.format(TAG_TRANSACT_TIME).as_bytes());
         buf.push(b'=');
-        buf.extend_from_slice(get_timestamp().as_bytes());
+        if let Some(timestamp) = &self.transact_time {
+            buf.extend_from_slice(timestamp.as_bytes());
+        } else {
+            buf.extend_from_slice(get_timestamp().as_bytes());
+        }
         buf.push(0x01);
 
         buf.extend_from_slice(itoa_buf.format(TAG_OPEN_CLOSE).as_bytes());
@@ -131,6 +136,7 @@ impl FIXMessage for NewOrderSingle {
         let mut price: Option<u32> = None;
         let mut side: Option<Side> = None;
         let mut symbol: Option<String> = None;
+        let mut transact_time: Option<String> = None;
         let mut open_close: Option<OpenClose> = None;
         let mut security_type: Option<String> = None;
         let mut put_or_call = None;
@@ -147,6 +153,7 @@ impl FIXMessage for NewOrderSingle {
                 TAG_PRICE => price = from_utf8(value).ok().and_then(|v| v.parse().ok()),
                 TAG_SIDE => side = value.first().and_then(|&b| Side::try_from(b).ok()),
                 TAG_SYMBOL => symbol = from_utf8(value).ok().map(str::to_owned),
+                TAG_TRANSACT_TIME => transact_time = from_utf8(value).ok().map(str::to_owned),
                 TAG_OPEN_CLOSE => {
                     open_close = value.first().and_then(|&b| OpenClose::try_from(b).ok())
                 }
@@ -177,6 +184,7 @@ impl FIXMessage for NewOrderSingle {
             price: price.ok_or("Missing Price")?,
             side: side.ok_or("Missing Side")?,
             symbol: symbol.ok_or("Missing Symbol")?,
+            transact_time: Some(transact_time.ok_or("Missing TransactTime")?),
             open_close: open_close.ok_or("Missing OpenClose")?,
             security_type: security_type.ok_or("Missing SecurityType")?,
             put_or_call: put_or_call.ok_or("Missing PutOrCall")?,

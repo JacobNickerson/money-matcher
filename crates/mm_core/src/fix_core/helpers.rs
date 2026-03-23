@@ -181,6 +181,16 @@ pub fn convert_timestamp(value: &[u8]) -> Option<u64> {
     Some((offset_dt.unix_timestamp_nanos() / 1_000_000) as u64)
 }
 
+pub fn convert_timestamp_string(timestamp_str: String) -> Option<u64> {
+    let format =
+        format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
+
+    let parsed = PrimitiveDateTime::parse(&timestamp_str, &format).ok()?;
+    let offset_dt = parsed.assume_utc();
+
+    Some((offset_dt.unix_timestamp_nanos() / 1_000_000) as u64)
+}
+
 pub fn get_maturity_month_year() -> String {
     let now = get_local_now();
     let format = format_description!("[year][month]");

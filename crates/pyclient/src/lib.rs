@@ -343,6 +343,7 @@ mod pyclient {
                 price: 666,
                 side: Side::Buy,
                 symbol: "OSISTRING".to_string(),
+                transact_time: None,
                 open_close: OpenClose::Open,
                 security_type: "OPT".to_string(),
                 put_or_call: PutOrCall::Call,

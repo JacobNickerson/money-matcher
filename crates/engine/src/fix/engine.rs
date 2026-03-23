@@ -1,6 +1,9 @@
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
+use mm_core::fix_core::helpers::convert_timestamp_string;
+use mm_core::fix_core::messages::BusinessMessage;
+use mm_core::fix_core::messages::types::Side;
 use mm_core::fix_core::{
     messages::{
         EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
@@ -8,8 +11,9 @@ use mm_core::fix_core::{
     },
     session::{Session, SessionState},
 };
-use ringbuf::HeapProd;
+use mm_core::lob_core::market_orders::{Order, OrderSide, OrderType};
 use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::{HeapCons, HeapProd};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
@@ -24,8 +28,8 @@ pub struct FixEngine {
     connections: HashMap<Token, Session>,
     sessions: HashMap<Arc<str>, (Token, SessionState)>,
     listener: TcpListener,
-    lob_tx: ringbuf::HeapProd<FIXEvent>,
-    outbound_rx: ringbuf::HeapCons<FIXEvent>,
+    lob_tx: HeapProd<FIXEvent>,
+    outbound_rx: HeapCons<FIXEvent>,
     waker: Arc<Waker>,
     poll: Poll,
     token_counter: usize,
@@ -35,19 +39,17 @@ pub struct FixEngine {
 }
 
 impl FixEngine {
-    pub fn new(
-        addr: SocketAddr,
-        comp_id: String,
-        lob_tx: ringbuf::HeapProd<FIXEvent>,
-    ) -> io::Result<(Self, FixEngineHandler)> {
+    pub fn new(addr: SocketAddr, comp_id: String) -> io::Result<(Self, FixEngineHandler)> {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE)?);
+        let (lob_tx, mut lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
 
         let (outbound_tx, outbound_rx) = ringbuf::HeapRb::<FIXEvent>::new(1024).split();
 
         let handler = FixEngineHandler {
             outbound_tx,
+            lob_rx,
             waker: waker.clone(),
         };
 
@@ -395,6 +397,7 @@ impl FixEngine {
 
 pub struct FixEngineHandler {
     outbound_tx: HeapProd<FIXEvent>,
+    lob_rx: HeapCons<FIXEvent>,
     waker: Arc<Waker>,
 }
 
@@ -402,6 +405,32 @@ impl FixEngineHandler {
     pub fn send_message(&mut self, event: FIXEvent) {
         self.outbound_tx.try_push(event).ok();
         self.waker.wake().ok();
+    }
+
+    pub fn get_order(&mut self) -> Option<Order> {
+        if let Some(cmd) = self.lob_rx.try_pop() {
+            match cmd.payload {
+                FIXPayload::Business(msg) => match msg {
+                    BusinessMessage::NewOrderSingle(order) => Some(Order {
+                        order_id: order.cl_ord_id,
+                        side: match order.side {
+                            Side::Buy => OrderSide::Bid,
+                            Side::Sell => OrderSide::Ask,
+                        },
+                        timestamp: convert_timestamp_string(order.transact_time.expect(""))
+                            .expect(""),
+                        kind: OrderType::Limit {
+                            qty: order.qty.into(),
+                            price: order.price.into(),
+                        },
+                    }),
+                    _ => None,
+                },
+                _ => None,
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -421,53 +450,17 @@ mod tests {
         for _ in 0..50 {
             println!("");
         }
-        let (lob_tx, mut lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
 
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
-        let (mut engine, mut handler) =
-            FixEngine::new(addr, "ENGINE01".to_owned(), lob_tx).unwrap();
+        let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
 
         let engine_thread = thread::spawn(move || {
             engine.run();
         });
 
         loop {
-            if let Some(cmd) = lob_rx.try_pop() {
-                match cmd.payload {
-                    FIXPayload::Business(msg) => match msg {
-                        BusinessMessage::NewOrderSingle(order) => {
-                            println!("Read Order | {:?} | {:?} |", cmd.comp_id, order);
-
-                            let report = ExecutionReport {
-                                cl_ord_id: order.cl_ord_id,
-                                cum_qty: 0,
-                                exec_id: "EXEC12345".to_string(),
-                                exec_trans_type: ExecTransType::New,
-                                order_id: "ORDER123".to_string(),
-                                order_qty: order.qty,
-                                ord_status: OrdStatus::New,
-                                security_id: "SECURITYID".to_string(),
-                                side: order.side,
-                                symbol: order.symbol,
-                                open_close: order.open_close,
-                                exec_type: ExecType::New,
-                                leaves_qty: order.qty,
-                                security_type: order.security_type,
-                                put_or_call: order.put_or_call,
-                                strike_price: order.strike_price,
-                                customer_or_firm: order.customer_or_firm,
-                                maturity_date: "202603".to_string(),
-                            };
-
-                            handler.send_message(FIXEvent {
-                                comp_id: cmd.comp_id,
-                                payload: FIXPayload::Report(ReportMessage::ExecutionReport(report)),
-                            });
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
+            if let Some(order) = handler.get_order() {
+                println!("Read Order | {:?} |", order);
             }
         }
 
