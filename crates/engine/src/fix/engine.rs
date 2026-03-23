@@ -1,9 +1,7 @@
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
 use mio::{Events, Interest, Poll, Token, Waker};
-use mm_core::fix_core::helpers::convert_timestamp_string;
-use mm_core::fix_core::messages::BusinessMessage;
-use mm_core::fix_core::messages::types::Side;
+use mm_core::fix_core::messages::FIXBusinessMessage;
 use mm_core::fix_core::{
     messages::{
         EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
@@ -11,7 +9,7 @@ use mm_core::fix_core::{
     },
     session::{Session, SessionState},
 };
-use mm_core::lob_core::market_orders::{Order, OrderSide, OrderType};
+use mm_core::lob_core::market_orders::Order;
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd};
 use std::collections::HashMap;
@@ -410,22 +408,7 @@ impl FixEngineHandler {
     pub fn get_order(&mut self) -> Option<Order> {
         if let Some(cmd) = self.lob_rx.try_pop() {
             match cmd.payload {
-                FIXPayload::Business(msg) => match msg {
-                    BusinessMessage::NewOrderSingle(order) => Some(Order {
-                        order_id: order.cl_ord_id,
-                        side: match order.side {
-                            Side::Buy => OrderSide::Bid,
-                            Side::Sell => OrderSide::Ask,
-                        },
-                        timestamp: convert_timestamp_string(order.transact_time.expect(""))
-                            .expect(""),
-                        kind: OrderType::Limit {
-                            qty: order.qty.into(),
-                            price: order.price.into(),
-                        },
-                    }),
-                    _ => None,
-                },
+                FIXPayload::Business(msg) => Some(msg.to_order()),
                 _ => None,
             }
         } else {
@@ -437,11 +420,6 @@ impl FixEngineHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mm_core::fix_core::messages::{
-        BusinessMessage, ReportMessage,
-        execution_report::ExecutionReport,
-        types::{ExecTransType, ExecType, OrdStatus},
-    };
     use std::thread;
 
     #[test]

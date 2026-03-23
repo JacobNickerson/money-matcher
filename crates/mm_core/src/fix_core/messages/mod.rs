@@ -1,8 +1,11 @@
-use crate::fix_core::messages::{
-    execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
-    new_order_single::NewOrderSingle, order_cancel::OrderCancel,
-    order_cancel_reject::OrderCancelReject, resend_request::ResendRequest,
-    test_request::TestRequest,
+use crate::{
+    fix_core::messages::{
+        execution_report::ExecutionReport, heartbeat::Heartbeat, logon::Logon,
+        new_order_single::NewOrderSingle, order_cancel::OrderCancel,
+        order_cancel_reject::OrderCancelReject, order_cancel_replace::OrderCancelReplace,
+        resend_request::ResendRequest, test_request::TestRequest,
+    },
+    lob_core::market_orders::{Order, OrderType},
 };
 use pyo3::{pyclass, pymethods};
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pymethods};
@@ -11,6 +14,13 @@ use std::sync::Arc;
 pub trait FIXMessage {
     fn as_bytes(&self) -> Vec<u8>;
     fn from_bytes(msg: &[u8]) -> Result<Self, &str>
+    where
+        Self: Sized;
+}
+
+pub trait FIXBusinessMessage {
+    fn to_order(self) -> Order;
+    fn from_order(order: &Order) -> Result<Self, &'static str>
     where
         Self: Sized;
 }
@@ -158,6 +168,7 @@ impl ReportMessage {
 pub enum BusinessMessage {
     NewOrderSingle(NewOrderSingle),
     OrderCancel(OrderCancel),
+    OrderCancelReplace(OrderCancelReplace),
 }
 
 impl BusinessMessage {
@@ -165,6 +176,7 @@ impl BusinessMessage {
         match self {
             BusinessMessage::NewOrderSingle(_) => FIX_MESSAGE_TYPE_NEW_ORDER,
             BusinessMessage::OrderCancel(_) => FIX_MESSAGE_TYPE_ORDER_CANCEL,
+            BusinessMessage::OrderCancelReplace(_) => FIX_MESSAGE_TYPE_ORDER_CANCEL,
         }
     }
 
@@ -172,6 +184,35 @@ impl BusinessMessage {
         match self {
             BusinessMessage::NewOrderSingle(msg) => msg.as_bytes(),
             BusinessMessage::OrderCancel(msg) => msg.as_bytes(),
+            BusinessMessage::OrderCancelReplace(msg) => msg.as_bytes(),
+        }
+    }
+}
+
+impl FIXBusinessMessage for BusinessMessage {
+    fn to_order(self) -> Order {
+        match self {
+            BusinessMessage::NewOrderSingle(msg) => msg.to_order(),
+            BusinessMessage::OrderCancel(msg) => msg.to_order(),
+            BusinessMessage::OrderCancelReplace(msg) => msg.to_order(),
+        }
+    }
+
+    fn from_order(order: &Order) -> Result<Self, &'static str>
+    where
+        Self: Sized,
+    {
+        match order.kind {
+            OrderType::Limit { .. } => Ok(BusinessMessage::NewOrderSingle(
+                NewOrderSingle::from_order(order)?,
+            )),
+            OrderType::Cancel { .. } => Ok(BusinessMessage::OrderCancel(OrderCancel::from_order(
+                order,
+            )?)),
+            OrderType::Update { .. } => Ok(BusinessMessage::OrderCancelReplace(
+                OrderCancelReplace::from_order(order)?,
+            )),
+            _ => Err("Unsupported order kind"),
         }
     }
 }

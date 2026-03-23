@@ -1,13 +1,16 @@
-use crate::fix_core::{
-    helpers::{get_maturity_month_year, get_timestamp},
-    iterator::FixIterator,
-    messages::{
-        FIXMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM, TAG_HANDL_INST, TAG_MATURITY_DAY,
-        TAG_MATURITY_MONTH_YEAR, TAG_OPEN_CLOSE, TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_PRICE,
-        TAG_PUT_OR_CALL, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL,
-        TAG_TRANSACT_TIME,
-        types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
+use crate::{
+    fix_core::{
+        helpers::{convert_timestamp, get_maturity_month_year, get_timestamp, to_timestamp},
+        iterator::FixIterator,
+        messages::{
+            FIXBusinessMessage, FIXMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM, TAG_HANDL_INST,
+            TAG_MATURITY_DAY, TAG_MATURITY_MONTH_YEAR, TAG_OPEN_CLOSE, TAG_ORD_TYPE, TAG_ORDER_QTY,
+            TAG_PRICE, TAG_PUT_OR_CALL, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL,
+            TAG_TRANSACT_TIME,
+            types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
+        },
     },
+    lob_core::market_orders::{Order, OrderSide, OrderType},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
@@ -39,6 +42,53 @@ pub struct NewOrderSingle {
     pub strike_price: u32,
     pub customer_or_firm: CustomerOrFirm,
     pub maturity_day: u8,
+}
+
+impl FIXBusinessMessage for NewOrderSingle {
+    fn to_order(self) -> Order {
+        Order {
+            order_id: self.cl_ord_id,
+            side: match self.side {
+                Side::Buy => OrderSide::Bid,
+                Side::Sell => OrderSide::Ask,
+            },
+            timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
+            kind: OrderType::Limit {
+                qty: self.qty.into(),
+                price: self.price.into(),
+            },
+        }
+    }
+
+    fn from_order(order: &Order) -> Result<Self, &'static str>
+    where
+        Self: Sized,
+    {
+        let (qty, price) = match order.kind {
+            OrderType::Limit { qty, price } => (qty as u32, price as u32),
+            _ => return Err("Unsupported order.kind"),
+        };
+
+        Ok(Self {
+            cl_ord_id: order.order_id,
+            handl_inst: 0,
+            qty,
+            ord_type: OrdType::Limit,
+            price,
+            side: match order.side {
+                OrderSide::Bid => Side::Buy,
+                OrderSide::Ask => Side::Sell,
+            },
+            symbol: String::new(),
+            transact_time: Some(to_timestamp(order.timestamp)),
+            open_close: OpenClose::Open,
+            security_type: String::new(),
+            put_or_call: PutOrCall::Put,
+            strike_price: 0,
+            customer_or_firm: CustomerOrFirm::Customer,
+            maturity_day: 0,
+        })
+    }
 }
 
 impl FIXMessage for NewOrderSingle {

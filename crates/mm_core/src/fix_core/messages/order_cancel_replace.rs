@@ -1,12 +1,16 @@
-use crate::fix_core::{
-    helpers::{get_maturity_month_year, get_timestamp},
-    iterator::FixIterator,
-    messages::{
-        FIXMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM, TAG_HANDL_INST, TAG_MATURITY_MONTH_YEAR,
-        TAG_OPEN_CLOSE, TAG_ORD_TYPE, TAG_ORDER_QTY, TAG_ORIG_CL_ORD_ID, TAG_PUT_OR_CALL,
-        TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL, TAG_TRANSACT_TIME,
-        types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
+use crate::{
+    fix_core::{
+        helpers::{convert_timestamp, get_maturity_month_year, get_timestamp, to_timestamp},
+        iterator::FixIterator,
+        messages::{
+            FIXBusinessMessage, FIXMessage, TAG_CL_ORD_ID, TAG_CUSTOMER_OR_FIRM, TAG_HANDL_INST,
+            TAG_MATURITY_MONTH_YEAR, TAG_OPEN_CLOSE, TAG_ORD_TYPE, TAG_ORDER_QTY,
+            TAG_ORIG_CL_ORD_ID, TAG_PUT_OR_CALL, TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE,
+            TAG_SYMBOL, TAG_TRANSACT_TIME,
+            types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
+        },
     },
+    lob_core::market_orders::{Order, OrderSide, OrderType},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
@@ -31,6 +35,7 @@ pub struct OrderCancelReplace {
     pub side: Side,
     /// Must match the original order.
     pub symbol: String,
+    pub transact_time: Option<String>,
     /// Must match the original order.
     pub open_close: OpenClose,
     /// Must match the original order.
@@ -41,6 +46,53 @@ pub struct OrderCancelReplace {
     pub strike_price: u32,
     /// Must match the original order.
     pub customer_or_firm: CustomerOrFirm,
+}
+
+impl FIXBusinessMessage for OrderCancelReplace {
+    fn to_order(self) -> Order {
+        Order {
+            order_id: self.cl_ord_id,
+            side: match self.side {
+                Side::Buy => OrderSide::Bid,
+                Side::Sell => OrderSide::Ask,
+            },
+            timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
+            kind: OrderType::Update {
+                old_id: self.orig_cl_ord_id,
+                qty: self.qty.into(),
+                price: 0_u64,
+            },
+        }
+    }
+
+    fn from_order(order: &Order) -> Result<Self, &'static str>
+    where
+        Self: Sized,
+    {
+        let (old_id, qty) = match order.kind {
+            OrderType::Update { old_id, qty, .. } => (old_id, qty as u32),
+            _ => return Err("Unsupported order kind"),
+        };
+
+        Ok(Self {
+            cl_ord_id: order.order_id,
+            handl_inst: 0,
+            qty,
+            ord_type: OrdType::Limit,
+            orig_cl_ord_id: old_id,
+            side: match order.side {
+                OrderSide::Bid => Side::Buy,
+                OrderSide::Ask => Side::Sell,
+            },
+            symbol: String::new(),
+            transact_time: Some(to_timestamp(order.timestamp)),
+            open_close: OpenClose::Close,
+            security_type: String::new(),
+            put_or_call: PutOrCall::Call,
+            strike_price: 0,
+            customer_or_firm: CustomerOrFirm::Customer,
+        })
+    }
 }
 
 impl FIXMessage for OrderCancelReplace {
@@ -85,7 +137,11 @@ impl FIXMessage for OrderCancelReplace {
 
         buf.extend_from_slice(itoa_buf.format(TAG_TRANSACT_TIME).as_bytes());
         buf.push(b'=');
-        buf.extend_from_slice(get_timestamp().as_bytes());
+        if let Some(timestamp) = &self.transact_time {
+            buf.extend_from_slice(timestamp.as_bytes());
+        } else {
+            buf.extend_from_slice(get_timestamp().as_bytes());
+        }
         buf.push(0x01);
 
         buf.extend_from_slice(itoa_buf.format(TAG_OPEN_CLOSE).as_bytes());
@@ -129,6 +185,7 @@ impl FIXMessage for OrderCancelReplace {
         let mut orig_cl_ord_id = None;
         let mut side = None;
         let mut symbol = None;
+        let mut transact_time = None;
         let mut open_close = None;
         let mut security_type = None;
         let mut put_or_call = None;
@@ -161,6 +218,7 @@ impl FIXMessage for OrderCancelReplace {
                 TAG_SYMBOL => {
                     symbol = from_utf8(value).ok().map(str::to_owned);
                 }
+                TAG_TRANSACT_TIME => transact_time = from_utf8(value).ok().map(str::to_owned),
                 TAG_OPEN_CLOSE => {
                     open_close = value
                         .first()
@@ -197,6 +255,7 @@ impl FIXMessage for OrderCancelReplace {
             orig_cl_ord_id: orig_cl_ord_id.ok_or("Missing OrigClOrdID")?,
             side: side.ok_or("Missing Side")?,
             symbol: symbol.ok_or("Missing Symbol")?,
+            transact_time: Some(transact_time.ok_or("Missing TransactTime")?),
             open_close: open_close.ok_or("Missing OpenClose")?,
             security_type: security_type.ok_or("Missing SecurityType")?,
             put_or_call: put_or_call.ok_or("Missing PutOrCall")?,
@@ -220,6 +279,7 @@ mod tests {
             orig_cl_ord_id: 456,
             side: Side::Buy,
             symbol: "str1".to_string(),
+            transact_time: None,
             open_close: OpenClose::Open,
             security_type: "OPT".to_string(),
             put_or_call: PutOrCall::Call,
@@ -251,6 +311,7 @@ mod tests {
             orig_cl_ord_id: 456,
             side: Side::Buy,
             symbol: "str1".to_string(),
+            transact_time: None,
             open_close: OpenClose::Open,
             security_type: "OPT".to_string(),
             put_or_call: PutOrCall::Call,

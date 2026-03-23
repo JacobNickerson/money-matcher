@@ -170,18 +170,15 @@ pub fn get_timestamp() -> String {
     now.format(&format).unwrap_or_default()
 }
 
-pub fn convert_timestamp(value: &[u8]) -> Option<u64> {
-    let timestamp_str = from_utf8(value).ok()?;
+pub fn to_timestamp(timestamp: u64) -> String {
+    let now =
+        time::OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1_000_000).unwrap();
     let format =
         format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
-
-    let parsed = PrimitiveDateTime::parse(timestamp_str, &format).ok()?;
-    let offset_dt = parsed.assume_utc();
-
-    Some((offset_dt.unix_timestamp_nanos() / 1_000_000) as u64)
+    now.format(&format).unwrap_or_default()
 }
 
-pub fn convert_timestamp_string(timestamp_str: String) -> Option<u64> {
+pub fn convert_timestamp(timestamp_str: String) -> Option<u64> {
     let format =
         format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
 
