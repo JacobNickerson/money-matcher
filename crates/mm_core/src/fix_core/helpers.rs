@@ -1,80 +1,72 @@
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use std::str::from_utf8;
+use time::macros::format_description;
+use time::{OffsetDateTime, PrimitiveDateTime};
 
 pub fn write_fix_message(
-    msg_type: &'static [u8],
+    msg_type: u8,
     outbound_sequence_number: &u32,
     sender_comp_id: &str,
     target_comp_id: &str,
     body: &Vec<u8>,
 ) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(256);
-
-    write_header(
-        &mut buf,
-        msg_type,
-        outbound_sequence_number,
-        sender_comp_id,
-        target_comp_id,
-    );
-
-    buf.extend_from_slice(body);
-
-    write_wrapper(&mut buf);
-
-    buf
-}
-
-pub fn write_header(
-    write_buf: &mut Vec<u8>,
-    msg_type: &'static [u8],
-    outbound_sequence_number: &u32,
-    sender_comp_id: &str,
-    target_comp_id: &str,
-) {
     let mut itoa_buf = itoa::Buffer::new();
+
+    let seq_str = itoa_buf.format(*outbound_sequence_number);
+    let timestamp = get_timestamp();
+
+    let body_length = 21
+        + seq_str.len()
+        + sender_comp_id.len()
+        + timestamp.len()
+        + target_comp_id.len()
+        + body.len();
+
+    let mut buf = Vec::with_capacity(body_length + 30);
+
+    buf.extend_from_slice(b"8=FIX.4.2\x01");
+
+    // BodyLength
+    buf.extend_from_slice(b"9=");
+    buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
+    buf.push(0x01);
 
     // Message Type
-    write_buf.extend_from_slice(b"35=");
-    write_buf.extend_from_slice(msg_type);
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"35=");
+    buf.push(msg_type);
+    buf.push(0x01);
 
     // Message Sequence Number
-    write_buf.extend_from_slice(b"34=");
-    write_buf.extend_from_slice(itoa_buf.format(*outbound_sequence_number).as_bytes());
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"34=");
+    buf.extend_from_slice(itoa_buf.format(*outbound_sequence_number).as_bytes());
+    buf.push(0x01);
 
     // Sender Comp ID
-    write_buf.extend_from_slice(b"49=");
-    write_buf.extend_from_slice(sender_comp_id.as_bytes());
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"49=");
+    buf.extend_from_slice(sender_comp_id.as_bytes());
+    buf.push(0x01);
 
     // Sending Time
-    write_buf.extend_from_slice(b"52=");
-    write_buf.extend_from_slice(get_timestamp().as_bytes());
-    write_buf.push(0x01);
+    buf.extend_from_slice(b"52=");
+    buf.extend_from_slice(timestamp.as_bytes());
+    buf.push(0x01);
 
     // Target Comp ID
-    write_buf.extend_from_slice(b"56=");
-    write_buf.extend_from_slice(target_comp_id.as_bytes());
-    write_buf.push(0x01);
-}
+    buf.extend_from_slice(b"56=");
+    buf.extend_from_slice(target_comp_id.as_bytes());
+    buf.push(0x01);
 
-pub fn write_wrapper(write_buf: &mut Vec<u8>) {
-    let body_length = write_buf.len();
-    let mut itoa_buf = itoa::Buffer::new();
-    let mut final_buf: Vec<u8> = Vec::with_capacity(body_length + 64);
+    // Body
+    buf.extend_from_slice(body);
 
-    final_buf.extend_from_slice(b"8=FIX.4.2\x01");
+    // Trailer
+    let checksum: u32 = calculate_checksum(buf.as_slice());
+    buf.extend_from_slice(b"10=");
+    buf.push(b'0' + (checksum / 100) as u8);
+    buf.push(b'0' + ((checksum / 10) % 10) as u8);
+    buf.push(b'0' + (checksum % 10) as u8);
+    buf.push(0x01);
 
-    final_buf.extend_from_slice(b"9=");
-    final_buf.extend_from_slice(itoa_buf.format(body_length).as_bytes());
-    final_buf.push(0x01);
-
-    final_buf.extend_from_slice(write_buf);
-    *write_buf = final_buf;
-
-    write_trailer(write_buf);
+    buf
 }
 
 pub fn calculate_checksum(message: &[u8]) -> u32 {
@@ -85,16 +77,6 @@ pub fn calculate_checksum(message: &[u8]) -> u32 {
     }
 
     sum % 256
-}
-
-pub fn write_trailer(write_buf: &mut Vec<u8>) {
-    // Checksum
-    let checksum: u32 = calculate_checksum(write_buf.as_slice());
-    write_buf.extend_from_slice(b"10=");
-    write_buf.push(b'0' + (checksum / 100) as u8);
-    write_buf.push(b'0' + ((checksum / 10) % 10) as u8);
-    write_buf.push(b'0' + (checksum % 10) as u8);
-    write_buf.push(0x01);
 }
 
 pub fn print_message(message: &Vec<u8>) {
@@ -123,14 +105,14 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
         return None;
     };
 
-    let first_delimiter = read_buffer.windows(1).position(|f| f == b"\x01")?;
+    let first_delimiter = read_buffer.iter().position(|&b| b == 0x01)?;
     if !read_buffer[first_delimiter + 1..].starts_with(b"9=") {
         return invalidate_message(read_buffer);
     }
     let body_len_start = first_delimiter + 1;
     let body_len_end = read_buffer[body_len_start..]
         .iter()
-        .position(|&f| f == b'\x01')?
+        .position(|&b| b == 0x01)?
         + body_len_start;
 
     let body_len: usize = match from_utf8(&read_buffer[body_len_start + 2..body_len_end])
@@ -177,53 +159,50 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
     Some(read_buffer.drain(0..total_len).collect())
 }
 
-pub fn get_timestamp() -> String {
-    let now = Local::now();
-    now.format("%Y%m%d-%H:%M:%S.%3f").to_string()
+fn get_local_now() -> OffsetDateTime {
+    OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc())
 }
 
-pub fn convert_timestamp(value: &[u8]) -> Option<u64> {
-    let timestamp = from_utf8(value).ok()?;
-    let ndt = NaiveDateTime::parse_from_str(timestamp, "%Y%m%d-%H:%M:%S%.3f").ok()?;
-    Some(Utc.from_utc_datetime(&ndt).timestamp_millis() as u64)
+pub fn get_timestamp() -> String {
+    let now = get_local_now();
+    let format =
+        format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
+    now.format(&format).unwrap_or_default()
+}
+
+pub fn to_timestamp(timestamp: u64) -> String {
+    let now =
+        time::OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1_000_000).unwrap();
+    let format =
+        format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
+    now.format(&format).unwrap_or_default()
+}
+
+pub fn convert_timestamp(timestamp_str: String) -> Option<u64> {
+    let format =
+        format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
+
+    let parsed = PrimitiveDateTime::parse(&timestamp_str, &format).ok()?;
+    let offset_dt = parsed.assume_utc();
+
+    Some((offset_dt.unix_timestamp_nanos() / 1_000_000) as u64)
 }
 
 pub fn get_maturity_month_year() -> String {
-    let now = Local::now();
-    now.format("%Y%m").to_string()
+    let now = get_local_now();
+    let format = format_description!("[year][month]");
+    now.format(&format).unwrap_or_default()
 }
 
 pub fn get_maturity_month_year_day() -> String {
-    let now = Local::now();
-    now.format("%Y%m%d").to_string()
+    let now = get_local_now();
+    let format = format_description!("[year][month][day]");
+    now.format(&format).unwrap_or_default()
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::fix_core::messages::FIX_MESSAGE_TYPE_NEW_ORDER;
-
-    #[test]
-    fn test_write_header_field_values() {
-        let mut buf = Vec::with_capacity(256);
-
-        write_header(
-            &mut buf,
-            &FIX_MESSAGE_TYPE_NEW_ORDER,
-            &1,
-            &"str1".to_string(),
-            &"str2".to_string(),
-        );
-
-        let s = String::from_utf8_lossy(&buf);
-
-        assert!(s.contains("35=D"));
-        assert!(s.contains("34=1"));
-        assert!(s.contains("49=str1"));
-        assert!(s.contains("52="));
-        assert!(s.contains("56=str2"));
-        assert!(buf.contains(&0x01));
-    }
 
     #[test]
     fn test_calculate_checksum() {
@@ -231,18 +210,5 @@ mod tests {
         let c: u32 = (b'A' as u32 + b'B' as u32 + b'C' as u32) % 256;
 
         assert_eq!(calculate_checksum(b), c);
-    }
-
-    #[test]
-    fn test_write_trailer_appends_checksum() {
-        let mut buf = Vec::with_capacity(256);
-        buf.extend_from_slice(b"35=D\x01");
-
-        write_trailer(&mut buf);
-
-        let s = String::from_utf8_lossy(&buf);
-
-        assert!(s.contains("10="));
-        assert!(buf.ends_with(&[0x01]));
     }
 }

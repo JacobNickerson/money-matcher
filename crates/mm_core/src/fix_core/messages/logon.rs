@@ -1,9 +1,6 @@
 use crate::fix_core::{
     iterator::FixIterator,
-    messages::{
-        FIX_MESSAGE_TYPE_LOGON, FIXMessage, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT,
-        types::EncryptMethod,
-    },
+    messages::{FIXMessage, TAG_ENCRYPT_METHOD, TAG_HEART_BT_INT, types::EncryptMethod},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
@@ -22,18 +19,16 @@ pub struct Logon {
 }
 
 impl FIXMessage for Logon {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_LOGON;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::new();
 
-        buf.extend_from_slice(TAG_ENCRYPT_METHOD);
+        buf.extend_from_slice(itoa_buf.format(TAG_ENCRYPT_METHOD).as_bytes());
         buf.push(b'=');
         buf.push(self.encrypt_method as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_HEART_BT_INT);
+        buf.extend_from_slice(itoa_buf.format(TAG_HEART_BT_INT).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.heart_bt_int).as_bytes());
         buf.push(0x01);

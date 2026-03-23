@@ -1,8 +1,8 @@
 use crate::fix_core::{
     iterator::FixIterator,
     messages::{
-        FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT, FIXMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO,
-        TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID, TAG_TEXT,
+        FIXMessage, TAG_CL_ORD_ID, TAG_CXL_REJ_RESPONSE_TO, TAG_ORD_STATUS, TAG_ORIG_CL_ORD_ID,
+        TAG_TEXT,
         types::{CxlRejResponseTo, OrdStatus},
     },
 };
@@ -28,33 +28,31 @@ pub struct OrderCancelReject {
 }
 
 impl FIXMessage for OrderCancelReject {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_ORDER_CANCEL_REJECT;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(256);
 
-        buf.extend_from_slice(TAG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORD_STATUS);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORD_STATUS).as_bytes());
         buf.push(b'=');
         buf.push(self.ord_status as u8);
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_ORIG_CL_ORD_ID);
+        buf.extend_from_slice(itoa_buf.format(TAG_ORIG_CL_ORD_ID).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.orig_cl_ord_id).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_TEXT);
+        buf.extend_from_slice(itoa_buf.format(TAG_TEXT).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(self.text.as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_CXL_REJ_RESPONSE_TO);
+        buf.extend_from_slice(itoa_buf.format(TAG_CXL_REJ_RESPONSE_TO).as_bytes());
         buf.push(b'=');
         buf.push(self.cxl_rej_response_to as u8);
         buf.push(0x01);
