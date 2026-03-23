@@ -44,37 +44,7 @@ class CreateBotModal(QDialog):
         layout.addWidget(title)
 
         layout.addWidget(self.input_field("Bot Name", " "))
-        self.strategy_list = QComboBox()
-        self.strategy_list.setCursor(Qt.PointingHandCursor)
-        self.strategy_list.setFont(QFont("Inter", 10))
-        self.strategy_list.setStyleSheet("""
-            QComboBox {
-                background-color: #080808;
-                border: 1px solid #363636;
-                border-radius: 8px;
-                padding: 8px;
-                color: white;
-            }
-            QComboBox::drop-down {
-                border: none;
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 20px;
-            }
-            QComboBox::down-arrow {
-                image: url(../../resources/images/down-arrow.svg);
-                width: 16px;
-                height: 16px;
-                margin-right: 16px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #080808;
-                selection-background-color: #363636;
-                color: white;
-            }
-        """)
-        self.strategy_list.addItems(["Momentum", "Arbitrage", "Scalping"])
-        layout.addWidget(self.strategy_list)
+        layout.addWidget(self.strategy_list())
         layout.addWidget(self.input_field("First Order", "1.00"))
         layout.addWidget(self.input_field("Take Profit", "0.50"))
         layout.addWidget(self.input_field("Max. Extra Order", "5"))
@@ -83,13 +53,13 @@ class CreateBotModal(QDialog):
 
         layout.addStretch()
 
-        self.submit_btn = QPushButton("Create New Bot")
-        self.submit_btn.setMinimumHeight(32)
-        self.submit_btn.setMaximumHeight(44)
-        self.submit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.submit_btn.setFont(QFont("Inter", 12, QFont.DemiBold))
-        self.submit_btn.setCursor(Qt.PointingHandCursor)
-        self.submit_btn.setStyleSheet("""
+        submit_btn = QPushButton("Create New Bot")
+        submit_btn.setMinimumHeight(32)
+        submit_btn.setMaximumHeight(44)
+        submit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        submit_btn.setFont(QFont("Inter", 12, QFont.DemiBold))
+        submit_btn.setCursor(Qt.PointingHandCursor)
+        submit_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #FFFFFF;
                     color: #080808;
@@ -103,9 +73,9 @@ class CreateBotModal(QDialog):
                     background-color: #D9D9D9;
                 }
             """)
-        self.submit_btn.clicked.connect(self.accept)
+        submit_btn.clicked.connect(self.accept)
 
-        layout.addWidget(self.submit_btn)
+        layout.addWidget(submit_btn)
 
     def input_field(self, label_text, placeholder):
         container = QWidget()
@@ -138,7 +108,10 @@ class CreateBotModal(QDialog):
                 color: white;
             }
         """)
-        field.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        if (placeholder == " "):
+            field.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        else:
+            field.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         field_layout = QHBoxLayout()
         field_layout.setContentsMargins(0, 0, 0, 0)
@@ -168,6 +141,8 @@ class CreateBotModal(QDialog):
         list = QComboBox()
         list.setCursor(Qt.PointingHandCursor)
         list.setFont(QFont("Inter", 10))
+        list.setMinimumHeight(30)
+        list.setMaximumHeight(36)
         list.setStyleSheet("""
             QComboBox {
                 background-color: #080808;
@@ -197,7 +172,7 @@ class CreateBotModal(QDialog):
         list.addItems(["Momentum", "Arbitrage", "Scalping"])
 
         layout.addWidget(label)
-        layout.addLayout(list)
+        layout.addWidget(list)
 
         return container
 
@@ -224,7 +199,7 @@ class Header(QWidget):
 
         layout.addStretch()
 
-        self.new_btn = QPushButton("Create New Bot")
+        self.new_btn = QPushButton(" Create New Bot")
         self.new_btn.setIcon(QIcon("../../resources/images/plus.svg"))
 
         self.new_btn.setCursor(Qt.PointingHandCursor)
@@ -238,10 +213,8 @@ class Header(QWidget):
                 background-color: #FFFFFF;
                 color: #080808;
                 border: none;
-                text-align: center;
                 border-radius: 8px;
-                padding: 0px 12px 0px 12px;
-                spacing: 12px;
+                padding: 0px 12px;
             }
         """)
         self.new_btn.setIconSize(QSize(20, 20))
@@ -250,7 +223,7 @@ class Header(QWidget):
 
     def open_bot_modal(self):
         dialog = CreateBotModal(self)
-        #dialog.setWindowFlags(Qt.FramelessWindowHint)
+        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         dialog.exec()
 
 class StatusDelegate(QStyledItemDelegate):
