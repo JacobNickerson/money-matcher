@@ -2,8 +2,8 @@ use mm_core::{
     itch_core::{
         helpers::decode_u48,
         messages::{
-            ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE,
-            ITCH_MESSAGE_TYPE_ORDER_REPLACE,
+            ITCH_MESSAGE_TYPE_ADD_ORDER, ITCH_MESSAGE_TYPE_ORDER_CANCEL,
+            ITCH_MESSAGE_TYPE_ORDER_EXECUTED_WITH_PRICE, ITCH_MESSAGE_TYPE_ORDER_REPLACE,
         },
     },
     lob_core::{
@@ -120,9 +120,13 @@ impl ReceiverHandler {
                         order_id: order_reference_number,
                         side: side.try_into().unwrap(),
                         timestamp,
-                        kind: OrderType::Limit {
-                            qty: shares.into(),
-                            price: price.into(),
+                        kind: if price > 0 {
+                            OrderType::Limit {
+                                qty: shares.into(),
+                                price: price.into(),
+                            }
+                        } else {
+                            OrderType::Market { qty: shares.into() }
                         },
                     }),
                 })
@@ -167,6 +171,25 @@ impl ReceiverHandler {
                             qty: shares.into(),
                             price: price.into(),
                         },
+                    }),
+                })
+            }
+            ITCH_MESSAGE_TYPE_ORDER_CANCEL => {
+                if message_data.len() < 23 {
+                    return None;
+                }
+
+                let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
+                let order_reference_number =
+                    u64::from_be_bytes(message_data[11..19].try_into().ok()?);
+
+                Some(MarketEvent {
+                    timestamp,
+                    kind: MarketEventType::L3(L3Event {
+                        order_id: order_reference_number,
+                        side: OrderSide::Ask, // PLACEHOLDER
+                        timestamp,
+                        kind: OrderType::Cancel,
                     }),
                 })
             }

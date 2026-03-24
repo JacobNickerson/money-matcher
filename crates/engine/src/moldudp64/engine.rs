@@ -59,7 +59,7 @@ impl MoldEngine {
         socket.bind(&SockAddr::from(bind_addr)).expect("err");
         socket.set_multicast_ttl_v4(1).expect("err");
         socket
-            .set_multicast_if_v4(&Ipv4Addr::LOCALHOST)
+            .set_multicast_if_v4(&Ipv4Addr::UNSPECIFIED)
             .expect("err");
 
         let std_socket: UdpSocket = socket.into();
@@ -98,6 +98,25 @@ impl EventSink for MoldEngine {
                         qty.try_into().unwrap(),
                         *b"  stock ", // PLACEHOLDER
                         price as u32,
+                    );
+
+                    self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
+                    Self::push_event(&mut self.l3_tx, &buf);
+                }
+
+                OrderType::Market { qty } => {
+                    let mut buf = [0u8; 36];
+
+                    AddOrder::encode_into(
+                        &mut buf,
+                        0, // PLACEHOLDER
+                        self.current_tracking_number,
+                        event.timestamp,
+                        e.order_id,
+                        e.side as u8,
+                        qty.try_into().unwrap(),
+                        *b"  stock ", // PLACEHOLDER
+                        0u32,
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
