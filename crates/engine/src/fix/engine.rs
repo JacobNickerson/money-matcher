@@ -41,7 +41,7 @@ impl FixEngine {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
         let waker = Arc::new(Waker::new(poll.registry(), WAKE)?);
-        let (lob_tx, mut lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
+        let (lob_tx, lob_rx) = ringbuf::HeapRb::<FIXEvent>::new(256).split();
 
         let (outbound_tx, outbound_rx) = ringbuf::HeapRb::<FIXEvent>::new(1024).split();
 

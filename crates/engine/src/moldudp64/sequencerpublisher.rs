@@ -2,11 +2,13 @@ use bytes::{BufMut, Bytes, BytesMut};
 use mm_core::moldudp64_core::sessions::SessionTable;
 use mm_core::moldudp64_core::types::Event;
 use ringbuf::{HeapCons, traits::Consumer};
+use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 pub struct SequencerPublisher {
     input: HeapCons<Event>,
+    cache: VecDeque<Event>,
 
     sequence_number: u64,
     session_table: SessionTable,
@@ -38,6 +40,7 @@ impl SequencerPublisher {
 
         Self {
             input,
+            cache: VecDeque::new(),
             sequence_number: 1,
             session_table: SessionTable::new(session_id),
             multicast_group,
@@ -68,15 +71,14 @@ impl SequencerPublisher {
     }
 
     pub fn run(mut self) {
-        let mut loop_counter: u8 = 0;
         loop {
-            if loop_counter == 0 && Instant::now() >= self.next_flush {
+            if Instant::now() >= self.next_flush {
                 self.flush();
             }
 
-            loop_counter = loop_counter.wrapping_add(1);
+            self.cache.extend(self.input.pop_iter());
 
-            if let Some(event) = self.input.try_pop() {
+            while let Some(event) = self.cache.pop_front() {
                 self.process_event(event);
             }
 
