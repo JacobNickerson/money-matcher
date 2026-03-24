@@ -100,12 +100,14 @@ mod tests {
         loop {
             let now = Instant::now();
             if let Some(event) = mold_client.next_event() {
-                println!("Received {:?}", event);
+                //println!("Received {:?}", event);
                 count = count + 1;
                 last_received = now;
             } else if count > 0 && now - last_received > Duration::from_secs(5) {
                 println!("\n\nReceived {} events", count);
                 count = 0;
+            } else {
+                std::hint::spin_loop();
             }
         }
     }

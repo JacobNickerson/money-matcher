@@ -25,11 +25,16 @@ impl ReceiverHandler {
     }
 
     pub fn run(mut self) {
+        self.socket.set_nonblocking(true).expect("err");
         let mut buf = [0u8; 2048];
 
         loop {
             let (len, _) = match self.socket.recv_from(&mut buf) {
                 Ok(v) => v,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::hint::spin_loop();
+                    continue;
+                }
                 Err(_) => continue,
             };
             self.handle_packet(&buf[..len]);
