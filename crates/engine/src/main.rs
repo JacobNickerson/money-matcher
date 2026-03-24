@@ -1,9 +1,199 @@
+use clap::Parser;
+use mm_core::lob_core::market_events::{EventSink, MarketEventType, SingleEventFeed};
+use mm_core::lob_core::{market_events::MarketEvent, market_orders::Order};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use ringbuf::{HeapRb, traits::*};
+use std::fs::File;
+use std::io::{self, Write};
+use std::net::SocketAddr;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread;
+use std::time::Instant;
+
+use crate::data_generator::event_source::PoissonSource;
+use crate::data_generator::order_generators::GaussianOrderGenerator;
+use crate::data_generator::rate_controllers::ConstantPoissonRate;
+use crate::data_generator::type_selectors::UniformTypeSelector;
+use crate::fix::engine::FixEngine;
+use crate::moldudp64::engine::MoldEngine;
+use crate::simulator::simulator::Simulator;
+
 mod data_generator;
 mod fix;
 mod lob;
 mod moldudp64;
 mod simulator;
 
+fn prob_parser(s: &str) -> Result<f64, String> {
+    let val: f64 = s.parse().map_err(|_| "invalid float")?;
+    if (0.0..=1.0).contains(&val) {
+        Ok(val)
+    } else {
+        Err("must be between 0 and 1".into())
+    }
+}
+
+fn positive_float_parser(s: &str) -> Result<f64, String> {
+    let val: f64 = s.parse().map_err(|_| "invalid float")?;
+    if val > 0.0 {
+        Ok(val)
+    } else {
+        Err("must be > 0.0".into())
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Synthetic order rate in orders/second
+    #[arg(long, default_value_t = 100_000.0)]
+    order_rate: f64,
+
+    /// Number of orders to generate before terminating, if unused the simulation runs indefinitely
+    #[arg(long)]
+    count: Option<u64>,
+
+    /// Proportion of synthetic orders that are bids vs asks, value must be between 0-1
+    #[arg(long, default_value_t = 0.5, value_parser = prob_parser)]
+    bid_rate: f64,
+
+    /// Proportion of synthetic orders that are new limits, value must be between 0-1 and must sum to 1 with the other event types
+    #[arg(long, default_value_t = 0.5, value_parser = prob_parser)]
+    new_limit_rate: f64,
+
+    /// Proportion of synthetic orders that are cancels, value must be between 0-1 and must sum to 1 with the other event types
+    #[arg(long, default_value_t = 0.4, value_parser = prob_parser)]
+    cancel_rate: f64,
+
+    /// Proportion of synthetic orders that are market orders, value must be between 0-1 and must sum to 1 with the other event types
+    #[arg(long, default_value_t = 0.05, value_parser = prob_parser)]
+    market_rate: f64,
+
+    /// Proportion of synthetic orders that are updates, value must be between 0-1 and must sum to 1 with the other event types
+    #[arg(long, default_value_t = 0.05, value_parser = prob_parser)]
+    update_rate: f64,
+
+    /// Average order price in cents, must be a positive, non-zero value
+    #[arg(long, default_value_t = 1000.0, value_parser = positive_float_parser)]
+    avg_price: f64,
+
+    /// Standard deviation of order price in cents, must be a positive, non-zero value
+    #[arg(long, default_value_t = 50.0, value_parser = positive_float_parser)]
+    price_dev: f64,
+
+    /// RNG seed for randomly sampled values, if unspecified a random one is picked
+    #[arg(long)]
+    seed: Option<u64>,
+}
+
 fn main() {
-    println!("Hello, world!");
+    let args = Args::parse();
+
+    let rng = match args.seed {
+        Some(seed) => ChaCha8Rng::seed_from_u64(seed),
+        None => ChaCha8Rng::try_from_rng(&mut rand::rng())
+            .expect("failed to get a seed from OS entropy"),
+    };
+
+    let running = Arc::new(AtomicBool::new(true));
+    let running_handler = Arc::clone(&running);
+
+    ctrlc::set_handler(move || {
+        running_handler.store(false, Ordering::Relaxed);
+        println!("Simulation terminated, stopping...");
+    })
+    .unwrap();
+
+    let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
+    let (mut market_event_prod, mut market_event_cons) =
+        HeapRb::<MarketEvent>::new(1 << 24).split();
+    println!("Initialized order queues");
+
+    let mut sim = Simulator::new(
+        PoissonSource::new(
+            ConstantPoissonRate::new(args.order_rate),
+            UniformTypeSelector::new(
+                args.bid_rate,
+                args.new_limit_rate,
+                args.market_rate,
+                args.cancel_rate,
+                args.update_rate,
+            ),
+            GaussianOrderGenerator::new(args.avg_price, args.price_dev),
+            rng.clone(),
+        ),
+        SingleEventFeed::new(market_event_prod),
+        user_order_cons,
+        rng.clone(),
+    );
+    println!("Spawned simulator");
+
+    let mut mold_engine = MoldEngine::start(Arc::clone(&running));
+    let broadcast_running = Arc::clone(&running);
+    let event_broadcast_thread = thread::spawn(move || {
+        while broadcast_running.load(Ordering::Relaxed) {
+            if let Some(order) = market_event_cons.try_pop() {
+                mold_engine.push(order);
+            }
+        }
+    });
+    println!("MoldEngine started");
+
+    let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
+    let gateway_running = Arc::clone(&running);
+    let order_gateway_thread = thread::spawn(move || {
+        let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
+        while gateway_running.load(Ordering::Relaxed) {
+            if let Some(order) = handler.get_order() {
+                // TODO: Find a more elegant way to handle this
+                while user_order_prod.try_push(order).is_err() {}
+            }
+        }
+    });
+    println!("FixEngine started");
+
+    let time = Instant::now();
+    println!("Running...");
+    let mut sim_step_count: u128 = 0;
+    match args.count {
+        Some(range) => {
+            for _ in 0..range {
+                #[allow(dead_code)]
+                sim.step();
+                sim_step_count += 1;
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+        }
+        None => {
+            while running.load(Ordering::Relaxed) {
+                #[allow(dead_code)]
+                sim.step();
+                sim_step_count += 1;
+            }
+        }
+    }
+    let elapsed = time.elapsed();
+    running.store(false, Ordering::Relaxed);
+
+    println!("Job finished");
+    println!("Simulation covered {} steps", sim_step_count);
+    println!(
+        "Sim time: {}s ({}ns)",
+        sim.time() as f64 / 1_000_000_000.0,
+        sim.time()
+    );
+    println!(
+        "Real time: {}s ({}ns)",
+        elapsed.as_nanos() as f64 / 1_000_000_000.0,
+        elapsed.as_nanos()
+    );
+
+    let _ = event_broadcast_thread.join();
+    let _ = order_gateway_thread.join();
 }
