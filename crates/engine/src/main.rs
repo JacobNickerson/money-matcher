@@ -8,6 +8,10 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::thread;
 use std::time::Instant;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering}
+};
 
 use crate::data_generator::event_source::PoissonSource;
 use crate::data_generator::order_generators::GaussianOrderGenerator;
@@ -87,13 +91,18 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+
     let rng = match args.seed {
         Some(seed) => ChaCha8Rng::seed_from_u64(seed),
         None => ChaCha8Rng::try_from_rng(&mut rand::rng()).expect("failed to get a seed from OS entropy"),
     };
+
+    let running = Arc::new(AtomicBool::new(true));
+
     let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
     let (mut market_event_prod, mut market_event_cons) =
         HeapRb::<MarketEvent>::new(1 << 24).split();
+    println!("Initialized order queues");
     let mut sim = Simulator::new(
         PoissonSource::new(
             ConstantPoissonRate::new(args.order_rate),
@@ -105,30 +114,39 @@ fn main() {
         user_order_cons,
         rng.clone(),
     );
-    let mut mold_engine = MoldEngine::start();
+    println!("Spawned simulator");
+    let mut mold_engine = MoldEngine::start(Arc::clone(&running));
+    let broadcast_running = Arc::clone(&running);
     let event_broadcast_thread = thread::spawn(move || {
-        loop {
+        while broadcast_running.load(Ordering::Relaxed) {
             if let Some(order) = market_event_cons.try_pop() {
                 mold_engine.push(order);
             }
         }
     });
+    println!("MoldEngine started");
     let time = Instant::now();
+    println!("Running...");
+    let mut sim_step_count: u128 = 0;
     match args.count {
         Some(range) => {
             for _ in 0..range {
                 #[allow(dead_code)]
                 sim.step();
+                sim_step_count += 1;
             }
         },
         None => {
             loop {
                 #[allow(dead_code)]
                 sim.step();
+                sim_step_count += 1;
             }
         }
     }
     let elapsed = time.elapsed();
+    println!("Job finished");
+    println!("Simulation covered {} steps", sim_step_count);
     println!(
         "Sim time: {}s ({}ns)",
         sim.time() as f64 / 1_000_000_000.0,
@@ -139,5 +157,6 @@ fn main() {
         elapsed.as_nanos() as f64 / 1_000_000_000.0,
         elapsed.as_nanos()
     );
+    running.store(false, Ordering::Relaxed);
     let _ = event_broadcast_thread.join();
 }
