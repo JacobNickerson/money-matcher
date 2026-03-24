@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, VecDeque};
+use bytes::{Buf, BytesMut};
+use mio::{Token, net::TcpStream};
+use ringbuf::{HeapProd, traits::Producer};
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
-
-use mio::{Token, net::TcpStream};
-use ringbuf::{HeapProd, traits::Producer};
 
 use crate::fix_core::{
     helpers::{extract_message, write_fix_message},
@@ -30,7 +30,7 @@ pub struct Session {
     pub token: Token,
     pub stream: TcpStream,
     pub read_buffer: Vec<u8>,
-    pub write_buffer: VecDeque<u8>,
+    pub write_buffer: BytesMut,
     pub tmp: [u8; MAX_TMP_BUFFER_SIZE],
     pub tmp_end: usize,
     pub state: Option<SessionState>,
@@ -73,7 +73,7 @@ impl Session {
             token,
             stream,
             read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
-            write_buffer: VecDeque::with_capacity(MAX_BUFFER_SIZE),
+            write_buffer: BytesMut::with_capacity(MAX_BUFFER_SIZE),
             tmp: [0u8; MAX_TMP_BUFFER_SIZE],
             tmp_end: 0,
             state: None,
@@ -136,7 +136,7 @@ impl Session {
         while let Some(msg) = extract_message(&mut self.read_buffer) {
             let mut comp_id = None;
             let mut msg_seq_num = None;
-            let mut msg_type = None;
+            let mut msg_type: Option<u8> = None;
             let mut poss_dup_flag = false;
 
             for (tag, value) in FixIterator::new(&msg) {
@@ -147,7 +147,7 @@ impl Session {
                     TAG_MSG_SEQ_NUM => {
                         msg_seq_num = from_utf8(value).ok().and_then(|v| v.parse().ok())
                     }
-                    TAG_MSG_TYPE => msg_type = Some(value),
+                    TAG_MSG_TYPE => msg_type = Some(value[0]),
                     TAG_POSS_DUP_FLAG => poss_dup_flag = value == b"Y",
                     _ => {}
                 }
@@ -260,7 +260,7 @@ impl Session {
             state.sent_messages.insert(seq_num, payload);
         }
 
-        self.write_buffer.extend(msg);
+        self.write_buffer.extend_from_slice(&msg);
         self.last_sent = Instant::now();
 
         Ok(())
@@ -272,11 +272,11 @@ impl Session {
                 break;
             }
 
-            let slice = self.write_buffer.make_contiguous();
-            match self.stream.write(slice) {
+            match self.stream.write(&self.write_buffer) {
+                Ok(0) => return Err("Connection closed"),
                 Ok(n) => {
                     self.last_sent = Instant::now();
-                    self.write_buffer.drain(..n);
+                    self.write_buffer.advance(n);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(_) => return Err("Write error"),
@@ -290,7 +290,6 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fix_core::helpers::write_trailer;
     use mio::net::TcpListener;
     use std::net::SocketAddr;
 
@@ -306,28 +305,22 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_new_order_limit_bid() {}
-
-    #[test]
-    fn test_extract_message_valid_checksum() {
+    fn test_extract_message_empty_body() {
         let mut session = make_session();
 
-        let body = b"35=D\x01";
-        let body_len = body.len();
+        let msg_type = b'0';
+        let seq_num = 1;
+        let sender = "A";
+        let target = "B";
+        let empty_body: Vec<u8> = Vec::new();
 
-        let mut msg = Vec::new();
-        msg.extend_from_slice(b"8=FIX.4.2\x01");
-        msg.extend_from_slice(b"9=");
-        msg.extend_from_slice(body_len.to_string().as_bytes());
-        msg.push(0x01);
-        msg.extend_from_slice(body);
-
-        write_trailer(&mut msg);
+        let msg = write_fix_message(msg_type, &seq_num, sender, target, &empty_body);
 
         session.read_buffer.extend_from_slice(&msg);
 
         let out = extract_message(&mut session.read_buffer).expect("err");
         assert_eq!(out, msg);
+        assert!(session.read_buffer.is_empty());
     }
 
     #[test]

@@ -1,1 +1,4 @@
 target
+/gui/src/windows/__pycache__
+/gui/src/models/__pycache__
+/gui/src/widgets/__pycache__

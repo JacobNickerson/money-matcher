@@ -1,6 +1,6 @@
 use crate::fix_core::{
     iterator::FixIterator,
-    messages::{FIX_MESSAGE_TYPE_RESEND_REQUEST, FIXMessage, TAG_BEGIN_SEQ_NO, TAG_END_SEQ_NO},
+    messages::{FIXMessage, TAG_BEGIN_SEQ_NO, TAG_END_SEQ_NO},
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
@@ -18,18 +18,16 @@ pub struct ResendRequest {
 }
 
 impl FIXMessage for ResendRequest {
-    const MESSAGE_TYPE: &'static [u8] = FIX_MESSAGE_TYPE_RESEND_REQUEST;
-
     fn as_bytes(&self) -> Vec<u8> {
         let mut itoa_buf = itoa::Buffer::new();
         let mut buf = Vec::with_capacity(64);
 
-        buf.extend_from_slice(TAG_BEGIN_SEQ_NO);
+        buf.extend_from_slice(itoa_buf.format(TAG_BEGIN_SEQ_NO).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.begin_seq_no).as_bytes());
         buf.push(0x01);
 
-        buf.extend_from_slice(TAG_END_SEQ_NO);
+        buf.extend_from_slice(itoa_buf.format(TAG_END_SEQ_NO).as_bytes());
         buf.push(b'=');
         buf.extend_from_slice(itoa_buf.format(self.end_seq_no).as_bytes());
         buf.push(0x01);

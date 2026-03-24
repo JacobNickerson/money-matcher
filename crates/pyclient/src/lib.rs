@@ -14,11 +14,7 @@ mod pyclient {
         moldudp64::client::MoldClient,
     };
     use mm_core::{
-        fix_core::messages::{
-            BusinessMessage, FIXEvent, FIXPayload,
-            new_order_single::NewOrderSingle,
-            types::{CustomerOrFirm, EncryptMethod, OpenClose, OrdType, PutOrCall, Side},
-        },
+        fix_core::messages::{FIXEvent, types::EncryptMethod},
         lob_core::{
             market_events::{MarketEvent, MarketEventType, TradeEvent},
             market_orders::{LimitOrder, Order, OrderSide, OrderType},
@@ -330,30 +326,22 @@ mod pyclient {
             self.handler.next_report()
         }
 
-        pub fn send_message(&mut self, payload: FIXPayload) {
-            self.handler.send_message(payload);
+        pub fn send_message(&mut self, order: PyOrder) {
+            let _ = self.handler.send_message(&Order::from(order));
         }
 
         pub fn send_generic_message(&mut self) {
-            let order = NewOrderSingle {
-                cl_ord_id: 1,
-                handl_inst: 1,
-                qty: 10,
-                ord_type: OrdType::Limit,
-                price: 666,
-                side: Side::Buy,
-                symbol: "OSISTRING".to_string(),
-                open_close: OpenClose::Open,
-                security_type: "OPT".to_string(),
-                put_or_call: PutOrCall::Call,
-                strike_price: 10,
-                customer_or_firm: CustomerOrFirm::Customer,
-                maturity_day: 10,
+            let order = Order {
+                order_id: 1_u64,
+                side: OrderSide::Bid,
+                timestamp: 5_u64,
+                kind: OrderType::Limit {
+                    qty: 10_u64,
+                    price: 666_u64,
+                },
             };
 
-            let payload = FIXPayload::Business(BusinessMessage::NewOrderSingle(order));
-
-            self.handler.send_message(payload);
+            self.send_message(PyOrder::from(order));
         }
     }
 }

@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
+use mm_core::fix_core::messages::{BusinessMessage, FIXBusinessMessage};
+use mm_core::lob_core::market_orders::Order;
 use ringbuf::{
     HeapCons, HeapProd,
     traits::{Consumer, Producer, Split},
@@ -341,14 +343,18 @@ pub struct FixClientHandler {
 }
 
 impl FixClientHandler {
-    pub fn send_message(&mut self, payload: FIXPayload) {
+    pub fn send_message(&mut self, order: &Order) -> Result<(), &'static str> {
+        let msg = BusinessMessage::from_order(order)?;
+
         let event = FIXEvent {
             comp_id: Arc::clone(&self.comp_id),
-            payload,
+            payload: FIXPayload::Business(msg),
         };
 
         self.outbound_tx.lock().unwrap().try_push(event).ok();
         self.waker.wake().ok();
+
+        Ok(())
     }
 
     pub fn next_report(&mut self) -> Option<FIXEvent> {
@@ -359,11 +365,7 @@ impl FixClientHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mm_core::fix_core::messages::{
-        BusinessMessage,
-        new_order_single::NewOrderSingle,
-        types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
-    };
+    use mm_core::lob_core::market_orders::{OrderSide, OrderType};
     use std::thread;
 
     #[test]
@@ -391,25 +393,17 @@ mod tests {
 
         std::thread::sleep(Duration::from_secs(2));
 
-        let order = NewOrderSingle {
-            cl_ord_id: 1,
-            handl_inst: 1,
-            qty: 10,
-            ord_type: OrdType::Limit,
-            price: 666,
-            side: Side::Buy,
-            symbol: "OSISTRING".to_string(),
-            open_close: OpenClose::Open,
-            security_type: "OPT".to_string(),
-            put_or_call: PutOrCall::Call,
-            strike_price: 10,
-            customer_or_firm: CustomerOrFirm::Customer,
-            maturity_day: 10,
+        let order = Order {
+            order_id: 1 as u64,
+            side: OrderSide::Bid,
+            timestamp: 5 as u64,
+            kind: OrderType::Limit {
+                qty: 10 as u64,
+                price: 666 as u64,
+            },
         };
 
-        handler.send_message(FIXPayload::Business(BusinessMessage::NewOrderSingle(
-            (order),
-        )));
+        let _ = handler.send_message(&order);
 
         client_thread.join().unwrap();
     }
