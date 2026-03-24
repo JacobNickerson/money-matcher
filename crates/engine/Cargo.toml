@@ -7,6 +7,7 @@ edition = "2024"
 bytes = "1.11.1"
 circular-buffer = "1.2.0"
 clap = { version = "4.6.0", features = ["derive"] }
+ctrlc = "3.5.2"
 fastrand = "2.3.0"
 mio = { version = "1.1.1", features = ["net", "os-poll"] }
 mm_core = {path = "../mm_core"}

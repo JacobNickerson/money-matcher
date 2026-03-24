@@ -98,11 +98,18 @@ fn main() {
     };
 
     let running = Arc::new(AtomicBool::new(true));
+    let running_handler = Arc::clone(&running);
+
+    ctrlc::set_handler(move || {
+        running_handler.store(false, Ordering::Relaxed);
+        println!("Simulation terminated, stopping...");
+    }).unwrap();
 
     let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
     let (mut market_event_prod, mut market_event_cons) =
         HeapRb::<MarketEvent>::new(1 << 24).split();
     println!("Initialized order queues");
+
     let mut sim = Simulator::new(
         PoissonSource::new(
             ConstantPoissonRate::new(args.order_rate),
@@ -115,6 +122,7 @@ fn main() {
         rng.clone(),
     );
     println!("Spawned simulator");
+
     let mut mold_engine = MoldEngine::start(Arc::clone(&running));
     let broadcast_running = Arc::clone(&running);
     let event_broadcast_thread = thread::spawn(move || {
@@ -125,6 +133,7 @@ fn main() {
         }
     });
     println!("MoldEngine started");
+
     let time = Instant::now();
     println!("Running...");
     let mut sim_step_count: u128 = 0;
@@ -134,10 +143,13 @@ fn main() {
                 #[allow(dead_code)]
                 sim.step();
                 sim_step_count += 1;
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
             }
         },
         None => {
-            loop {
+            while running.load(Ordering::Relaxed) {
                 #[allow(dead_code)]
                 sim.step();
                 sim_step_count += 1;
@@ -145,6 +157,7 @@ fn main() {
         }
     }
     let elapsed = time.elapsed();
+
     println!("Job finished");
     println!("Simulation covered {} steps", sim_step_count);
     println!(
@@ -157,6 +170,7 @@ fn main() {
         elapsed.as_nanos() as f64 / 1_000_000_000.0,
         elapsed.as_nanos()
     );
+
     running.store(false, Ordering::Relaxed);
     let _ = event_broadcast_thread.join();
 }
