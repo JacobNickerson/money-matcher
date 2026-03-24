@@ -6,17 +6,19 @@ use rand_chacha::ChaCha8Rng;
 use ringbuf::{HeapRb, traits::*};
 use std::fs::File;
 use std::io::{self, Write};
-use std::thread;
-use std::time::Instant;
+use std::net::SocketAddr;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering}
+    atomic::{AtomicBool, Ordering},
 };
+use std::thread;
+use std::time::Instant;
 
 use crate::data_generator::event_source::PoissonSource;
 use crate::data_generator::order_generators::GaussianOrderGenerator;
 use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
+use crate::fix::engine::FixEngine;
 use crate::moldudp64::engine::MoldEngine;
 use crate::simulator::simulator::Simulator;
 
@@ -88,13 +90,13 @@ struct Args {
     seed: Option<u64>,
 }
 
-
 fn main() {
     let args = Args::parse();
 
     let rng = match args.seed {
         Some(seed) => ChaCha8Rng::seed_from_u64(seed),
-        None => ChaCha8Rng::try_from_rng(&mut rand::rng()).expect("failed to get a seed from OS entropy"),
+        None => ChaCha8Rng::try_from_rng(&mut rand::rng())
+            .expect("failed to get a seed from OS entropy"),
     };
 
     let running = Arc::new(AtomicBool::new(true));
@@ -103,7 +105,8 @@ fn main() {
     ctrlc::set_handler(move || {
         running_handler.store(false, Ordering::Relaxed);
         println!("Simulation terminated, stopping...");
-    }).unwrap();
+    })
+    .unwrap();
 
     let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
     let (mut market_event_prod, mut market_event_cons) =
@@ -113,7 +116,13 @@ fn main() {
     let mut sim = Simulator::new(
         PoissonSource::new(
             ConstantPoissonRate::new(args.order_rate),
-            UniformTypeSelector::new(args.bid_rate, args.new_limit_rate, args.market_rate, args.cancel_rate, args.update_rate),
+            UniformTypeSelector::new(
+                args.bid_rate,
+                args.new_limit_rate,
+                args.market_rate,
+                args.cancel_rate,
+                args.update_rate,
+            ),
             GaussianOrderGenerator::new(args.avg_price, args.price_dev),
             rng.clone(),
         ),
@@ -134,6 +143,19 @@ fn main() {
     });
     println!("MoldEngine started");
 
+    let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
+    let gateway_running = Arc::clone(&running);
+    let order_gateway_thread = thread::spawn(move || {
+        let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
+        while gateway_running.load(Ordering::Relaxed) {
+            if let Some(order) = handler.get_order() {
+                // TODO: Find a more elegant way to handle this
+                while user_order_prod.try_push(order).is_err() {}
+            }
+        }
+    });
+    println!("FixEngine started");
+
     let time = Instant::now();
     println!("Running...");
     let mut sim_step_count: u128 = 0;
@@ -147,7 +169,7 @@ fn main() {
                     break;
                 }
             }
-        },
+        }
         None => {
             while running.load(Ordering::Relaxed) {
                 #[allow(dead_code)]
@@ -157,6 +179,7 @@ fn main() {
         }
     }
     let elapsed = time.elapsed();
+    running.store(false, Ordering::Relaxed);
 
     println!("Job finished");
     println!("Simulation covered {} steps", sim_step_count);
@@ -171,6 +194,6 @@ fn main() {
         elapsed.as_nanos()
     );
 
-    running.store(false, Ordering::Relaxed);
     let _ = event_broadcast_thread.join();
+    let _ = order_gateway_thread.join();
 }

@@ -15,13 +15,13 @@ use ringbuf::{
     traits::{Producer, Split},
 };
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     thread,
-};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering}
 };
 
 use crate::moldudp64::sequencerpublisher::SequencerPublisher;
@@ -57,7 +57,12 @@ impl MoldEngine {
         }
     }
 
-    fn start_publisher(session_id: String, multicast_group: SocketAddr, event_rx: HeapCons<Event>, running: Arc<AtomicBool>) {
+    fn start_publisher(
+        session_id: String,
+        multicast_group: SocketAddr,
+        event_rx: HeapCons<Event>,
+        running: Arc<AtomicBool>,
+    ) {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
         socket.set_multicast_loop_v4(true).expect("err");
 

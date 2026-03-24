@@ -3,11 +3,11 @@ use mm_core::moldudp64_core::sessions::SessionTable;
 use mm_core::moldudp64_core::types::Event;
 use ringbuf::{HeapCons, traits::Consumer};
 use std::net::{SocketAddr, UdpSocket};
-use std::time::{Duration, Instant};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering}
+    atomic::{AtomicBool, Ordering},
 };
+use std::time::{Duration, Instant};
 
 pub struct SequencerPublisher {
     input: HeapCons<Event>,
