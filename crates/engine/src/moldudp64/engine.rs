@@ -30,8 +30,8 @@ pub struct MoldEngine {
 
 impl MoldEngine {
     pub fn start() -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<Event>::new(2048).split();
-        let (trade_tx, trade_rx) = HeapRb::<Event>::new(2048).split();
+        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1024).split();
+        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1024).split();
 
         Self::start_publisher(
             "MM_L3".to_string(),
