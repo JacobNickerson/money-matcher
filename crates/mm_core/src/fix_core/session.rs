@@ -1,7 +1,7 @@
 use bytes::{Buf, BytesMut};
 use mio::{Token, net::TcpStream};
 use ringbuf::{HeapProd, traits::Producer};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::str::from_utf8;
 use std::sync::Arc;

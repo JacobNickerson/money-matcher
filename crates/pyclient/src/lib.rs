@@ -332,16 +332,16 @@ mod pyclient {
 
         pub fn send_generic_message(&mut self) {
             let order = Order {
-                order_id: 1 as u64,
+                order_id: 1_u64,
                 side: OrderSide::Bid,
-                timestamp: 5 as u64,
+                timestamp: 5_u64,
                 kind: OrderType::Limit {
-                    qty: 10 as u64,
-                    price: 666 as u64,
+                    qty: 10_u64,
+                    price: 666_u64,
                 },
             };
 
-            let _ = self.send_message(PyOrder::from(order));
+            self.send_message(PyOrder::from(order));
         }
     }
 }

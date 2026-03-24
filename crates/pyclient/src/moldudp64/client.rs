@@ -1,5 +1,5 @@
 use crate::moldudp64::receiverhandler::ReceiverHandler;
-use mm_core::lob_core::market_events::{L3Event, MarketEvent, TradeEvent};
+use mm_core::lob_core::market_events::MarketEvent;
 use ringbuf::{
     HeapCons, HeapProd, HeapRb,
     traits::{Consumer, Split},
