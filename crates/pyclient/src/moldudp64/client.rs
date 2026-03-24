@@ -6,7 +6,6 @@ use ringbuf::{
 };
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
-    collections::VecDeque,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::Mutex,
     thread,
@@ -15,14 +14,14 @@ use std::{
 pub struct MoldClient {
     pub l3_rx: Mutex<HeapCons<MarketEvent>>,
     pub trade_rx: Mutex<HeapCons<MarketEvent>>,
-    l3_cache: VecDeque<MarketEvent>,
-    trade_cache: VecDeque<MarketEvent>,
+    next_l3: Option<MarketEvent>,
+    next_trade: Option<MarketEvent>,
 }
 
 impl MoldClient {
     pub fn start() -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(1024).split();
-        let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(1024).split();
+        let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
+        let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
 
         Self::start_receiver("233.100.10.3:9503".parse().unwrap(), l3_tx);
         Self::start_receiver("233.100.10.4:9504".parse().unwrap(), trade_tx);
@@ -30,8 +29,8 @@ impl MoldClient {
         Self {
             l3_rx: Mutex::new(l3_rx),
             trade_rx: Mutex::new(trade_rx),
-            l3_cache: VecDeque::new(),
-            trade_cache: VecDeque::new(),
+            next_l3: None,
+            next_trade: None,
         }
     }
 
@@ -58,26 +57,24 @@ impl MoldClient {
     }
 
     pub fn next_event(&mut self) -> Option<MarketEvent> {
-        if self.l3_cache.is_empty() {
-            let mut cons = self.l3_rx.lock().unwrap();
-            self.l3_cache.extend(cons.pop_iter());
+        if self.next_l3.is_none() {
+            self.next_l3 = self.l3_rx.lock().unwrap().try_pop();
         }
 
-        if self.trade_cache.is_empty() {
-            let mut cons = self.trade_rx.lock().unwrap();
-            self.trade_cache.extend(cons.pop_iter());
+        if self.next_trade.is_none() {
+            self.next_trade = self.trade_rx.lock().unwrap().try_pop();
         }
 
-        match (self.l3_cache.front(), self.trade_cache.front()) {
+        match (&self.next_l3, &self.next_trade) {
             (Some(l3), Some(trade)) => {
                 if l3.timestamp <= trade.timestamp {
-                    self.l3_cache.pop_front()
+                    self.next_l3.take()
                 } else {
-                    self.trade_cache.pop_front()
+                    self.next_trade.take()
                 }
             }
-            (Some(_), None) => self.l3_cache.pop_front(),
-            (None, Some(_)) => self.trade_cache.pop_front(),
+            (Some(_), None) => self.next_l3.take(),
+            (None, Some(_)) => self.next_trade.take(),
             (None, None) => None,
         }
     }
@@ -103,7 +100,7 @@ mod tests {
         loop {
             let now = Instant::now();
             if let Some(event) = mold_client.next_event() {
-                //println!("Received {:?}", event);
+                println!("Received {:?}", event);
                 count = count + 1;
                 last_received = now;
             } else if count > 0 && now - last_received > Duration::from_secs(5) {

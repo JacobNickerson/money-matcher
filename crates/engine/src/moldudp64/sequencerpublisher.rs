@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 pub struct SequencerPublisher {
     input: HeapCons<Event>,
-    cache: VecDeque<Event>,
 
     sequence_number: u64,
     session_table: SessionTable,
@@ -40,7 +39,6 @@ impl SequencerPublisher {
 
         Self {
             input,
-            cache: VecDeque::new(),
             sequence_number: 1,
             session_table: SessionTable::new(session_id),
             multicast_group,
@@ -76,9 +74,7 @@ impl SequencerPublisher {
                 self.flush();
             }
 
-            self.cache.extend(self.input.pop_iter());
-
-            while let Some(event) = self.cache.pop_front() {
+            while let Some(event) = self.input.try_pop() {
                 self.process_event(event);
             }
 
