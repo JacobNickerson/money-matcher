@@ -36,6 +36,7 @@ impl MoldClient {
 
     fn start_receiver(addr: SocketAddr, tx: HeapProd<MarketEvent>) {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
+        socket.set_recv_buffer_size(32 * 1024 * 1024).expect("err");
 
         socket.set_reuse_address(true).expect("err");
 
@@ -58,11 +59,13 @@ impl MoldClient {
 
     pub fn next_event(&mut self) -> Option<MarketEvent> {
         if self.next_l3.is_none() {
-            self.next_l3 = self.l3_rx.lock().unwrap().try_pop();
+            let mut next = self.l3_rx.lock().unwrap();
+            self.next_l3 = next.try_pop();
         }
 
         if self.next_trade.is_none() {
-            self.next_trade = self.trade_rx.lock().unwrap().try_pop();
+            let mut next = self.trade_rx.lock().unwrap();
+            self.next_trade = next.try_pop();
         }
 
         match (&self.next_l3, &self.next_trade) {

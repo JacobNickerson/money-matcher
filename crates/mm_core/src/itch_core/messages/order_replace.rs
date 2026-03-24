@@ -23,6 +23,7 @@ impl OrderReplace {
     /// * `new_order_reference_number` - The new reference number for this order at time of replacement
     /// * `shares` - The new total displayed quantity
     /// * `price` - The new display price for the order
+    #[inline(always)]
     pub fn encode_into(
         buf: &mut [u8],
         stock_locate: u16,

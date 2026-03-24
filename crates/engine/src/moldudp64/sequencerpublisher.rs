@@ -82,6 +82,7 @@ impl SequencerPublisher {
         }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.packet.truncate(20);
         self.current_session = None;
@@ -89,6 +90,7 @@ impl SequencerPublisher {
         self.message_count = 0;
     }
 
+    #[inline(always)]
     fn process_header(&mut self) {
         self.packet[0..10].copy_from_slice(&self.current_session.expect("err"));
         self.packet[10..18]
@@ -96,6 +98,7 @@ impl SequencerPublisher {
         self.packet[18..20].copy_from_slice(&(self.message_count as u16).to_be_bytes());
     }
 
+    #[inline(always)]
     fn process_event(&mut self, event: Bytes) {
         let sequence_number = self.sequence_number;
         let session_id = self.session_table.get_current_session();

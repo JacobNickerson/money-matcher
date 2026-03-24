@@ -22,6 +22,7 @@ impl OrderExecuted {
     /// * `order_reference_number` - The unique reference number assigned to the new order at the time of receipt
     /// * `executed_shares` - The number of shares executed
     /// * `match_number` - The Nasdaq generated day unique Match Number of this execution
+    #[inline(always)]
     pub fn encode_into(
         buf: &mut [u8],
         stock_locate: u16,

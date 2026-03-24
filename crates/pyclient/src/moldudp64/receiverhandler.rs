@@ -41,6 +41,7 @@ impl ReceiverHandler {
         }
     }
 
+    #[inline(always)]
     fn handle_packet(&mut self, bytes: &[u8]) {
         let len = bytes.len();
 
@@ -73,6 +74,7 @@ impl ReceiverHandler {
         }
     }
 
+    #[inline(always)]
     fn handle_message(&mut self, bytes: &[u8], len: usize, offset: &mut usize) -> bool {
         if *offset + 2 > len {
             return false;
@@ -101,6 +103,7 @@ impl ReceiverHandler {
         true
     }
 
+    #[inline(always)]
     fn parse_event(message_data: &[u8]) -> Option<MarketEvent> {
         if message_data.is_empty() {
             return None;
