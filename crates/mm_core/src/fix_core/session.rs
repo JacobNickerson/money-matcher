@@ -1,11 +1,11 @@
+use bytes::{Buf, BytesMut};
+use mio::{Token, net::TcpStream};
+use ringbuf::{HeapProd, traits::Producer};
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Write};
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
-
-use mio::{Token, net::TcpStream};
-use ringbuf::{HeapProd, traits::Producer};
 
 use crate::fix_core::{
     helpers::{extract_message, write_fix_message},
@@ -30,7 +30,7 @@ pub struct Session {
     pub token: Token,
     pub stream: TcpStream,
     pub read_buffer: Vec<u8>,
-    pub write_buffer: VecDeque<u8>,
+    pub write_buffer: BytesMut,
     pub tmp: [u8; MAX_TMP_BUFFER_SIZE],
     pub tmp_end: usize,
     pub state: Option<SessionState>,
@@ -73,7 +73,7 @@ impl Session {
             token,
             stream,
             read_buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
-            write_buffer: VecDeque::with_capacity(MAX_BUFFER_SIZE),
+            write_buffer: BytesMut::with_capacity(MAX_BUFFER_SIZE),
             tmp: [0u8; MAX_TMP_BUFFER_SIZE],
             tmp_end: 0,
             state: None,
@@ -260,7 +260,7 @@ impl Session {
             state.sent_messages.insert(seq_num, payload);
         }
 
-        self.write_buffer.extend(msg);
+        self.write_buffer.extend_from_slice(&msg);
         self.last_sent = Instant::now();
 
         Ok(())
@@ -272,11 +272,11 @@ impl Session {
                 break;
             }
 
-            let slice = self.write_buffer.make_contiguous();
-            match self.stream.write(slice) {
+            match self.stream.write(&self.write_buffer) {
+                Ok(0) => return Err("Connection closed"),
                 Ok(n) => {
                     self.last_sent = Instant::now();
-                    self.write_buffer.drain(..n);
+                    self.write_buffer.advance(n);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(_) => return Err("Write error"),
