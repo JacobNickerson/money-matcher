@@ -26,6 +26,7 @@ impl OrderExecutedWithPrice {
     /// * `match_number` - The Nasdaq generated day unique Match Number of this execution
     /// * `printable` - Indicates if the execution should be reflected on time and sales displays: "N" = Non-Printable, "Y" = Printable
     /// * `execution_price` - The Price at which the order execution occurred
+    #[inline(always)]
     pub fn encode_into(
         buf: &mut [u8],
         stock_locate: u16,

@@ -2,13 +2,11 @@ use bytes::{BufMut, Bytes, BytesMut};
 use mm_core::moldudp64_core::sessions::SessionTable;
 use mm_core::moldudp64_core::types::Event;
 use ringbuf::{HeapCons, traits::Consumer};
-use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 pub struct SequencerPublisher {
     input: HeapCons<Event>,
-    cache: VecDeque<Event>,
 
     sequence_number: u64,
     session_table: SessionTable,
@@ -40,7 +38,6 @@ impl SequencerPublisher {
 
         Self {
             input,
-            cache: VecDeque::new(),
             sequence_number: 1,
             session_table: SessionTable::new(session_id),
             multicast_group,
@@ -76,9 +73,7 @@ impl SequencerPublisher {
                 self.flush();
             }
 
-            self.cache.extend(self.input.pop_iter());
-
-            while let Some(event) = self.cache.pop_front() {
+            while let Some(event) = self.input.try_pop() {
                 self.process_event(event);
             }
 
@@ -86,6 +81,7 @@ impl SequencerPublisher {
         }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.packet.truncate(20);
         self.current_session = None;
@@ -93,6 +89,7 @@ impl SequencerPublisher {
         self.message_count = 0;
     }
 
+    #[inline(always)]
     fn process_header(&mut self) {
         self.packet[0..10].copy_from_slice(&self.current_session.expect("err"));
         self.packet[10..18]
@@ -100,6 +97,7 @@ impl SequencerPublisher {
         self.packet[18..20].copy_from_slice(&(self.message_count as u16).to_be_bytes());
     }
 
+    #[inline(always)]
     fn process_event(&mut self, event: Bytes) {
         let sequence_number = self.sequence_number;
         let session_id = self.session_table.get_current_session();

@@ -16,6 +16,7 @@ impl OrderCancel {
     /// * `timestamp` - Nanoseconds since midnight
     /// * `order_reference_number` - The reference number of the order being canceled
     /// * `canceled_shares` - The number of shares being removed from the display size of the order as a result of a cancellation
+    #[inline(always)]
     pub fn encode_into(
         buf: &mut [u8],
         stock_locate: u16,
