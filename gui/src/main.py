@@ -1,10 +1,11 @@
 import sys
+import os
 from PyQt5.QtWidgets import ( 
     QApplication, QWidget, QGridLayout, QHBoxLayout,
     QSizePolicy, QStackedWidget, QVBoxLayout
 )
 from PyQt5.QtCore import (
-    Qt
+    Qt, QTimer
 )
 from widgets.sidebar import SideBar
 from windows.dashboard import (
@@ -20,8 +21,15 @@ from windows.performance import (
     Header as PerfHeader, Main as PerfMain
 )
 
+pyclient_dir = os.path.relpath('../../crates/pyclient')
+
+if pyclient_dir not in sys.path:
+    sys.path.append(pyclient_dir)
+
+import pyclient
+
 class Dashboard(QWidget):
-    def __init__(self):
+    def __init__(self, fix_client=None):
         super().__init__()
         self.setStyleSheet("background-color: #080808;")
 
@@ -30,9 +38,12 @@ class Dashboard(QWidget):
         layout.setHorizontalSpacing(20)
         layout.setVerticalSpacing(20)
 
+        self.rust_book = pyclient.PyOrderBook()
+        self.mold_client = pyclient.PyMoldClient.start()
+
         self.market_events = MarketEvents()
         self.order_book = OrderBook()
-        self.order_entry = OrderEntry()
+        self.order_entry = OrderEntry(fix_client=fix_client)
         self.trade_history = TradeHistory()
         self.strategies = Strategies()
 
@@ -49,6 +60,30 @@ class Dashboard(QWidget):
 
         layout.setRowStretch(0, 5)
         layout.setRowStretch(1, 3)
+
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.update_from_market_data)
+        self.update_timer.start(250)
+
+    def update_from_market_data(self):
+        while True:
+            event = self.mold_client.next_event()
+            if event is None:
+                break
+
+            try:
+                self.rust_book.process_event(event)
+                self.market_events.handle_market_event(event)
+            except Exception as e:
+                print(f"Error processing event {event}: {e}")
+                break
+
+        self.order_book.refresh_order_book_display(self.rust_book)
+        self.market_events.refresh_chart()
+    
+    def closeEvent(self, event):
+        self.update_timer.stop()
+        super().closeEvent(event)
 
 class Bots(QWidget):
     def __init__(self):
@@ -102,7 +137,20 @@ class EngineWindow(QWidget):
         super().__init__()
         self.setWindowTitle("Money Matcher")
         self.resize(720, 512)
+        self.fix_client = self.init_fix_client()
         self.initUI()
+
+    def init_fix_client(self):
+        try:
+            fix_client = pyclient.PyFixClient.start(
+                "127.0.0.1:34254",
+                "CLIENT01",
+                "ENGINE01"
+            )
+            return fix_client
+        except Exception as e:
+            print(f"Error initializing FIX Client: {e}")
+            return None
 
     def initUI(self):
         main_layout = QHBoxLayout()
@@ -116,7 +164,7 @@ class EngineWindow(QWidget):
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background-color: #080808;")
 
-        self.dashboard_page = Dashboard()
+        self.dashboard_page = Dashboard(fix_client=self.fix_client)
         self.bots_page = Bots()
         self.strat_page = Strats()
         self.perf_page = Performance()

@@ -1,9 +1,10 @@
 import os
+import sqlite3
 from pathlib import Path
 from PyQt5.QtWidgets import ( 
     QWidget, QHBoxLayout, QPushButton, QLabel,
     QSizePolicy, QFrame, QComboBox, QFileDialog,
-    QMessageBox
+    QMessageBox, QDialog, QVBoxLayout, QLineEdit
 )
 from PyQt5.QtGui import (
     QFont, QColor, QPainter, QLinearGradient, QIcon
@@ -14,6 +15,197 @@ from PyQt5.QtCore import (
 from PyQt5.Qsci import (
     QsciScintilla, QsciLexerPython
 )
+
+class StrategyModal(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setModal(True)
+        self.setMinimumWidth(600)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #101010;
+                border: 1px solid #363636;
+                border-radius: 16px;
+            }
+            QLabel {
+                color: #FFFFFF;
+                background: transparent;
+            }
+            QPushButton {
+                border-radius: 8px;
+                padding: 10px 14px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("New Strategy")
+        title.setFont(QFont("Inter", 12, QFont.Medium))
+        layout.addWidget(title)
+
+        self.symbol_dropdown_widget, self.symbol_selected = self.symbol_list()
+        self.name_input_widget, self.name_input = self.input_field("Strategy Name")
+        layout.addWidget(self.symbol_dropdown_widget)
+        layout.addWidget(self.name_input_widget)
+
+        layout.addStretch()
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setMinimumHeight(32)
+        cancel_btn.setMaximumHeight(44)
+        cancel_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        cancel_btn.setFont(QFont("Inter", 12, QFont.DemiBold))
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2B2B2B;
+                color: #FFFFFF;
+                border-radius: 8px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #3A3A3A;
+            }
+            QPushButton:pressed {
+                background-color: #1F1F1F;
+            }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+
+        submit_btn = QPushButton("Save")
+        submit_btn.setMinimumHeight(32)
+        submit_btn.setMaximumHeight(44)
+        submit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        submit_btn.setFont(QFont("Inter", 12, QFont.DemiBold))
+        submit_btn.setCursor(Qt.PointingHandCursor)
+        submit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #080808;
+                border-radius: 8px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #D9D9D9;
+            }
+            QPushButton:pressed {
+                background-color: #D9D9D9;
+            }
+        """)
+        submit_btn.clicked.connect(self.accept)
+
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(submit_btn)
+
+        layout.addLayout(btn_layout)
+
+    def input_field(self, label_text):
+        container = QWidget()
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #101010;
+            }
+        """)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        label = QLabel(label_text)
+        label.setFont(QFont("Inter", 9))
+        label.setStyleSheet("color: #999999;")
+
+        field = QLineEdit()
+        field.setFont(QFont("Inter", 10))
+        field.setMinimumHeight(30)
+        field.setMaximumHeight(36)
+
+        field.setStyleSheet("""
+            QLineEdit {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 6px;
+                padding-right: 10px;
+                color: white;
+            }
+        """)
+        field.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        field_layout = QHBoxLayout()
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.addWidget(field)
+
+        layout.addWidget(label)
+        layout.addLayout(field_layout)
+
+        return container, field
+    
+    def symbol_list(self):
+        container = QWidget()
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #101010;
+            }
+        """)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        
+        label = QLabel("Symbol")
+        label.setFont(QFont("Inter", 9))
+        label.setStyleSheet("color: #999999;")
+
+        list = QComboBox()
+        list.setCursor(Qt.PointingHandCursor)
+        list.setFont(QFont("Inter", 10))
+        list.setMinimumHeight(30)
+        list.setMaximumHeight(36)
+        list.setStyleSheet("""
+            QComboBox {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 8px;
+                padding: 8px;
+                color: white;
+            }
+            QComboBox::drop-down {
+                border: none;
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: url(../../resources/images/down-arrow.svg);
+                width: 16px;
+                height: 16px;
+                margin-right: 16px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #080808;
+                selection-background-color: #363636;
+                color: white;
+            }
+        """)
+        list.addItems(["SOL/USD"])
+
+        layout.addWidget(label)
+        layout.addWidget(list)
+
+        return container, list
+    
+    def get_data(self):
+        name = self.name_input.text()
+        symbol = self.symbol_selected.currentText()
+
+        return name, symbol
 
 class Header(QWidget):
     def __init__(self, editor):
@@ -26,6 +218,7 @@ class Header(QWidget):
                 border-radius: 16px;
             }
         """)
+        self.initDatabase()
         self.editor = editor
 
         layout = QHBoxLayout(self)
@@ -73,7 +266,6 @@ class Header(QWidget):
         self.symbol_list.setFont(QFont("Inter", 10, QFont.Medium))
         self.symbol_list.setStyleSheet(combo_style)
         self.symbol_list.setCursor(Qt.PointingHandCursor)
-        self.symbol_list.addItems(["SOL/USD", "BTC/USD", "ETH/USD"])
         self.symbol_list.setMinimumWidth(200)
         layout.addWidget(self.symbol_list)
 
@@ -81,9 +273,12 @@ class Header(QWidget):
         self.strategy_list.setFont(QFont("Inter", 10, QFont.Medium))
         self.strategy_list.setStyleSheet(combo_style)
         self.strategy_list.setCursor(Qt.PointingHandCursor)
-        self.strategy_list.addItems(["Momentum", "Arbitrage", "Scalping"])
         self.strategy_list.setMinimumWidth(400)
+        self.strategy_list.currentIndexChanged.connect(self.loadSelectedStrategy)
         layout.addWidget(self.strategy_list)
+
+        self.loadSymbols()
+        self.symbol_list.currentIndexChanged.connect(self.refreshStrategyList)
 
         btn_container = QWidget()
         btn_container.setAttribute(Qt.WA_StyledBackground, True)
@@ -134,60 +329,197 @@ class Header(QWidget):
         layout.addWidget(btn_container, 0, Qt.AlignRight)
 
     def getStrategiesFolder(self):
-        base_dir = Path(__file__).resolve().parent
-        strategies_dir = base_dir / "strategies"
+        root_dir = Path(__file__).resolve().parents[2]
+        strategies_dir = root_dir / "strategies"
         strategies_dir.mkdir(parents=True, exist_ok=True)
         return strategies_dir
+    
+    def getDatabasePath(self):
+        root_dir = Path(__file__).resolve().parents[2]
+        data_dir = root_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "strategies.db"
 
     def openFileDialog(self):
-        strategies_dir = self.getStrategiesFolder()
+        dialog = StrategyModal(self)
 
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Load Strategy",
-            str(strategies_dir),
-            "Python Files (*.py)"
-        )
+        if dialog.exec():
+            strategies_dir = self.getStrategiesFolder()
 
-        if file_path:
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Load Strategy",
+                str(strategies_dir),
+                "Python Files (*.py)"
+            )
 
-                self.editor.setText(content)
-                self.current_file = file_path
+            if file_path:
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
 
-                print("Loaded:", file_path)
+                    self.editor.setText(content)
+                    self.current_file = file_path
 
-            except Exception as e:
-                print("Error loading file:", e)
+                except Exception as e:
+                    print("Error loading file:", e)
 
     def createNewStrategy(self):
-        strategies_dir = self.getStrategiesFolder()
+        dialog = StrategyModal(self)
 
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Create New Strategy",
-            str(strategies_dir / "new_strategy.py"),
-            "Python Files (*.py)"
-        )
+        if dialog.exec():
+            strategy_name, symbol = dialog.get_data()
+            strategies_dir = self.getStrategiesFolder()
+
+            default_name = strategy_name.lower().replace(" ", "_") + ".py"
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Create New Strategy",
+                str(strategies_dir / default_name),
+                "Python Files (*.py)"
+            )
+
+            if not file_path:
+                return
+
+            content = f"""class {strategy_name.replace(" ", "")}:
+    SYMBOL = "{symbol}"
+
+    def on_start(self):
+        pass
+
+    def on_book(self, book):
+        pass
+
+    def on_trade(self, trade):
+        pass
+
+    def on_fill(self, fill):
+        pass
+
+    def on_timer(self, now):
+        pass
+
+    def on_stop(self):
+        pass
+    """
+
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            self.editor.setText(content)
+            self.current_file = file_path
+
+            self.saveStrategyToDatabase(strategy_name, symbol, file_path)
+            self.refreshStrategyList()
+
+    def loadSelectedStrategy(self):
+        file_path = self.strategy_list.currentData()
 
         if not file_path:
             return
 
-        content = """{
-            "name": "New Strategy",
-            "rules": []
-        }"""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
+            self.editor.setText(content)
+            self.current_file = file_path
 
+        except Exception as e:
+            print("Error loading strategy:", e)
 
-        self.editor.setText(content)
-        self.current_file = file_path
+    def initDatabase(self):
+        db_path = self.getDatabasePath()
 
-        print("Created:", file_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                file_path TEXT NOT NULL UNIQUE
+            )
+        """)
+
+        conn.commit()
+        conn.close()
+
+    def saveStrategyToDatabase(self, name, symbol, file_path):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO strategies (name, symbol, file_path)
+            VALUES (?, ?, ?)
+        """, (name, symbol, file_path))
+
+        conn.commit()
+        conn.close()
+
+    def getSavedSymbols(self):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT DISTINCT symbol
+            FROM strategies
+            ORDER BY symbol
+        """)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [row[0] for row in rows]
+
+    def getStrategiesBySymbol(self, symbol):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, name, symbol, file_path
+            FROM strategies
+            WHERE symbol = ?
+            ORDER BY name
+        """, (symbol,))
+
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    
+    def loadSymbols(self):
+        self.symbol_list.clear()
+
+        symbols = self.getSavedSymbols()
+        if not symbols:
+            symbols = ["SOL/USD"]
+        self.symbol_list.addItems(symbols)
+
+        if symbols:
+            self.refreshStrategyList()
+
+    def refreshStrategyList(self):
+        selected_symbol = self.symbol_list.currentText()
+
+        self.strategy_list.blockSignals(True)
+        self.strategy_list.clear()
+
+        if not selected_symbol:
+            self.strategy_list.blockSignals(False)
+            return
+
+        strategies = self.getStrategiesBySymbol(selected_symbol)
+
+        for _, name, symbol, file_path in strategies:
+            self.strategy_list.addItem(name, file_path)
+
+        self.strategy_list.blockSignals(False)
+
+        if self.strategy_list.count() > 0:
+            self.loadSelectedStrategy()
 
 class ActionBar(QWidget):
     def __init__(self, editor):

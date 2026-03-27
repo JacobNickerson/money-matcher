@@ -53,7 +53,7 @@ class CreateBotModal(QDialog):
 
         layout.addStretch()
 
-        submit_btn = QPushButton("Create New Bot")
+        submit_btn = QPushButton("Save Bot")
         submit_btn.setMinimumHeight(32)
         submit_btn.setMaximumHeight(44)
         submit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
