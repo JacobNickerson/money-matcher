@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QSizePolicy, QTableView, QStyledItemDelegate, QTabBar, QHeaderView,
     QFrame, QGridLayout, QComboBox, QScrollArea, QApplication, QStyle,
-    QStyleOptionButton
+    QStyleOptionButton, QDialog
 )
 from PyQt5.QtGui import (
     QFont, QColor, QPainter, QIcon, QPen, QCursor
@@ -11,6 +11,170 @@ from PyQt5.QtCore import (
     Qt, QRect, QSize, pyqtSignal, QEvent
 )
 import models.bot_model as bot_model
+
+class CreateBotModal(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setModal(True)
+        self.setMinimumWidth(600)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #101010;
+                border: 1px solid #363636;
+                border-radius: 16px;
+            }
+            QLabel {
+                color: #FFFFFF;
+                background: transparent;
+            }
+            QPushButton {
+                border-radius: 8px;
+                padding: 10px 14px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("Create New Bot")
+        title.setFont(QFont("Inter", 12, QFont.Medium))
+        layout.addWidget(title)
+
+        layout.addWidget(self.input_field("Bot Name", " "))
+        layout.addWidget(self.strategy_list())
+        layout.addWidget(self.input_field("First Order", "1.00"))
+        layout.addWidget(self.input_field("Take Profit", "0.50"))
+        layout.addWidget(self.input_field("Max. Extra Order", "5"))
+        layout.addWidget(self.input_field("Percentage of Deposit", "1.00"))
+        layout.addWidget(self.input_field("Latency", "3"))
+
+        layout.addStretch()
+
+        submit_btn = QPushButton("Save Bot")
+        submit_btn.setMinimumHeight(32)
+        submit_btn.setMaximumHeight(44)
+        submit_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        submit_btn.setFont(QFont("Inter", 12, QFont.DemiBold))
+        submit_btn.setCursor(Qt.PointingHandCursor)
+        submit_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #FFFFFF;
+                    color: #080808;
+                    border-radius: 8px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #D9D9D9;
+                }
+                QPushButton:pressed {
+                    background-color: #D9D9D9;
+                }
+            """)
+        submit_btn.clicked.connect(self.accept)
+
+        layout.addWidget(submit_btn)
+
+    def input_field(self, label_text, placeholder):
+        container = QWidget()
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #101010;
+            }
+        """)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        label = QLabel(label_text)
+        label.setFont(QFont("Inter", 9))
+        label.setStyleSheet("color: #999999;")
+
+        field = QLineEdit()
+        field.setPlaceholderText(placeholder)
+        field.setFont(QFont("Inter", 10))
+        field.setMinimumHeight(30)
+        field.setMaximumHeight(36)
+
+        field.setStyleSheet("""
+            QLineEdit {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 6px;
+                padding-right: 10px;
+                color: white;
+            }
+        """)
+        if (placeholder == " "):
+            field.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        else:
+            field.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        field_layout = QHBoxLayout()
+        field_layout.setContentsMargins(0, 0, 0, 0)
+        field_layout.addWidget(field)
+
+        layout.addWidget(label)
+        layout.addLayout(field_layout)
+
+        return container
+    
+    def strategy_list(self):
+        container = QWidget()
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #101010;
+            }
+        """)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        
+        label = QLabel("Strategy")
+        label.setFont(QFont("Inter", 9))
+        label.setStyleSheet("color: #999999;")
+
+        list = QComboBox()
+        list.setCursor(Qt.PointingHandCursor)
+        list.setFont(QFont("Inter", 10))
+        list.setMinimumHeight(30)
+        list.setMaximumHeight(36)
+        list.setStyleSheet("""
+            QComboBox {
+                background-color: #080808;
+                border: 1px solid #363636;
+                border-radius: 8px;
+                padding: 8px;
+                color: white;
+            }
+            QComboBox::drop-down {
+                border: none;
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: url(../../resources/images/down-arrow.svg);
+                width: 16px;
+                height: 16px;
+                margin-right: 16px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #080808;
+                selection-background-color: #363636;
+                color: white;
+            }
+        """)
+        list.addItems(["Momentum", "Arbitrage", "Scalping"])
+
+        layout.addWidget(label)
+        layout.addWidget(list)
+
+        return container
 
 class Header(QWidget):
     def __init__(self):
@@ -35,7 +199,7 @@ class Header(QWidget):
 
         layout.addStretch()
 
-        self.new_btn = QPushButton("Create New Bot")
+        self.new_btn = QPushButton(" Create New Bot")
         self.new_btn.setIcon(QIcon("../../resources/images/plus.svg"))
 
         self.new_btn.setCursor(Qt.PointingHandCursor)
@@ -49,15 +213,18 @@ class Header(QWidget):
                 background-color: #FFFFFF;
                 color: #080808;
                 border: none;
-                text-align: center;
                 border-radius: 8px;
-                padding: 0px 12px 0px 12px;
-                spacing: 12px;
+                padding: 0px 12px;
             }
         """)
         self.new_btn.setIconSize(QSize(20, 20))
-
+        self.new_btn.clicked.connect(self.open_bot_modal)
         layout.addWidget(self.new_btn)
+
+    def open_bot_modal(self):
+        dialog = CreateBotModal(self)
+        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        dialog.exec()
 
 class StatusDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):

@@ -169,6 +169,24 @@ mod pyclient {
                 }),
             }
         }
+
+        fn is_trade(&self) -> bool {
+            matches!(self.inner, MarketEventType::Trade(_))
+        }
+
+        fn trade_price(&self) -> Option<u64> {
+            match self.inner {
+                MarketEventType::Trade(trade) => Some(trade.price),
+                _ => None,
+            }
+        }
+
+        fn trade_quantity(&self) -> Option<u64> {
+            match self.inner {
+                MarketEventType::Trade(trade) => Some(trade.quantity),
+                _ => None,
+            }
+        }
     }
     impl From<MarketEventType> for PyMarketEventType {
         fn from(value: MarketEventType) -> Self {
@@ -194,6 +212,16 @@ mod pyclient {
         #[new]
         fn new(timestamp: u64, kind: PyMarketEventType) -> Self {
             Self { timestamp, kind }
+        }
+
+        #[getter]
+        fn timestamp(&self) -> u64 {
+            self.timestamp
+        }
+
+        #[getter]
+        fn kind(&self) -> PyMarketEventType {
+            self.kind
         }
     }
     impl From<MarketEvent> for PyMarketEvent {

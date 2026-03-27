@@ -1,3 +1,5 @@
+import os
+import sys
 import pandas as pd
 from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
@@ -9,11 +11,19 @@ from PyQt5.QtGui import (
     QFont, QColor, QPainter
 )
 from PyQt5.QtCore import (
-    Qt, QRect
+    Qt, QRect, QTimer
 )
 
 import models.order_book_model as order_book_model
 import models.trade_history_model as trade_history_model
+import controllers.candlestick as candle
+
+pyclient_dir = os.path.relpath('../../crates/pyclient')
+
+if pyclient_dir not in sys.path:
+    sys.path.append(pyclient_dir)
+
+import pyclient
 
 class MarketEvents(QWidget):
     def __init__(self):
@@ -41,15 +51,13 @@ class MarketEvents(QWidget):
         layout.addWidget(self.chart.get_webview())
         self.setLayout(layout)
 
-        test_data = pd.read_csv("../../resources/test_data/ohlc.csv") # TODO: replace with market data feed
-        symbol = "SOL/USD" # TODO: add symbol selector and update chart based on selection
-        self.chart.set(test_data)
-        self.chart.layout(background_color="#101010", text_color="#999999", font_family="Inter")
-        self.chart.candle_style(up_color="#00C278", down_color="#EB5757", wick_up_color="#00C278", wick_down_color="#EB5757", border_visible=False)
-        self.chart.grid(color="#080808")
-        self.chart.legend(visible=True, font_size=14, font_family="Inter", color="#999999", color_based_on_candle=True, text=symbol, lines=False)
-        self.chart.price_scale(border_visible=False)
-        self.chart.time_scale(border_visible=False)
+        self.chart_controller = candle.CandlestickController(chart=self.chart)
+
+    def handle_market_event(self, event):
+        self.chart_controller.handle_market_event(event)
+
+    def refresh_chart(self):
+        self.chart_controller.refresh_chart()
 
 class OrderBookTableView(QTableView):
     def __init__(self):
@@ -179,24 +187,30 @@ class OrderBook(QWidget):
                 border: none;
             }                      
         """)
-        
-        self.loadTestData()
+
         self.layout().addWidget(self.table)
 
-    def loadTestData(self):
-        asks = [(100.50 + i, 1.5 + i*0.1, (100.50 + i) * (1.5 + i*0.1)) for i in range(10)]
-        bids = [(100.00 - i, 2.0 + i*0.2, (100.00 - i) * (2.0 + i*0.2)) for i in range(10)]
-
-        model = order_book_model.OrderBookModel(asks, bids)
-        self.table.setModel(model)
-        self.table.resizeColumnsToContents()
+    def refresh_order_book_display(self, rust_book):
+        try:
+            raw_asks = rust_book.get_top_levels(pyclient.PyOrderSide.Ask, 7)
+            raw_bids = rust_book.get_top_levels(pyclient.PyOrderSide.Bid, 7)
+            asks = [(price, qty, price * qty) for price, qty in raw_asks]
+            bids = [(price, qty, price * qty) for price, qty in raw_bids]
+            spread = rust_book.spread()
+            mid_price = rust_book.mid_price()
+            model = order_book_model.OrderBookModel(asks, bids, spread, mid_price)
+            self.table.setModel(model)
+            #self.table.resizeColumnsToContents()
+        except Exception as e:
+            print(f"Error updating order book: {e}")
 
 class OrderEntry(QWidget):
-    def __init__(self):
+    def __init__(self, fix_client=None):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setMinimumWidth(320)
+        self.fix_client = fix_client
 
         self.setStyleSheet("""
             OrderEntry {
@@ -321,9 +335,13 @@ class OrderEntry(QWidget):
         type_layout.insertWidget(0, self.market_lbl)
         layout.addWidget(type_container)
 
-        layout.addWidget(self.input_field("Price", "0.00"))
-        layout.addWidget(self.input_field("Amount", "0.0000"))
-        layout.addWidget(self.input_field("Total", "0.000"))
+        price_widget, self.price_input = self.input_field("Price", "0.00")
+        amount_widget, self.amount_input = self.input_field("Amount", "0.0000")
+        total_widget, self.total_input = self.input_field("Total", "0.000")
+
+        layout.addWidget(price_widget)
+        layout.addWidget(amount_widget)
+        layout.addWidget(total_widget)
 
         layout.addWidget(self.table())
 
@@ -337,6 +355,7 @@ class OrderEntry(QWidget):
         self.update_submit_button()
         self.buy_btn.toggled.connect(self.update_submit_button)
         self.sell_btn.toggled.connect(self.update_submit_button)
+        self.submit_btn.clicked.connect(self.submit_order)
 
         layout.addWidget(self.submit_btn)
 
@@ -380,7 +399,7 @@ class OrderEntry(QWidget):
         layout.addWidget(label)
         layout.addLayout(field_layout)
 
-        return container
+        return container, field
 
     def table(self, available_val="0.000", max_buy_val="0.000"):
         container = QWidget()
@@ -488,6 +507,24 @@ class OrderEntry(QWidget):
                     background-color: #C44B4B;
                 }
             """)
+
+    def submit_order(self):
+        try:
+            side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
+            
+            price = int(float(self.price_input.text()) * 1e8)
+            qty = int(float(self.amount_input.text()) * 1e8)
+            
+            order_type = pyclient.PyOrderType.limit(qty, price)
+            order = pyclient.PyOrder(order_id=0, side=side, timestamp=0, kind=order_type)
+            
+            if self.fix_client:
+                payload = pyclient.FIXPayload.Business(
+                    pyclient.BusinessMessage.NewOrderSingle(order)
+                )
+                self.fix_client.send_message(payload)
+        except Exception as e:
+            print(f"Error sending order: {e}")
 
 class CancelButtonDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
