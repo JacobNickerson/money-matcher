@@ -15,6 +15,10 @@ use ringbuf::{
     traits::{Producer, Split},
 };
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     thread,
@@ -29,19 +33,21 @@ pub struct MoldEngine {
 }
 
 impl MoldEngine {
-    pub fn start() -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1024).split();
-        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1024).split();
+    pub fn start(running: Arc<AtomicBool>) -> Self {
+        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1 << 20).split();
+        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1 << 20).split();
 
         Self::start_publisher(
             "MM_L3".to_string(),
             "233.100.10.3:9503".parse().unwrap(),
             l3_rx,
+            Arc::clone(&running),
         );
         Self::start_publisher(
             "MM_TR".to_string(),
             "233.100.10.4:9504".parse().unwrap(),
             trade_rx,
+            Arc::clone(&running),
         );
 
         Self {
@@ -51,7 +57,12 @@ impl MoldEngine {
         }
     }
 
-    fn start_publisher(session_id: String, multicast_group: SocketAddr, event_rx: HeapCons<Event>) {
+    fn start_publisher(
+        session_id: String,
+        multicast_group: SocketAddr,
+        event_rx: HeapCons<Event>,
+        running: Arc<AtomicBool>,
+    ) {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
         socket.set_multicast_loop_v4(true).expect("err");
 
@@ -65,7 +76,7 @@ impl MoldEngine {
         let std_socket: UdpSocket = socket.into();
 
         let sequencer_publisher =
-            SequencerPublisher::new(event_rx, multicast_group, std_socket, session_id);
+            SequencerPublisher::new(event_rx, multicast_group, std_socket, session_id, running);
 
         thread::spawn(move || {
             sequencer_publisher.run();
@@ -191,7 +202,7 @@ mod tests {
     #[test]
     #[ignore]
     fn send_orders() {
-        let mut server = MoldEngine::start();
+        let mut server = MoldEngine::start(Arc::new(AtomicBool::new(true)));
         std::thread::sleep(std::time::Duration::from_millis(250));
         for _ in 0..50 {
             println!("");

@@ -17,6 +17,7 @@ impl OrderDelete {
     /// * `tracking_number` - Nasdaq internal tracking number
     /// * `timestamp` - Nanoseconds since midnight
     /// * `order_reference_number` - The reference number of the order being canceled
+    #[inline(always)]
     pub fn encode_into(
         buf: &mut [u8],
         stock_locate: u16,

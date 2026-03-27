@@ -25,17 +25,23 @@ impl ReceiverHandler {
     }
 
     pub fn run(mut self) {
+        self.socket.set_nonblocking(true).expect("err");
         let mut buf = [0u8; 2048];
 
         loop {
             let (len, _) = match self.socket.recv_from(&mut buf) {
                 Ok(v) => v,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::hint::spin_loop();
+                    continue;
+                }
                 Err(_) => continue,
             };
             self.handle_packet(&buf[..len]);
         }
     }
 
+    #[inline(always)]
     fn handle_packet(&mut self, bytes: &[u8]) {
         let len = bytes.len();
 
@@ -68,6 +74,7 @@ impl ReceiverHandler {
         }
     }
 
+    #[inline(always)]
     fn handle_message(&mut self, bytes: &[u8], len: usize, offset: &mut usize) -> bool {
         if *offset + 2 > len {
             return false;
@@ -96,6 +103,7 @@ impl ReceiverHandler {
         true
     }
 
+    #[inline(always)]
     fn parse_event(message_data: &[u8]) -> Option<MarketEvent> {
         if message_data.is_empty() {
             return None;

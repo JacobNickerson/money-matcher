@@ -2,13 +2,15 @@ use bytes::{BufMut, Bytes, BytesMut};
 use mm_core::moldudp64_core::sessions::SessionTable;
 use mm_core::moldudp64_core::types::Event;
 use ringbuf::{HeapCons, traits::Consumer};
-use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 pub struct SequencerPublisher {
     input: HeapCons<Event>,
-    cache: VecDeque<Event>,
 
     sequence_number: u64,
     session_table: SessionTable,
@@ -24,6 +26,7 @@ pub struct SequencerPublisher {
     max_packet_size: usize,
     flush_interval: Duration,
     next_flush: Instant,
+    running: Arc<AtomicBool>,
 }
 
 impl SequencerPublisher {
@@ -32,6 +35,7 @@ impl SequencerPublisher {
         multicast_group: SocketAddr,
         socket: UdpSocket,
         session_id: String,
+        running: Arc<AtomicBool>,
     ) -> Self {
         let mut packet = BytesMut::with_capacity(1400);
         packet.resize(20, 0);
@@ -40,7 +44,6 @@ impl SequencerPublisher {
 
         Self {
             input,
-            cache: VecDeque::new(),
             sequence_number: 1,
             session_table: SessionTable::new(session_id),
             multicast_group,
@@ -52,6 +55,7 @@ impl SequencerPublisher {
             max_packet_size: 1400,
             flush_interval,
             next_flush: Instant::now() + flush_interval,
+            running,
         }
     }
 
@@ -71,14 +75,12 @@ impl SequencerPublisher {
     }
 
     pub fn run(mut self) {
-        loop {
+        while self.running.load(Ordering::Relaxed) {
             if Instant::now() >= self.next_flush {
                 self.flush();
             }
 
-            self.cache.extend(self.input.pop_iter());
-
-            while let Some(event) = self.cache.pop_front() {
+            while let Some(event) = self.input.try_pop() {
                 self.process_event(event);
             }
 
@@ -86,6 +88,7 @@ impl SequencerPublisher {
         }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.packet.truncate(20);
         self.current_session = None;
@@ -93,6 +96,7 @@ impl SequencerPublisher {
         self.message_count = 0;
     }
 
+    #[inline(always)]
     fn process_header(&mut self) {
         self.packet[0..10].copy_from_slice(&self.current_session.expect("err"));
         self.packet[10..18]
@@ -100,6 +104,7 @@ impl SequencerPublisher {
         self.packet[18..20].copy_from_slice(&(self.message_count as u16).to_be_bytes());
     }
 
+    #[inline(always)]
     fn process_event(&mut self, event: Bytes) {
         let sequence_number = self.sequence_number;
         let session_id = self.session_table.get_current_session();
@@ -145,6 +150,7 @@ mod tests {
             SocketAddr::V4("233.100.10.100:9600".parse().unwrap()),
             UdpSocket::bind("0.0.0.0:0").expect("err"),
             "MM_L0".to_string(),
+            Arc::new(AtomicBool::new(true)),
         )
     }
 

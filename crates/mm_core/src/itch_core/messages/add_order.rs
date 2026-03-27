@@ -23,6 +23,7 @@ impl AddOrder {
     /// * `shares` - The total number of shares associated with the order being added to the book
     /// * `stock` - Stock symbol, right padded with spaces
     /// * `price` - The display price of the new order
+    #[inline(always)]
     pub fn encode_into(
         buf: &mut [u8],
         stock_locate: u16,
