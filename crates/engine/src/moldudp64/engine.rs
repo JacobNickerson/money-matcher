@@ -70,7 +70,7 @@ impl MoldEngine {
         socket.bind(&SockAddr::from(bind_addr)).expect("err");
         socket.set_multicast_ttl_v4(1).expect("err");
         socket
-            .set_multicast_if_v4(&Ipv4Addr::UNSPECIFIED)
+            .set_multicast_if_v4(&Ipv4Addr::LOCALHOST)
             .expect("err");
 
         let std_socket: UdpSocket = socket.into();
