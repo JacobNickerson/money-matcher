@@ -111,7 +111,9 @@ class Strats(QWidget):
 
         self.editor = CodeEditor()
         self.header = Header(self.editor)
-        self.action_bar = ActionBar(self.editor)
+        self.action_bar = ActionBar(self.editor, self.header)
+        self.header.strategyChanged.connect(self.action_bar.setCurrentStrategy)
+        self.header.loadSymbols()
 
         layout.addWidget(self.header)
         layout.addWidget(self.action_bar)
@@ -195,6 +197,26 @@ class EngineWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyleSheet("""
+        QMessageBox {
+            background-color: #101010;
+        }
+
+        QMessageBox QLabel {
+            color: #FFFFFF;
+        }
+
+        QMessageBox QPushButton {
+            background-color: #1A1A1A;
+            color: #FFFFFF;
+            border-radius: 6px;
+            padding: 6px 12px;
+        }
+
+        QMessageBox QPushButton:hover {
+            background-color: #2A2A2A;
+        }
+    """)
     window = EngineWindow()
     window.show()
     sys.exit(app.exec_())
