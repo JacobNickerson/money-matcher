@@ -10,7 +10,7 @@ from PyQt5.QtGui import (
     QFont, QColor, QPainter, QLinearGradient, QIcon
 )
 from PyQt5.QtCore import (
-    Qt, QSize
+    Qt, QSize, pyqtSignal
 )
 from PyQt5.Qsci import (
     QsciScintilla, QsciLexerPython
@@ -208,6 +208,7 @@ class StrategyModal(QDialog):
         return name, symbol
 
 class Header(QWidget):
+    strategyChanged = pyqtSignal(str, str, str) 
     def __init__(self, editor):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -277,7 +278,6 @@ class Header(QWidget):
         self.strategy_list.currentIndexChanged.connect(self.loadSelectedStrategy)
         layout.addWidget(self.strategy_list)
 
-        self.loadSymbols()
         self.symbol_list.currentIndexChanged.connect(self.refreshStrategyList)
 
         btn_container = QWidget()
@@ -425,6 +425,9 @@ class Header(QWidget):
                 content = f.read()
 
             self.editor.setText(content)
+            name = self.strategy_list.currentText()
+            symbol = self.symbol_list.currentText()
+            self.strategyChanged.emit(name, symbol, file_path)
             self.current_file = file_path
 
         except Exception as e:
@@ -490,7 +493,9 @@ class Header(QWidget):
         conn.close()
         return rows
     
-    def loadSymbols(self):
+    def loadSymbols(self, selected_symbol=None):
+        self.symbol_list.blockSignals(True)
+        current_symbol = selected_symbol or self.symbol_list.currentText()
         self.symbol_list.clear()
 
         symbols = self.getSavedSymbols()
@@ -498,8 +503,12 @@ class Header(QWidget):
             symbols = ["SOL/USD"]
         self.symbol_list.addItems(symbols)
 
-        if symbols:
-            self.refreshStrategyList()
+        if current_symbol in symbols:
+            self.symbol_list.setCurrentText(current_symbol)
+
+        self.symbol_list.blockSignals(False)
+
+        self.refreshStrategyList()
 
     def refreshStrategyList(self):
         selected_symbol = self.symbol_list.currentText()
@@ -519,13 +528,19 @@ class Header(QWidget):
         self.strategy_list.blockSignals(False)
 
         if self.strategy_list.count() > 0:
+            self.strategy_list.setCurrentIndex(0)
             self.loadSelectedStrategy()
 
 class ActionBar(QWidget):
-    def __init__(self, editor):
+    def __init__(self, editor, header):
         super().__init__()
         self.setStyleSheet("background: #101010;")
         self.editor = editor
+        self.header = header
+
+        self.current_file = None
+        self.current_strategy_name = None
+        self.current_symbol = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 24, 16, 24)
@@ -547,20 +562,20 @@ class ActionBar(QWidget):
             btn.setIconSize(QSize(20, 20))
 
         self.save_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #FFFFFF;
-                    color: #080808;
-                    border-radius: 8px;
-                    padding: 0px 8px 0px 8px;
-                }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #080808;
+                border-radius: 8px;
+                padding: 0px 8px 0px 8px;
+            }
         """)
         self.delete_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #261719;
-                    color: #FF5D61;
-                    border-radius: 8px;
-                    padding: 0px 8px 0px 8px;
-                }
+            QPushButton {
+                background-color: #261719;
+                color: #FF5D61;
+                border-radius: 8px;
+                padding: 0px 8px 0px 8px;
+            }
         """)
 
         self.save_btn.clicked.connect(self.saveStrategy)
@@ -571,13 +586,49 @@ class ActionBar(QWidget):
         layout.addWidget(self.delete_btn)
 
     def getStrategiesFolder(self):
-        base_dir = Path(__file__).resolve().parent
-        strategies_dir = base_dir / "strategies"
+        root_dir = Path(__file__).resolve().parents[2]
+        strategies_dir = root_dir / "strategies"
         strategies_dir.mkdir(parents=True, exist_ok=True)
         return strategies_dir
 
+    def getDatabasePath(self):
+        root_dir = Path(__file__).resolve().parents[2]
+        data_dir = root_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "strategies.db"
+
+    def saveStrategyToDatabase(self, name, symbol, file_path):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO strategies (name, symbol, file_path)
+            VALUES (?, ?, ?)
+        """, (name, symbol, file_path))
+
+        conn.commit()
+        conn.close()
+
+    def deleteStrategyFromDatabase(self, file_path):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DELETE FROM strategies
+            WHERE file_path = ?
+        """, (file_path,))
+
+        conn.commit()
+        conn.close()
+
+    def setCurrentStrategy(self, name, symbol, file_path):
+        self.current_strategy_name = name
+        self.current_symbol = symbol
+        self.current_file = file_path
+
     def saveStrategy(self):
-        if not hasattr(self, "current_file"):
+        if not self.current_file:
+            QMessageBox.warning(self, "No Strategy", "There is no strategy currently open.")
             return
 
         try:
@@ -586,46 +637,62 @@ class ActionBar(QWidget):
             with open(self.current_file, "w", encoding="utf-8") as f:
                 f.write(content)
 
+            strategy_name = self.current_strategy_name
+            if not strategy_name:
+                strategy_name = Path(self.current_file).stem
+
+            symbol = self.current_symbol
+            if not symbol:
+                symbol = ""
+
+            self.saveStrategyToDatabase(strategy_name, symbol, self.current_file)
+
+            QMessageBox.information(self, "Saved", f"{strategy_name} was saved successfully.")
             print("Saved:", self.current_file)
 
         except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Could not save strategy:\n{e}")
             print("Save error:", e)
 
     def deleteStrategy(self):
-        strategies_dir = self.getStrategiesFolder()
-
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Delete Strategy",
-            str(strategies_dir),
-            "Python Files (*.py)"
-        )
-
-        if not file_path:
+        if not self.current_file:
+            QMessageBox.warning(self, "No Strategy", "There is no strategy currently open.")
             return
 
+        file_path = self.current_file
         file_name = os.path.basename(file_path)
+        deleted_symbol = self.current_symbol
 
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
             f"Are you sure you want to delete:\n\n{file_name}?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Cancel
         )
 
-        if reply == QMessageBox.Yes:
-            try:
+        if reply != QMessageBox.Discard:
+            return
+
+        try:
+            if os.path.exists(file_path):
                 os.remove(file_path)
 
-                if hasattr(self, "current_file") and self.current_file == file_path:
-                    self.editor.clear()
-                    self.current_file = None
+            self.deleteStrategyFromDatabase(file_path)
 
-                QMessageBox.information(self, "Deleted", f"{file_name} was deleted.")
+            self.editor.clear()
+            self.current_file = None
+            self.current_strategy_name = None
+            self.current_symbol = None
 
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not delete file:\n{e}")
+            if self.header:
+                self.header.loadSymbols(selected_symbol=deleted_symbol)
+
+            QMessageBox.information(self, "Deleted", f"{file_name} was deleted.")
+            print("Deleted:", file_path)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not delete file:\n{e}")
 
 
 class FadeOverlay(QWidget):
