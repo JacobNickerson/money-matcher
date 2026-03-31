@@ -166,7 +166,6 @@ class CreateBotModal(QDialog):
                 background-color: #101010;
             }
         """)
-
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
