@@ -383,24 +383,30 @@ class Header(QWidget):
             if not file_path:
                 return
 
-            content = f"""class {strategy_name.replace(" ", "")}:
+            content = f"""class {strategy_name.replace(" ", "")}(Strategy):
     symbol = "{symbol}"
 
+    # strategy state initialization
     def on_start(self):
         pass
 
+    # called on order book changes
     def on_book(self, book):
         pass
 
+    # called on market trades
     def on_trade(self, trade):
         pass
 
+    # called on fills
     def on_fill(self, fill):
         pass
 
+    # called on set interval timer
     def on_timer(self, now):
         pass
 
+    # clean up when strategy is stopped
     def on_stop(self):
         pass
     """
