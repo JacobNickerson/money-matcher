@@ -94,8 +94,8 @@ class Bots(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
 
-        self.header = BotHeader()
         self.table = BotList()
+        self.header = BotHeader(self.table)
 
         layout.addWidget(self.header)
         layout.addWidget(self.table, 1)
@@ -197,26 +197,6 @@ class EngineWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyleSheet("""
-        QMessageBox {
-            background-color: #101010;
-        }
-
-        QMessageBox QLabel {
-            color: #FFFFFF;
-        }
-
-        QMessageBox QPushButton {
-            background-color: #1A1A1A;
-            color: #FFFFFF;
-            border-radius: 6px;
-            padding: 6px 12px;
-        }
-
-        QMessageBox QPushButton:hover {
-            background-color: #2A2A2A;
-        }
-    """)
     window = EngineWindow()
     window.show()
     sys.exit(app.exec_())
