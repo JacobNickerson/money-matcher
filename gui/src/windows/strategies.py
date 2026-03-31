@@ -338,7 +338,7 @@ class Header(QWidget):
         root_dir = Path(__file__).resolve().parents[2]
         data_dir = root_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "strategies.db"
+        return data_dir / "matchmakers.db"
 
     def openFileDialog(self):
         dialog = StrategyModal(self)
@@ -384,7 +384,7 @@ class Header(QWidget):
                 return
 
             content = f"""class {strategy_name.replace(" ", "")}:
-    SYMBOL = "{symbol}"
+    symbol = "{symbol}"
 
     def on_start(self):
         pass
@@ -595,7 +595,7 @@ class ActionBar(QWidget):
         root_dir = Path(__file__).resolve().parents[2]
         data_dir = root_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "strategies.db"
+        return data_dir / "matchmakers.db"
 
     def saveStrategyToDatabase(self, name, symbol, file_path):
         conn = sqlite3.connect(self.getDatabasePath())
@@ -628,7 +628,7 @@ class ActionBar(QWidget):
 
     def saveStrategy(self):
         if not self.current_file:
-            QMessageBox.warning(self, "No Strategy", "There is no strategy currently open.")
+            QMessageBox.warning(None, "No Strategy", "There is no strategy currently open.")
             return
 
         try:
@@ -647,16 +647,16 @@ class ActionBar(QWidget):
 
             self.saveStrategyToDatabase(strategy_name, symbol, self.current_file)
 
-            QMessageBox.information(self, "Saved", f"{strategy_name} was saved successfully.")
+            QMessageBox.information(None, "Saved", f"{strategy_name} was saved successfully.")
             print("Saved:", self.current_file)
 
         except Exception as e:
-            QMessageBox.critical(self, "Save Error", f"Could not save strategy:\n{e}")
+            QMessageBox.critical(None, "Save Error", f"Could not save strategy:\n{e}")
             print("Save error:", e)
 
     def deleteStrategy(self):
         if not self.current_file:
-            QMessageBox.warning(self, "No Strategy", "There is no strategy currently open.")
+            QMessageBox.warning(None, "No Strategy", "There is no strategy currently open.")
             return
 
         file_path = self.current_file
@@ -664,7 +664,7 @@ class ActionBar(QWidget):
         deleted_symbol = self.current_symbol
 
         reply = QMessageBox.question(
-            self,
+            None,
             "Confirm Delete",
             f"Are you sure you want to delete:\n\n{file_name}?",
             QMessageBox.Discard | QMessageBox.Cancel,
@@ -688,11 +688,11 @@ class ActionBar(QWidget):
             if self.header:
                 self.header.loadSymbols(selected_symbol=deleted_symbol)
 
-            QMessageBox.information(self, "Deleted", f"{file_name} was deleted.")
+            QMessageBox.information(None, "Deleted", f"{file_name} was deleted.")
             print("Deleted:", file_path)
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not delete file:\n{e}")
+            QMessageBox.critical(None, "Error", f"Could not delete file:\n{e}")
 
 
 class FadeOverlay(QWidget):

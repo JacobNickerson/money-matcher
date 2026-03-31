@@ -1,6 +1,9 @@
 import os
 import sys
+import threading
+import time
 import pandas as pd
+from decimal import Decimal
 from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
@@ -204,6 +207,19 @@ class OrderBook(QWidget):
         except Exception as e:
             print(f"Error updating order book: {e}")
 
+class OrderIdGenerator:
+    def __init__(self):
+        self.last = 0
+        self.lock = threading.Lock()
+
+    def next(self):
+        with self.lock:
+            now = time.time_ns()
+            if now <= self.last:
+                now = self.last + 1
+            self.last = now
+            return now
+    
 class OrderEntry(QWidget):
     def __init__(self, fix_client=None):
         super().__init__()
@@ -211,6 +227,7 @@ class OrderEntry(QWidget):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setMinimumWidth(320)
         self.fix_client = fix_client
+        self.orderid_gen = OrderIdGenerator()
 
         self.setStyleSheet("""
             OrderEntry {
@@ -300,7 +317,7 @@ class OrderEntry(QWidget):
         type_layout.setContentsMargins(0, 0, 0, 0)
         type_layout.setSpacing(16)
 
-        self.market_lbl = QLabel("Market")
+        self.market_lbl = QLabel("Order Type")
         self.market_lbl.setFont(QFont("Inter", 10))
         self.market_lbl.setStyleSheet("""
             color: #999999;
@@ -308,7 +325,7 @@ class OrderEntry(QWidget):
         """)
 
         self.limit_btn = QPushButton("Limit")
-        self.tpsl_btn = QPushButton("Tp/SL")
+        self.tpsl_btn = QPushButton("Market")
 
         for btn in (self.limit_btn, self.tpsl_btn):
             btn.setCheckable(True)
@@ -337,7 +354,12 @@ class OrderEntry(QWidget):
 
         price_widget, self.price_input = self.input_field("Price", "0.00")
         amount_widget, self.amount_input = self.input_field("Amount", "0.0000")
+        self.price_input.textChanged.connect(self.update_total)
+        self.amount_input.textChanged.connect(self.update_total)
+
         total_widget, self.total_input = self.input_field("Total", "0.000")
+        self.total_input.setReadOnly(True)
+        self.total_input.setFocusPolicy(Qt.NoFocus)
 
         layout.addWidget(price_widget)
         layout.addWidget(amount_widget)
@@ -474,6 +496,16 @@ class OrderEntry(QWidget):
         grid.addWidget(v_divider, 0, 1, 3, 1)
 
         return container
+    
+    def update_total(self):
+        try:
+            price = float(self.price_input.text())
+            amount = float(self.amount_input.text())
+            total = price * amount
+
+            self.total_input.setText(f"{total:.5f}")
+        except ValueError:
+            self.total_input.setText("")
 
     def update_submit_button(self):
         if self.buy_btn.isChecked():
@@ -512,17 +544,14 @@ class OrderEntry(QWidget):
         try:
             side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
             
-            price = int(float(self.price_input.text()) * 1e8)
-            qty = int(float(self.amount_input.text()) * 1e8)
+            price = int(Decimal(self.price_input.text()) * Decimal("1e4"))
+            qty = int(Decimal(self.amount_input.text()) * Decimal("1e4"))
             
-            order_type = pyclient.PyOrderType.limit(qty, price)
-            order = pyclient.PyOrder(order_id=0, side=side, timestamp=0, kind=order_type)
+            order_type = pyclient.PyOrderType.limit(qty, price) if self.limit_btn.isChecked() else pyclient.PyOrderType.market(qty)
+            order = pyclient.PyOrder(order_id=self.orderid_gen.next(), side=side, timestamp=int(time.time() * 1000), kind=order_type)
             
             if self.fix_client:
-                payload = pyclient.FIXPayload.Business(
-                    pyclient.BusinessMessage.NewOrderSingle(order)
-                )
-                self.fix_client.send_message(payload)
+                self.fix_client.send_message(order)
         except Exception as e:
             print(f"Error sending order: {e}")
 
@@ -640,7 +669,7 @@ class TradeHistory(QWidget):
 
         layout.addWidget(self.table)
 
-        self.load_test_data()
+        #self.load_test_data()
 
     def load_test_data(self):
         rows = []
