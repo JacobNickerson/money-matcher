@@ -1,3 +1,4 @@
+/// Encodes the lower 48 bits of a 64-bit integer into a big-endian 6-byte array.
 #[inline(always)]
 pub fn encode_u48(value: u64) -> [u8; 6] {
     let bytes = value.to_be_bytes();
@@ -6,6 +7,7 @@ pub fn encode_u48(value: u64) -> [u8; 6] {
     out
 }
 
+/// Decodes a big-endian 6-byte array into a 64-bit integer.
 #[inline(always)]
 pub fn decode_u48(ts: [u8; 6]) -> u64 {
     let mut buf = [0u8; 8];

@@ -1,27 +1,32 @@
-use std::io;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-
 use mio::{Events, Interest, Poll, Token, Waker, event::Event, net::TcpStream};
-use mm_core::fix_core::messages::{BusinessMessage, FIXBusinessMessage};
-use mm_core::lob_core::market_orders::Order;
+use mm_core::{
+    fix_core::{
+        messages::{
+            BusinessMessage, EngineMessage, FIXBusinessMessage, FIXEvent, FIXPayload,
+            heartbeat::Heartbeat, logon::Logon, resend_request::ResendRequest,
+            test_request::TestRequest, types::EncryptMethod,
+        },
+        session::{Session, SessionState},
+    },
+    lob_core::market_orders::Order,
+};
 use ringbuf::{
     HeapCons, HeapProd,
     traits::{Consumer, Producer, Split},
 };
-
-use mm_core::fix_core::{
-    messages::{
-        EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
-        resend_request::ResendRequest, test_request::TestRequest, types::EncryptMethod,
-    },
-    session::{Session, SessionState},
+use std::{
+    io,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
+/// Token used to interrupt the poll loop when the application queues new outbound messages.
 const WAKE: Token = Token(0);
+/// Token identifying the main FIX TCP stream.
 const SESSION: Token = Token(1);
 
+/// A FIX client that manages the TCP connection, session state, and network event loop.
 pub struct FixClient {
     session: Option<Session>,
     server_addr: SocketAddr,
@@ -36,6 +41,7 @@ pub struct FixClient {
 }
 
 impl FixClient {
+    /// Initializes the client and returns it alongside a handler for message passing.
     pub fn new(
         server_addr: SocketAddr,
         comp_id: String,
@@ -74,6 +80,7 @@ impl FixClient {
         Ok((client, handler))
     }
 
+    /// Establishes the TCP connection and sends the initial FIX Logon message.
     pub fn connect(&mut self) -> io::Result<()> {
         if self.session.is_some() {
             return Ok(());
@@ -107,6 +114,7 @@ impl FixClient {
         Ok(())
     }
 
+    /// Runs the main blocking event loop. Polls for network I/O and checks session health continuously.
     pub fn run(&mut self) {
         let mut events = Events::with_capacity(1024);
         println!("Client connecting to {}", self.server_addr);
@@ -124,6 +132,7 @@ impl FixClient {
         }
     }
 
+    /// Maintains session health by sending `Heartbeats` or `TestRequests` when idle, and closing the connection if unresponsive.
     pub fn check_heartbeats(&mut self) {
         let now = Instant::now();
         let mut action = None;
@@ -157,6 +166,7 @@ impl FixClient {
         }
     }
 
+    /// Routes polled events to process either outbound application messages or inbound network traffic.
     fn handle_event(&mut self, event: &Event) {
         match event.token() {
             WAKE => self.process_outbound_messages(),
@@ -172,6 +182,7 @@ impl FixClient {
         }
     }
 
+    /// Drains the outbound queue from the handler and pushes messages into the session's network write buffer.
     fn process_outbound_messages(&mut self) {
         while let Some(req) = self.outbound_rx.try_pop() {
             let Some(session) = self.session.as_mut() else {
@@ -193,6 +204,7 @@ impl FixClient {
         }
     }
 
+    /// Flushes the write buffer to the TCP socket, updating poll interests to stop writing when empty.
     fn handle_writable(&mut self) {
         if let Some(session) = self.session.as_mut() {
             if session.flush().is_err() {
@@ -210,6 +222,7 @@ impl FixClient {
         }
     }
 
+    /// Reads from the TCP socket, processing session-level messages internally and forwarding business messages to the handler.
     fn handle_readable(&mut self) {
         self.poll_events.clear();
 
@@ -256,12 +269,14 @@ impl FixClient {
         }
     }
 
+    /// Deregisters the stream and drops the session, closing the connection.
     fn close_session(&mut self) {
         if let Some(mut session) = self.session.take() {
             self.poll.registry().deregister(&mut session.stream).ok();
         }
     }
 
+    /// Handles a ResendRequest by resending messages from the requested sequence range.
     fn resend_messages(&mut self, resend_request: &ResendRequest) {
         let mut messages_to_resend = Vec::new();
 
@@ -298,6 +313,7 @@ impl FixClient {
         }
     }
 
+    /// Updates session parameters from the incoming Logon, or drops the connection if already logged in.
     fn finalize_logon(&mut self, _comp_id: Arc<str>, logon: Logon) {
         let Some(session) = self.session.as_mut() else {
             return;
@@ -316,6 +332,7 @@ impl FixClient {
         state.heart_bt_int = logon.heart_bt_int;
     }
 
+    /// Directly queues a message for transmission and ensures the socket is polled for writing.
     fn send_outbound_message(&mut self, payload: FIXPayload) {
         let Some(session) = self.session.as_mut() else {
             return;
@@ -335,6 +352,7 @@ impl FixClient {
     }
 }
 
+/// A handle for the application thread to send orders and receive FIX reports.
 pub struct FixClientHandler {
     comp_id: Arc<str>,
     outbound_tx: Mutex<HeapProd<FIXEvent>>,
@@ -343,6 +361,7 @@ pub struct FixClientHandler {
 }
 
 impl FixClientHandler {
+    /// Converts an Order into a FIX `BusinessMessage`, queues it for sending, and wakes the client's event loop.
     pub fn send_message(&mut self, order: &Order) -> Result<(), &'static str> {
         let msg = BusinessMessage::from_order(order)?;
 
@@ -357,6 +376,7 @@ impl FixClientHandler {
         Ok(())
     }
 
+    /// Polls the inbound queue for the latest FIX reports from LOB.
     pub fn next_report(&mut self) -> Option<FIXEvent> {
         self.lob_rx.lock().unwrap().try_pop()
     }
