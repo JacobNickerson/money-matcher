@@ -1,26 +1,35 @@
-use mio::event::Event;
-use mio::net::{TcpListener, TcpStream};
-use mio::{Events, Interest, Poll, Token, Waker};
-use mm_core::fix_core::messages::FIXBusinessMessage;
+use mio::{
+    Events, Interest, Poll, Token, Waker,
+    event::Event,
+    net::{TcpListener, TcpStream},
+};
 use mm_core::fix_core::{
     messages::{
-        EngineMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat, logon::Logon,
-        resend_request::ResendRequest, test_request::TestRequest,
+        EngineMessage, FIXBusinessMessage, FIXEvent, FIXPayload, heartbeat::Heartbeat,
+        logon::Logon, resend_request::ResendRequest, test_request::TestRequest,
     },
     session::{Session, SessionState},
 };
 use mm_core::lob_core::market_orders::Order;
-use ringbuf::traits::{Consumer, Producer, Split};
-use ringbuf::{HeapCons, HeapProd};
-use std::collections::HashMap;
-use std::io;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use ringbuf::{
+    HeapCons, HeapProd,
+    traits::{Consumer, Producer, Split},
+};
+use std::{
+    collections::HashMap,
+    io,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
+/// Token identifying the main TCP listener.
 const LISTENER: Token = Token(0);
+/// Token used to interrupt the poll loop when the application queues new outbound messages.
 const WAKE: Token = Token(1);
 
+/// A FIX server engine that listens for incoming TCP connections,
+/// manages multiple concurrent client sessions, and routes asynchronous network I/O.
 pub struct FixEngine {
     comp_id: Arc<str>,
     connections: HashMap<Token, Session>,
@@ -37,6 +46,7 @@ pub struct FixEngine {
 }
 
 impl FixEngine {
+    /// Initializes the server and returns it alongside a handler for message passing.
     pub fn new(addr: SocketAddr, comp_id: String) -> io::Result<(Self, FixEngineHandler)> {
         let listener = TcpListener::bind(addr)?;
         let poll = Poll::new()?;
@@ -74,10 +84,7 @@ impl FixEngine {
         Ok((engine, handler))
     }
 
-    pub fn get_waker(&self) -> Arc<Waker> {
-        self.waker.clone()
-    }
-
+    /// Runs the main blocking event loop. Polls for network I/O and checks session health continuously.
     pub fn run(&mut self) {
         let mut events = Events::with_capacity(1024);
         println!("Server running on {}", self.listener.local_addr().unwrap());
@@ -95,6 +102,8 @@ impl FixEngine {
         }
     }
 
+    /// Monitors the health of all active sessions, issuing Heartbeats or TestRequests when idle,
+    /// and queuing unresponsive clients for disconnection.
     pub fn check_heartbeats(&mut self) {
         let now = Instant::now();
 
@@ -141,6 +150,7 @@ impl FixEngine {
         }
     }
 
+    /// Looks up the correct active session by its `comp_id` and forwards the outbound event for transmission.
     pub fn send_outbound_message(&mut self, request: FIXEvent) {
         let Some((token, _)) = self.sessions.get(&request.comp_id) else {
             return;
@@ -149,6 +159,7 @@ impl FixEngine {
         self.send_to_session(token, request.payload);
     }
 
+    /// Queues a FIX payload into the session's write buffer.
     fn send_to_session(&mut self, token: Token, msg: FIXPayload) {
         let Some(session) = self.connections.get_mut(&token) else {
             return;
@@ -169,6 +180,7 @@ impl FixEngine {
         self.handle_writable(token);
     }
 
+    /// Routes polled events to process either outbound application messages or inbound network traffic.
     fn handle_event(&mut self, event: &Event) {
         match event.token() {
             LISTENER => self.handle_server_accept(),
@@ -184,6 +196,7 @@ impl FixEngine {
         }
     }
 
+    /// Continuously accepts new incoming TCP streams until the socket returns `WouldBlock`.
     fn handle_server_accept(&mut self) {
         loop {
             match self.listener.accept() {
@@ -198,6 +211,7 @@ impl FixEngine {
         }
     }
 
+    /// Assigns a unique token to a newly accepted stream, registers it with `mio`, and stores it in the connections map.
     fn register_session(&mut self, mut stream: TcpStream) -> io::Result<()> {
         self.poll.registry().register(
             &mut stream,
@@ -214,6 +228,7 @@ impl FixEngine {
         Ok(())
     }
 
+    /// Drains the outbound queue from the handler and routes messages to the target session.
     fn process_outbound_messages(&mut self) {
         while let Some(msg) = self.outbound_rx.try_pop() {
             let Some((token, _)) = self.sessions.get(&msg.comp_id) else {
@@ -224,6 +239,7 @@ impl FixEngine {
         }
     }
 
+    /// Flushes a session's write buffer to the TCP socket, updating poll interests to stop writing when empty.
     fn handle_writable(&mut self, token: Token) {
         if let Some(session) = self.connections.get_mut(&token) {
             if session.flush().is_err() {
@@ -241,6 +257,7 @@ impl FixEngine {
         }
     }
 
+    /// Reads from a session's TCP socket, processing session-level messages internally and forwarding business messages to the handler.
     fn handle_readable(&mut self, token: Token) {
         self.poll_events.clear();
 
@@ -300,6 +317,8 @@ impl FixEngine {
         }
     }
 
+    /// Removes a session from active polling, disconnects the socket, and preserves its
+    /// sequence numbers and messages in the global session state for future reconnections.
     fn close_session(&mut self, token: Token) {
         if let Some(mut session) = self.connections.remove(&token) {
             if let Some(state) = session.state
@@ -308,11 +327,13 @@ impl FixEngine {
                 stored_state.logged_in = false;
                 stored_state.inbound_seq_num = state.inbound_seq_num;
                 stored_state.outbound_seq_num = state.outbound_seq_num;
+                stored_state.sent_messages = state.sent_messages;
             }
             self.poll.registry().deregister(&mut session.stream).ok();
         }
     }
 
+    /// Handles a client's ResendRequest by resending messages from the requested sequence range.
     fn resend_messages(&mut self, token: Token, resend_request: &ResendRequest) {
         let mut messages_to_resend = Vec::new();
 
@@ -349,6 +370,8 @@ impl FixEngine {
         }
     }
 
+    /// Updates session parameters from the incoming Logon, or drops the connection if already logged in.
+    /// Sends a Logon confirmation back to the client if successful.
     fn finalize_logon(&mut self, token: Token, comp_id: Arc<str>, logon: &Logon) {
         let stored = self
             .sessions
@@ -393,6 +416,7 @@ impl FixEngine {
     }
 }
 
+/// A handle for the application thread to send orders and receive FIX reports.
 pub struct FixEngineHandler {
     outbound_tx: HeapProd<FIXEvent>,
     lob_rx: HeapCons<FIXEvent>,
@@ -400,11 +424,13 @@ pub struct FixEngineHandler {
 }
 
 impl FixEngineHandler {
+    /// Queues an outbound FIX event for routing by the engine and wakes the engine's event loop.
     pub fn send_message(&mut self, event: FIXEvent) {
         self.outbound_tx.try_push(event).ok();
         self.waker.wake().ok();
     }
 
+    /// Polls the inbound queue for new business messages, converting them into standard LOB `Order`s.
     pub fn get_order(&mut self) -> Option<Order> {
         if let Some(cmd) = self.lob_rx.try_pop() {
             match cmd.payload {

@@ -1,7 +1,9 @@
 use std::str::from_utf8;
-use time::macros::format_description;
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::{OffsetDateTime, PrimitiveDateTime, macros::format_description};
 
+/// Constructs a complete FIX message byte vector by prepending the standard header
+/// (BeginString, BodyLength, MsgType, SeqNum, Sender/Target IDs, SendingTime)
+/// to the provided body and appending the calculated checksum trailer.
 pub fn write_fix_message(
     msg_type: u8,
     outbound_sequence_number: &u32,
@@ -69,6 +71,8 @@ pub fn write_fix_message(
     buf
 }
 
+/// Computes the standard FIX checksum by summing the byte values of the message
+/// up to the checksum field, modulo 256.
 pub fn calculate_checksum(message: &[u8]) -> u32 {
     let mut sum: u32 = 0;
 
@@ -79,6 +83,8 @@ pub fn calculate_checksum(message: &[u8]) -> u32 {
     sum % 256
 }
 
+/// Prints a raw FIX message byte slice to standard output, substituting the
+/// SOH delimiter (`\x01`) with a pipe (`|`) for readability.
 pub fn print_message(message: &Vec<u8>) {
     let mut output = Vec::with_capacity(message.len());
 
@@ -90,11 +96,16 @@ pub fn print_message(message: &Vec<u8>) {
     println!("{}", String::from_utf8_lossy(&output));
 }
 
+/// Helper function to drop the first byte of a malformed buffer sequence,
+/// advancing the parser state to look for the next valid message.
 fn invalidate_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
     read_buffer.drain(0..1);
     None
 }
 
+/// Scans the read buffer for a complete FIX message. If a message is found with a valid
+/// `BeginString`, `BodyLength`, and `Checksum`, it is extracted from the buffer and returned.
+/// Malformed bytes are discarded.
 pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
     if !read_buffer.starts_with(b"8=FIX") {
         if let Some(position) = read_buffer.windows(5).position(|f| f == b"8=FIX") {
@@ -103,7 +114,7 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
             read_buffer.clear();
         }
         return None;
-    };
+    }
 
     let first_delimiter = read_buffer.iter().position(|&b| b == 0x01)?;
     if !read_buffer[first_delimiter + 1..].starts_with(b"9=") {
@@ -159,17 +170,15 @@ pub fn extract_message(read_buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
     Some(read_buffer.drain(0..total_len).collect())
 }
 
-fn get_local_now() -> OffsetDateTime {
-    OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc())
-}
-
+/// Generates a current timestamp string formatted for standard FIX headers (YYYYMMDD-HH:MM:SS.mmm).
 pub fn get_timestamp() -> String {
-    let now = get_local_now();
+    let now = OffsetDateTime::now_utc();
     let format =
         format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
     now.format(&format).unwrap_or_default()
 }
 
+/// Converts a millisecond UNIX timestamp into a standard FIX timestamp string.
 pub fn to_timestamp(timestamp: u64) -> String {
     let now =
         time::OffsetDateTime::from_unix_timestamp_nanos((timestamp as i128) * 1_000_000).unwrap();
@@ -178,6 +187,7 @@ pub fn to_timestamp(timestamp: u64) -> String {
     now.format(&format).unwrap_or_default()
 }
 
+/// Parses a standard FIX timestamp string back into a millisecond UNIX timestamp.
 pub fn convert_timestamp(timestamp_str: String) -> Option<u64> {
     let format =
         format_description!("[year][month][day]-[hour]:[minute]:[second].[subsecond digits:3]");
@@ -188,21 +198,23 @@ pub fn convert_timestamp(timestamp_str: String) -> Option<u64> {
     Some((offset_dt.unix_timestamp_nanos() / 1_000_000) as u64)
 }
 
+/// Returns the current year and month formatted as YYYYMM.
 pub fn get_maturity_month_year() -> String {
-    let now = get_local_now();
+    let now = OffsetDateTime::now_utc();
     let format = format_description!("[year][month]");
     now.format(&format).unwrap_or_default()
 }
 
+/// Returns the current date formatted as YYYYMMDD.
 pub fn get_maturity_month_year_day() -> String {
-    let now = get_local_now();
+    let now = OffsetDateTime::now_utc();
     let format = format_description!("[year][month][day]");
     now.format(&format).unwrap_or_default()
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fix_core::messages::FIX_MESSAGE_TYPE_NEW_ORDER;
 
     #[test]
     fn test_calculate_checksum() {
