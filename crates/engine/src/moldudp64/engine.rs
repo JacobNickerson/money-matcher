@@ -1,31 +1,28 @@
+use crate::moldudp64::sequencerpublisher::SequencerPublisher;
 use bytes::Bytes;
 use mm_core::{
-    itch_core::messages::{add_order::AddOrder, order_executed_with_price::OrderExecutedWithPrice},
-    moldudp64_core::types::Event,
-};
-use mm_core::{
-    itch_core::messages::{order_cancel::OrderCancel, order_replace::OrderReplace},
+    itch_core::messages::{
+        add_order::AddOrder, order_cancel::OrderCancel,
+        order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
+    },
     lob_core::{
         market_events::{EventSink, MarketEvent, MarketEventType},
         market_orders::OrderType,
     },
+    moldudp64_core::types::Event,
 };
 use ringbuf::{
     HeapCons, HeapProd, HeapRb,
     traits::{Producer, Split},
 };
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
+    sync::{Arc, atomic::AtomicBool},
     thread,
 };
 
-use crate::moldudp64::sequencerpublisher::SequencerPublisher;
-
+/// A multicast engine that translates internal market events into ITCH protocol messages for UDP broadcast.
 pub struct MoldEngine {
     l3_tx: HeapProd<Event>,
     trade_tx: HeapProd<Event>,
@@ -33,6 +30,7 @@ pub struct MoldEngine {
 }
 
 impl MoldEngine {
+    /// Initializes the engine and spawns background threads for L3 and Trade multicast publishers.
     pub fn start(running: Arc<AtomicBool>) -> Self {
         let (l3_tx, l3_rx) = HeapRb::<Event>::new(1 << 20).split();
         let (trade_tx, trade_rx) = HeapRb::<Event>::new(1 << 20).split();
@@ -57,6 +55,7 @@ impl MoldEngine {
         }
     }
 
+    /// Configures a UDP socket for multicast broadcasting and runs the publisher event loop.
     fn start_publisher(
         session_id: String,
         multicast_group: SocketAddr,
@@ -83,6 +82,7 @@ impl MoldEngine {
         });
     }
 
+    /// Queues a raw byte payload into the designated ring buffer for transmission.
     pub fn push_event(channel_tx: &mut HeapProd<Bytes>, buf: &[u8]) {
         let bytes = Bytes::copy_from_slice(buf);
 
@@ -91,6 +91,7 @@ impl MoldEngine {
 }
 
 impl EventSink for MoldEngine {
+    /// Translates incoming market events into structured binary messages and queues them for multicast transmission.
     fn push(&mut self, event: MarketEvent) {
         match event.kind {
             MarketEventType::L1(_e) => {}

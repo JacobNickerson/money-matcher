@@ -1,14 +1,16 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use mm_core::moldudp64_core::sessions::SessionTable;
-use mm_core::moldudp64_core::types::Event;
+use mm_core::moldudp64_core::{sessions::SessionTable, types::Event};
 use ringbuf::{HeapCons, traits::Consumer};
-use std::net::{SocketAddr, UdpSocket};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    net::{SocketAddr, UdpSocket},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
-use std::time::{Duration, Instant};
 
+/// A publisher that aggregates market events into MoldUDP64 packets for multicast transmission.
 pub struct SequencerPublisher {
     input: HeapCons<Event>,
 
@@ -30,6 +32,7 @@ pub struct SequencerPublisher {
 }
 
 impl SequencerPublisher {
+    /// Initializes a new publisher with a dedicated session ID and prepares the internal transmission buffer.
     pub fn new(
         input: HeapCons<Event>,
         multicast_group: SocketAddr,
@@ -40,7 +43,7 @@ impl SequencerPublisher {
         let mut packet = BytesMut::with_capacity(1400);
         packet.resize(20, 0);
 
-        let flush_interval = Duration::from_micros(5);
+        let flush_interval = Duration::from_micros(50);
 
         Self {
             input,
@@ -59,6 +62,7 @@ impl SequencerPublisher {
         }
     }
 
+    /// Finalizes the current packet header and transmits the buffer to the multicast group.
     pub fn flush(&mut self) {
         if self.message_count > 0 {
             self.process_header();
@@ -74,6 +78,7 @@ impl SequencerPublisher {
         self.next_flush = Instant::now() + self.flush_interval;
     }
 
+    /// Runs the main blocking event loop, polling the input queue and flushing based on the configured interval.
     pub fn run(mut self) {
         while self.running.load(Ordering::Relaxed) {
             if Instant::now() >= self.next_flush {
@@ -88,6 +93,7 @@ impl SequencerPublisher {
         }
     }
 
+    /// Resets the packet buffer and session metadata after a successful transmission.
     #[inline(always)]
     fn reset(&mut self) {
         self.packet.truncate(20);
@@ -96,6 +102,7 @@ impl SequencerPublisher {
         self.message_count = 0;
     }
 
+    /// Encodes the session ID, sequence number, and message count into the MoldUDP64 packet header.
     #[inline(always)]
     fn process_header(&mut self) {
         self.packet[0..10].copy_from_slice(&self.current_session.expect("err"));
@@ -104,6 +111,7 @@ impl SequencerPublisher {
         self.packet[18..20].copy_from_slice(&(self.message_count as u16).to_be_bytes());
     }
 
+    /// Serializes an event into the current packet, triggering a flush if the MTU or session changes.
     #[inline(always)]
     fn process_event(&mut self, event: Bytes) {
         let sequence_number = self.sequence_number;

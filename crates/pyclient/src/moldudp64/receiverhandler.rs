@@ -14,16 +14,19 @@ use mm_core::{
 use ringbuf::{HeapProd, traits::Producer};
 use std::net::UdpSocket;
 
+/// A UDP receiver that parses MoldUDP64 packets into internal market events.
 pub struct ReceiverHandler {
     socket: UdpSocket,
     output: HeapProd<MarketEvent>,
 }
 
 impl ReceiverHandler {
+    /// Initializes a new receiver handler with a designated output queue and UDP socket.
     pub fn new(output: HeapProd<MarketEvent>, socket: UdpSocket) -> Self {
         Self { socket, output }
     }
 
+    /// Runs the main event loop, polling the socket and spinning on `WouldBlock`.
     pub fn run(mut self) {
         self.socket.set_nonblocking(true).expect("err");
         let mut buf = [0u8; 2048];
@@ -41,6 +44,7 @@ impl ReceiverHandler {
         }
     }
 
+    /// Validates the MoldUDP64 packet header and iterates through the message block.
     #[inline(always)]
     fn handle_packet(&mut self, bytes: &[u8]) {
         let len = bytes.len();
@@ -52,12 +56,12 @@ impl ReceiverHandler {
         let _session_id: &[u8; 10] = match bytes[0..10].try_into() {
             Ok(x) => x,
             Err(_) => return,
-        };
+        }; // @todo Validate session id
 
         let _sequence_number: &[u8; 8] = match bytes[10..18].try_into() {
             Ok(x) => x,
             Err(_) => return,
-        };
+        }; // @todo Validate sequence number and handle resends
 
         let mc_bytes: &[u8; 2] = match bytes[18..20].try_into() {
             Ok(x) => x,
@@ -74,6 +78,7 @@ impl ReceiverHandler {
         }
     }
 
+    /// Extracts an individual message from the packet and routes it for event parsing.
     #[inline(always)]
     fn handle_message(&mut self, bytes: &[u8], len: usize, offset: &mut usize) -> bool {
         if *offset + 2 > len {
@@ -103,6 +108,7 @@ impl ReceiverHandler {
         true
     }
 
+    /// Decodes raw ITCH message bytes into the LOB `MarketEvent` format.
     #[inline(always)]
     fn parse_event(message_data: &[u8]) -> Option<MarketEvent> {
         if message_data.is_empty() {
@@ -153,7 +159,7 @@ impl ReceiverHandler {
                     kind: MarketEventType::Trade(TradeEvent {
                         quantity: executed_shares.into(),
                         price: execution_price.into(),
-                        aggressor_side: OrderSide::Ask, // PLACEHOLDER
+                        aggressor_side: OrderSide::Ask,
                     }),
                 })
             }
@@ -172,7 +178,7 @@ impl ReceiverHandler {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: new_order_ref,
-                        side: OrderSide::Ask, // PLACEHOLDER
+                        side: OrderSide::Ask,
                         timestamp,
                         kind: OrderType::Update {
                             old_id: original_order_ref,
@@ -195,7 +201,7 @@ impl ReceiverHandler {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: order_reference_number,
-                        side: OrderSide::Ask, // PLACEHOLDER
+                        side: OrderSide::Ask,
                         timestamp,
                         kind: OrderType::Cancel,
                     }),
@@ -205,6 +211,7 @@ impl ReceiverHandler {
         }
     }
 
+    /// Pushes a parsed market event into the output ring buffer.
     fn push_event(&mut self, event: MarketEvent) {
         self.output.try_push(event).ok();
     }
