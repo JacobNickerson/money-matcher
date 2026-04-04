@@ -94,8 +94,8 @@ class Bots(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
 
-        self.header = BotHeader()
         self.table = BotList()
+        self.header = BotHeader(self.table)
 
         layout.addWidget(self.header)
         layout.addWidget(self.table, 1)
@@ -111,7 +111,9 @@ class Strats(QWidget):
 
         self.editor = CodeEditor()
         self.header = Header(self.editor)
-        self.action_bar = ActionBar(self.editor)
+        self.action_bar = ActionBar(self.editor, self.header)
+        self.header.strategyChanged.connect(self.action_bar.setCurrentStrategy)
+        self.header.loadSymbols()
 
         layout.addWidget(self.header)
         layout.addWidget(self.action_bar)
