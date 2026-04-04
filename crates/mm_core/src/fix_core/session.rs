@@ -1,12 +1,3 @@
-use bytes::{Buf, BytesMut};
-use mio::{Token, net::TcpStream};
-use ringbuf::{HeapProd, traits::Producer};
-use std::collections::BTreeMap;
-use std::io::{Read, Write};
-use std::str::from_utf8;
-use std::sync::Arc;
-use std::time::Instant;
-
 use crate::fix_core::{
     helpers::{extract_message, write_fix_message},
     iterator::FixIterator,
@@ -22,10 +13,23 @@ use crate::fix_core::{
         test_request::TestRequest, types::EncryptMethod,
     },
 };
+use bytes::{Buf, BytesMut};
+use mio::{Token, net::TcpStream};
+use ringbuf::{HeapProd, traits::Producer};
+use std::{
+    collections::BTreeMap,
+    io::{Read, Write},
+    str::from_utf8,
+    sync::Arc,
+    time::Instant,
+};
 
+/// Maximum size of the primary read and write buffers.
 const MAX_BUFFER_SIZE: usize = 1024;
+/// Maximum size of the temporary buffer used for direct socket reads.
 const MAX_TMP_BUFFER_SIZE: usize = 512;
 
+/// An active FIX connection, managing its TCP stream, I/O buffers, and metadata.
 pub struct Session {
     pub token: Token,
     pub stream: TcpStream,
@@ -40,6 +44,7 @@ pub struct Session {
     pub pending_test_req: Option<u32>,
 }
 
+/// Holds the synchronized state of a FIX session, including sequence numbers, identifiers, and message history.
 #[derive(Clone)]
 pub struct SessionState {
     pub comp_id: Arc<str>,
@@ -68,6 +73,7 @@ impl Default for SessionState {
 }
 
 impl Session {
+    /// Initializes a new session wrapping a TCP stream with empty buffers.
     pub fn new(token: Token, stream: TcpStream) -> Self {
         Self {
             token,
@@ -84,6 +90,7 @@ impl Session {
         }
     }
 
+    /// Reads raw bytes from the socket into a temporary buffer until `WouldBlock` error.
     pub fn poll(
         &mut self,
         events: &mut Vec<FIXEvent>,
@@ -115,6 +122,7 @@ impl Session {
         Ok(())
     }
 
+    /// Transfers bytes from the temporary buffer to the main read buffer and triggers parsing.
     fn read(&mut self, events: &mut Vec<FIXEvent>, lob_tx: &mut HeapProd<FIXEvent>) -> bool {
         if self.read_buffer.len() + self.tmp_end > MAX_BUFFER_SIZE {
             return false;
@@ -128,6 +136,7 @@ impl Session {
         true
     }
 
+    /// Extracts complete FIX messages from the read buffer, validates sequence numbers, and routes them.
     fn process_inbound_messages(
         &mut self,
         engine_events: &mut Vec<FIXEvent>,
@@ -219,6 +228,7 @@ impl Session {
         }
     }
 
+    /// Formats a FIX payload into bytes, increments the outbound sequence number, and queues it in the write buffer.
     pub fn send_message(
         &mut self,
         payload: FIXPayload,
@@ -266,6 +276,7 @@ impl Session {
         Ok(())
     }
 
+    /// Drains the write buffer by sending its contents over the TCP stream until `WouldBlock` error.
     pub fn flush(&mut self) -> Result<(), &'static str> {
         loop {
             if self.write_buffer.is_empty() {

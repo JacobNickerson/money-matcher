@@ -1,18 +1,22 @@
 use crate::moldudp64_core::types::*;
 use std::collections::HashMap;
+
+/// A registry for managing MoldUDP64 session identifiers and their corresponding sequence numbers.
 pub struct SessionTable {
     pub sessions: HashMap<SessionID, SequenceNumber>,
     pub current_session: SessionID,
-    pub id_prefix: String, // "MM_L#"
+    pub id_prefix: String,
 }
 
 impl Default for SessionTable {
+    /// Creates a default session table using "MM_L0" as the standard identifier prefix.
     fn default() -> Self {
         Self::new("MM_L0".to_string())
     }
 }
 
 impl SessionTable {
+    /// Initializes a new session table with an starting session based on the provided prefix.
     #[inline(always)]
     pub fn new(id_prefix: String) -> SessionTable {
         let current_session = SessionTable::make_session_id(1, &id_prefix);
@@ -28,11 +32,13 @@ impl SessionTable {
         table
     }
 
+    /// Generates a new unique session identifier based on the current number of active sessions.
     #[inline(always)]
     pub fn generate_session_id(&mut self) -> SessionID {
         Self::make_session_id(self.sessions.len() + 1, &self.id_prefix)
     }
 
+    /// Formats an index and prefix into a fixed-length 10-byte MoldUDP64 session identifier.
     #[inline(always)]
     pub fn make_session_id(index: usize, id_prefix: &String) -> SessionID {
         let s = format!("{}_{:04}", id_prefix, index);
@@ -42,12 +48,14 @@ impl SessionTable {
         session_id
     }
 
+    /// Registers a new session in the table and updates the current session ID.
     #[inline(always)]
     pub fn add_session(&mut self, session_id: SessionID, sequence_number: SequenceNumber) {
         self.sessions.insert(session_id, sequence_number);
         self.current_session = session_id;
     }
 
+    /// Increments and returns the next big-endian sequence number for the specified session.
     #[inline(always)]
     pub fn next_sequence(&mut self, session_id: SessionID) -> SequenceNumber {
         let sequence = self.sessions.get_mut(&session_id).expect("Unknown Session");
@@ -59,11 +67,13 @@ impl SessionTable {
         *sequence
     }
 
+    /// Removes a session entry from the registry.
     #[inline(always)]
     pub fn remove_session(&mut self, session_id: &SessionID) {
         self.sessions.remove(session_id);
     }
 
+    /// Returns the currently active session identifier.
     #[inline(always)]
     pub fn get_current_session(&self) -> SessionID {
         self.current_session

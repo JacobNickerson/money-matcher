@@ -1,3 +1,4 @@
+/// A zero-allocation iterator that parses a raw FIX message byte slice into sequential `(Tag, Value)` pairs.
 pub struct FixIterator<'a> {
     i: usize,
     msg: &'a [u8],
@@ -5,6 +6,7 @@ pub struct FixIterator<'a> {
 }
 
 impl<'a> FixIterator<'a> {
+    /// Initializes a new iterator starting at the beginning of the provided FIX message buffer.
     pub fn new(msg: &'a [u8]) -> Self {
         Self {
             i: 0,
@@ -17,6 +19,8 @@ impl<'a> FixIterator<'a> {
 impl<'a> Iterator for FixIterator<'a> {
     type Item = (u16, &'a [u8]);
 
+    // Advances the iterator, scanning for the next tag-value pair delimited by '=' and
+    /// terminated by the SOH (`\x01`) character. Returns the parsed numeric tag and raw byte value.
     fn next(&mut self) -> Option<Self::Item> {
         if self.i >= self.msg_len {
             return None;

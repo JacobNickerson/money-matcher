@@ -11,6 +11,7 @@ use std::{
     thread,
 };
 
+/// A multicast client that joins L3 and Trade multicast groups to receive and merge market events.
 pub struct MoldClient {
     pub l3_rx: Mutex<HeapCons<MarketEvent>>,
     pub trade_rx: Mutex<HeapCons<MarketEvent>>,
@@ -19,6 +20,7 @@ pub struct MoldClient {
 }
 
 impl MoldClient {
+    /// Initializes the client and spawns background threads for L3 and Trade multicast receivers.
     pub fn start() -> Self {
         let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
         let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
@@ -34,6 +36,7 @@ impl MoldClient {
         }
     }
 
+    /// Configures a UDP socket to join a specific multicast group and spawns a `ReceiverHandler` to process incoming packets.
     fn start_receiver(addr: SocketAddr, tx: HeapProd<MarketEvent>) {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
         socket.set_recv_buffer_size(32 * 1024 * 1024).expect("err");
@@ -57,6 +60,7 @@ impl MoldClient {
         });
     }
 
+    /// Retrieves the next market event from the combined L3 and Trade feeds, sorted by timestamp to ensure chronological order.
     pub fn next_event(&mut self) -> Option<MarketEvent> {
         if self.next_l3.is_none() {
             let mut next = self.l3_rx.lock().unwrap();
