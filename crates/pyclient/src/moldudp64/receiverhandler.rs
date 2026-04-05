@@ -19,7 +19,7 @@ pub struct ReceiverHandler {
     socket: UdpSocket,
     output: HeapProd<MarketEvent>,
     gap_buffer: BTreeMap<u64, MarketEvent>,
-    sequence_number: u64,
+    expected_sequence_number: u64,
 }
 
 impl ReceiverHandler {
@@ -29,7 +29,7 @@ impl ReceiverHandler {
             socket,
             output,
             gap_buffer: BTreeMap::new(),
-            sequence_number: 0,
+            expected_sequence_number: 0,
         }
     }
 
@@ -71,8 +71,8 @@ impl ReceiverHandler {
         };
         let seq_num = u64::from_be_bytes(*seq_num_bytes);
 
-        if self.sequence_number == 0 {
-            self.sequence_number = seq_num;
+        if self.expected_sequence_number == 0 {
+            self.expected_sequence_number = seq_num;
         }
 
         let mc_bytes: &[u8; 2] = match bytes[18..20].try_into() {
@@ -87,21 +87,21 @@ impl ReceiverHandler {
             let current_msg_seq_num = seq_num + i as u64;
 
             if let Some(event) = self.handle_message(bytes, len, &mut offset) {
-                if current_msg_seq_num == self.sequence_number {
-                    self.sequence_number += 1;
+                if current_msg_seq_num == self.expected_sequence_number {
                     self.push_event(event);
-                } else if current_msg_seq_num > self.sequence_number {
+                    self.expected_sequence_number += 1;
+                } else if current_msg_seq_num > self.expected_sequence_number {
                     self.gap_buffer.insert(current_msg_seq_num, event);
-                    // self.resend_request(self.sequence_number)
+                    // self.resend_request(self.expected_sequence_number)
                 }
             } else {
                 break;
             }
         }
 
-        while let Some(event) = self.gap_buffer.remove(&self.sequence_number) {
+        while let Some(event) = self.gap_buffer.remove(&self.expected_sequence_number) {
             self.push_event(event);
-            self.sequence_number += 1;
+            self.expected_sequence_number += 1;
         }
     }
 
@@ -323,6 +323,49 @@ mod tests {
         let buf = [0u8; 10];
         h.handle_packet(&buf);
 
+        assert!(rx.try_pop().is_none());
+    }
+
+    #[test]
+    fn test_handle_packet_detects_out_of_sequence() {
+        let (mut h, mut rx) = make_handler();
+
+        let mut stock = [b' '; 8];
+        stock[..4].copy_from_slice(b"TEST");
+        let mut msg_payload = [0u8; 36];
+        AddOrder::encode_into(&mut msg_payload, 1, 12, 123, 5000, b'B', 10, stock, 99);
+
+        h.expected_sequence_number = 2; // Expecting 2
+
+        let mut packet = vec![0u8; 20];
+        packet[10..18].copy_from_slice(&3u64.to_be_bytes()); // Set Packet Sequence Number to 3, skipping 2
+        packet[18..20].copy_from_slice(&1u16.to_be_bytes());
+        packet.extend_from_slice(&(msg_payload.len() as u16).to_be_bytes());
+        packet.extend_from_slice(&msg_payload);
+
+        h.handle_packet(&packet);
+
+        assert_eq!(h.expected_sequence_number, 2);
+
+        assert_eq!(h.gap_buffer.len(), 1);
+        assert!(h.gap_buffer.contains_key(&3));
+
+        assert!(rx.try_pop().is_none());
+
+        let mut missing_packet = vec![0u8; 20];
+        missing_packet[10..18].copy_from_slice(&2u64.to_be_bytes());
+        missing_packet[18..20].copy_from_slice(&1u16.to_be_bytes());
+        missing_packet.extend_from_slice(&(msg_payload.len() as u16).to_be_bytes());
+        missing_packet.extend_from_slice(&msg_payload);
+
+        h.handle_packet(&missing_packet);
+
+        assert_eq!(h.expected_sequence_number, 4);
+
+        assert_eq!(h.gap_buffer.len(), 0);
+
+        assert!(rx.try_pop().is_some());
+        assert!(rx.try_pop().is_some());
         assert!(rx.try_pop().is_none());
     }
 }
