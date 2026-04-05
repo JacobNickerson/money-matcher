@@ -20,6 +20,7 @@ pub struct ReceiverHandler {
     output: HeapProd<MarketEvent>,
     gap_buffer: BTreeMap<u64, MarketEvent>,
     expected_sequence_number: u64,
+    last_requested_sequence_number: u64,
 }
 
 impl ReceiverHandler {
@@ -30,6 +31,7 @@ impl ReceiverHandler {
             output,
             gap_buffer: BTreeMap::new(),
             expected_sequence_number: 0,
+            last_requested_sequence_number: 0,
         }
     }
 
@@ -60,7 +62,7 @@ impl ReceiverHandler {
             return;
         }
 
-        let _session_id: &[u8; 10] = match bytes[0..10].try_into() {
+        let session_id: &[u8; 10] = match bytes[0..10].try_into() {
             Ok(x) => x,
             Err(_) => return,
         }; // @todo Validate session id
@@ -70,6 +72,14 @@ impl ReceiverHandler {
             Err(_) => return,
         };
         let seq_num = u64::from_be_bytes(*seq_num_bytes);
+
+        if seq_num > self.expected_sequence_number && self.expected_sequence_number != 0 {
+            if self.expected_sequence_number > self.last_requested_sequence_number {
+                let missing_count = (seq_num - self.expected_sequence_number) as u16;
+                self.send_resend_request(session_id, self.expected_sequence_number, missing_count);
+                self.last_requested_sequence_number = seq_num - 1;
+            }
+        }
 
         if self.expected_sequence_number == 0 {
             self.expected_sequence_number = seq_num;
@@ -92,7 +102,6 @@ impl ReceiverHandler {
                     self.expected_sequence_number += 1;
                 } else if current_msg_seq_num > self.expected_sequence_number {
                     self.gap_buffer.insert(current_msg_seq_num, event);
-                    // self.resend_request(self.expected_sequence_number)
                 }
             } else {
                 break;
@@ -103,6 +112,26 @@ impl ReceiverHandler {
             self.push_event(event);
             self.expected_sequence_number += 1;
         }
+    }
+
+    /// Sends a unicast request packet to the retransmission server to fill detected message gap.
+    #[inline(always)]
+    fn send_resend_request(
+        &mut self,
+        session_id: &[u8; 10],
+        expected_sequence_number: u64,
+        missing_count: u16,
+    ) {
+        let mut request_packet = [0u8; 20];
+
+        request_packet[0..10].copy_from_slice(session_id);
+        request_packet[10..18].copy_from_slice(&expected_sequence_number.to_be_bytes());
+        request_packet[18..20].copy_from_slice(&missing_count.to_be_bytes());
+
+        let _len = self
+            .socket
+            .send_to(&request_packet, "127.0.0.1:34555")
+            .expect("err");
     }
 
     /// Extracts an individual message from the packet and routes it for event parsing.
