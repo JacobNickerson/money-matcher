@@ -117,6 +117,9 @@ impl SequencerPublisher {
         let sequence_number = self.sequence_number;
         let session_id = self.session_table.get_current_session();
 
+        if self.sequence_number == 5 {
+            self.sequence_number += 1;
+        }
         self.sequence_number += 1;
 
         if self.current_session.is_none() {

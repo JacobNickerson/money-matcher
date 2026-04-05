@@ -12,18 +12,25 @@ use mm_core::{
     },
 };
 use ringbuf::{HeapProd, traits::Producer};
-use std::net::UdpSocket;
+use std::{collections::BTreeMap, net::UdpSocket};
 
 /// A UDP receiver that parses MoldUDP64 packets into internal market events.
 pub struct ReceiverHandler {
     socket: UdpSocket,
     output: HeapProd<MarketEvent>,
+    gap_buffer: BTreeMap<u64, MarketEvent>,
+    sequence_number: u64,
 }
 
 impl ReceiverHandler {
     /// Initializes a new receiver handler with a designated output queue and UDP socket.
     pub fn new(output: HeapProd<MarketEvent>, socket: UdpSocket) -> Self {
-        Self { socket, output }
+        Self {
+            socket,
+            output,
+            gap_buffer: BTreeMap::new(),
+            sequence_number: 0,
+        }
     }
 
     /// Runs the main event loop, polling the socket and spinning on `WouldBlock`.
@@ -58,10 +65,15 @@ impl ReceiverHandler {
             Err(_) => return,
         }; // @todo Validate session id
 
-        let _sequence_number: &[u8; 8] = match bytes[10..18].try_into() {
+        let seq_num_bytes: &[u8; 8] = match bytes[10..18].try_into() {
             Ok(x) => x,
             Err(_) => return,
-        }; // @todo Validate sequence number and handle resends
+        };
+        let seq_num = u64::from_be_bytes(*seq_num_bytes);
+
+        if self.sequence_number == 0 {
+            self.sequence_number = seq_num;
+        }
 
         let mc_bytes: &[u8; 2] = match bytes[18..20].try_into() {
             Ok(x) => x,
@@ -71,41 +83,60 @@ impl ReceiverHandler {
         let mc = u16::from_be_bytes(*mc_bytes) as usize;
         let mut offset = 20;
 
-        for _ in 0..mc {
-            if !self.handle_message(bytes, len, &mut offset) {
+        for i in 0..mc {
+            let current_msg_seq_num = seq_num + i as u64;
+
+            if let Some(event) = self.handle_message(bytes, len, &mut offset) {
+                if current_msg_seq_num == self.sequence_number {
+                    self.sequence_number += 1;
+                    self.push_event(event);
+                } else if current_msg_seq_num > self.sequence_number {
+                    self.gap_buffer.insert(current_msg_seq_num, event);
+                    // self.resend_request(self.sequence_number)
+                }
+            } else {
                 break;
             }
+        }
+
+        while let Some(event) = self.gap_buffer.remove(&self.sequence_number) {
+            self.push_event(event);
+            self.sequence_number += 1;
         }
     }
 
     /// Extracts an individual message from the packet and routes it for event parsing.
     #[inline(always)]
-    fn handle_message(&mut self, bytes: &[u8], len: usize, offset: &mut usize) -> bool {
+    fn handle_message(
+        &mut self,
+        bytes: &[u8],
+        len: usize,
+        offset: &mut usize,
+    ) -> Option<MarketEvent> {
         if *offset + 2 > len {
-            return false;
+            return None;
         }
 
         let ml = u16::from_be_bytes([bytes[*offset], bytes[*offset + 1]]) as usize;
         *offset += 2;
 
         if *offset + ml > len {
-            return false;
+            return None;
         }
 
         let message_data = &bytes[*offset..*offset + ml];
         *offset += ml;
 
         if message_data.is_empty() {
-            return true;
+            return None;
         }
 
         let event = match Self::parse_event(message_data) {
             Some(v) => v,
-            None => return true,
+            None => return None,
         };
 
-        self.push_event(event);
-        true
+        Some(event)
     }
 
     /// Decodes raw ITCH message bytes into the LOB `MarketEvent` format.
