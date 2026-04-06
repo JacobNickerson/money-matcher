@@ -1,6 +1,6 @@
 use mm_core::lob_core::{
     OrderId, Price,
-    market_events::{MarketEvent, MarketEventType},
+    market_events::{L3EventExtra, MarketEvent, MarketEventType},
     market_orders::{LimitOrder, OrderSide, OrderType},
 };
 use std::collections::{BTreeMap, HashMap};
@@ -39,7 +39,10 @@ impl OrderBook {
                         qty,
                         price,
                     } => {
-                        let (old_price, old_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
+                        let L3EventExtra::Update(old_price, old_qty) = e.extra else {
+                            panic!("Expected update event to have update extras");
+                        };
+
                         let old_level = match e.side {
                             OrderSide::Ask => self.ask_levels.entry(old_price).or_default(),
                             OrderSide::Bid => self.bid_levels.entry(old_price).or_default(),
@@ -55,7 +58,10 @@ impl OrderBook {
                         new_level.order_count += 1;
                     }
                     OrderType::Cancel { old_id: _ } => {
-                        let (old_price, old_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
+                        let L3EventExtra::Cancel(old_price, old_qty) = e.extra else {
+                            panic!("Expected cancel event to have cancel extras");
+                        };
+
                         let old_level = match e.side {
                             OrderSide::Ask => self.ask_levels.entry(old_price).or_default(),
                             OrderSide::Bid => self.bid_levels.entry(old_price).or_default(),
