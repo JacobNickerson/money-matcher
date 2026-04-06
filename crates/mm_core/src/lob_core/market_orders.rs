@@ -73,7 +73,9 @@ pub enum OrderType {
         qty: u64,
         price: Price,
     },
-    Cancel,
+    Cancel {
+        old_id: OrderId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

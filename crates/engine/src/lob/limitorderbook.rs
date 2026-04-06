@@ -1,7 +1,8 @@
+use bytes::buf::Limit;
 use mm_core::lob_core::{
     OrderId, Price, Timestamp,
     market_events::{
-        ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
+        ClientEvent, ClientEventType, EventSink, L3Event, LiquidityFlag, MarketEvent,
         MarketEventType, TradeEvent,
     },
     market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
@@ -97,28 +98,21 @@ impl<T: EventSink> OrderBook<T> {
     /// UpdateOrders cancel the previously existing order and resubmit a new order
     pub fn process_order(&mut self, order: Order, time: Timestamp) -> Option<LimitOrder> {
         // TODO: Update return type to be more informative
-        self.event_sink.push(MarketEvent {
-            timestamp: time,
-            kind: MarketEventType::L3(order),
-        });
-        let order = match order.kind {
-            OrderType::Limit { qty: _, price: _ } => {
-                let order = self.add_order_and_emit_events(LimitOrder::new(order), time);
-                Some(order)
-            }
-            OrderType::Market { qty: _ } => {
-                let mut order = LimitOrder::new(order);
-                self.match_order(&mut order, time);
-                Some(order)
-            }
-            OrderType::Cancel => self.cancel_order_and_emit_events(order.order_id, time),
+        // self.event_sink.push(MarketEvent {
+        //     timestamp: time,
+        //     kind: MarketEventType::L3(L3Event::new(order, L3EventExtra::None)),
+        // });
+        let order: Option<LimitOrder> = match order.kind {
+            OrderType::Limit { qty: _, price: _ } => self.add_order_and_emit_events(order, time),
+            OrderType::Market { qty: _ } => self.execute_market_order_and_emit_events(order, time),
+            OrderType::Cancel { old_id } => self.cancel_order_and_emit_events(old_id, order, time),
             OrderType::Update {
                 old_id,
                 qty: _,
                 price: _,
-            } => self.update_order(LimitOrder::new(order), old_id, time),
+            } => self.update_order_and_emit_events(old_id, order, time),
         };
-        self.generate_l1_events(time);
+        self.update_snapshot(time);
         order
     }
 
@@ -178,13 +172,23 @@ impl<T: EventSink> OrderBook<T> {
     /// Possibly emits MarketEvents
     fn add_order_and_emit_events(
         &mut self,
-        original_order: LimitOrder,
+        original_order: Order,
         time: Timestamp,
-    ) -> LimitOrder {
-        let mut order = original_order;
+    ) -> Option<LimitOrder> {
+        let mut order = LimitOrder::new(original_order);
+        if order.qty == 0 {
+            self.reject_order(original_order.order_id, time);
+            return None;
+        }
+
+        self.event_sink.push_event(MarketEvent::new(
+            time,
+            MarketEventType::L3(L3Event::new_limit(original_order)),
+        ));
+
         self.match_order(&mut order, time);
         if order.qty == 0 {
-            return order;
+            return Some(order);
         }
         let level = match order.side {
             OrderSide::Bid => {
@@ -198,188 +202,135 @@ impl<T: EventSink> OrderBook<T> {
         };
         level.push(&order);
         self.orders.insert(order.order_id, order);
-
-        self.event_sink.push(MarketEvent::new(
-            time,
-            MarketEventType::L2(L2Event {
-                price: (order.price),
-                side: order.side,
-                level_size: level.total_qty,
-                total_size: match order.side {
-                    OrderSide::Ask => self.total_asks,
-                    OrderSide::Bid => self.total_bids,
-                },
-            }),
-        ));
-        self.event_sink.push(MarketEvent::new(
-            time,
-            MarketEventType::Client(ClientEvent {
-                order_id: order.order_id,
-                kind: ClientEventType::Accepted,
-                liquidity_flag: LiquidityFlag::Invalid,
-            }),
-        ));
-        order
+        Some(order)
     }
-
-    // /// Executes a trade if a valid match can be made, see match_order() for details about matching.
-    // /// Adds an order to the side of the book specified in the order if any of the order's quantity is unmatched.
-    // /// Does not emit any events
-    // fn add_order(&mut self, original_order: LimitOrder) -> LimitOrder {
-    //     let mut order = original_order;
-    //     self.match_order(&mut order);
-    //     if order.qty == 0 {
-    //         return order;
-    //     }
-    //     let level = match order.side {
-    //         OrderSide::Bid => {
-    //             self.total_bids += order.qty;
-    //             self.bid_orders.entry(order.price).or_default()
-    //         }
-    //         OrderSide::Ask => {
-    //             self.total_asks += order.qty;
-    //             self.ask_orders.entry(order.price).or_default()
-    //         }
-    //     };
-    //     level.push(&order);
-    //     self.orders.insert(order.order_id, order);
-    //     order
-    // }
 
     /// Updates an existing order by cancelling it and replacing it with a new order. Executes
     /// a trade if a valid match can be made
-    fn update_order(
+    ///
+    /// Emits ClientEvents for the cancellation, the new order, any trades that are made, and acknowledgement of the update
+    fn update_order_and_emit_events(
         &mut self,
-        order: LimitOrder,
-        old_order_id: OrderId,
+        old_id: OrderId,
+        order: Order,
         time: Timestamp,
     ) -> Option<LimitOrder> {
-        let x = self
-            .cancel_order(old_order_id)
-            .map(|_| self.add_order_and_emit_events(order, time));
-        if x.is_some() {
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::Client(ClientEvent {
-                    order_id: old_order_id,
-                    kind: ClientEventType::Updated,
-                    liquidity_flag: LiquidityFlag::Invalid,
-                }),
-            ));
-        } else {
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::Client(ClientEvent {
-                    order_id: old_order_id,
-                    kind: ClientEventType::Rejected,
-                    liquidity_flag: LiquidityFlag::Invalid,
-                }),
-            ));
-        }
-        x
-    }
-
-    /// Lazily cancels an order by marking it as canceled. Lazily canceled orders are pruned
-    /// by `best_bid()`, `best_ask()`, or `match_order()`
-    /// Emits a cancellation event if order_id points to a valid order
-    fn cancel_order_and_emit_events(
-        &mut self,
-        order_id: OrderId,
-        time: Timestamp,
-    ) -> Option<LimitOrder> {
-        match self.orders.get_mut(&order_id) {
-            Some(order) => {
-                let (level, total_qty) = match order.side {
-                    OrderSide::Ask => {
-                        self.total_asks -= order.qty;
-                        (
-                            self.ask_orders.get_mut(&order.price).unwrap(), // If order is Some() then the price level its supposed to exist in should always exist
-                            self.total_asks,
-                        )
-                    }
-                    OrderSide::Bid => {
-                        self.total_bids -= order.qty;
-                        (
-                            self.bid_orders.get_mut(&order.price).unwrap(), // If order is Some() then the price level its supposed to exist in should always exist
-                            self.total_bids,
-                        )
-                    }
-                };
-                level.total_qty -= order.qty;
-                order.qty = 0;
-                order.status = OrderStatus::Canceled;
-                self.event_sink.push(MarketEvent::new(
-                    time,
-                    MarketEventType::L2(L2Event {
-                        price: order.price,
-                        side: order.side,
-                        level_size: level.total_qty,
-                        total_size: total_qty,
-                    }),
-                ));
-                self.event_sink.push(MarketEvent::new(
-                    time,
-                    MarketEventType::Client(ClientEvent {
-                        order_id,
-                        kind: ClientEventType::Canceled,
-                        liquidity_flag: LiquidityFlag::Invalid,
-                    }),
-                ));
-                Some(*order)
-            }
+        let old_order = match self.orders.get_mut(&old_id) {
+            Some(old_order) => old_order,
             None => {
-                self.event_sink.push(MarketEvent::new(
-                    time,
-                    MarketEventType::Client(ClientEvent {
-                        order_id,
-                        kind: ClientEventType::Rejected,
-                        liquidity_flag: LiquidityFlag::Invalid,
-                    }),
-                ));
-                None
-            }
-        }
-    }
-
-    /// Lazily cancels an order by marking it as canceled. Lazily canceled orders are pruned
-    /// by `best_bid()`, `best_ask()`, or `match_order()`
-    /// Emits no events, even if order_id points to a valid order
-    fn cancel_order(&mut self, order_id: OrderId) -> Option<LimitOrder> {
-        if let Some(order) = self.orders.get_mut(&order_id) {
-            if order.status == OrderStatus::Canceled || order.qty == 0 {
+                self.reject_order(order.order_id, time);
                 return None;
             }
-            let level = match order.side {
-                OrderSide::Ask => {
-                    self.total_asks -= order.qty;
-                    // self.ask_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
-                    let test = self.ask_orders.get_mut(&order.price);
-                    if test.is_none() {
-                        println!("Oh great.");
-                        println!("{:?}", order);
-                        println!("{:?}", test);
-                    }
-                    test.unwrap()
-                }
-                OrderSide::Bid => {
-                    self.total_bids -= order.qty;
-                    // self.bid_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
-                    let test = self.bid_orders.get_mut(&order.price);
-                    if test.is_none() {
-                        println!("Oh great.");
-                        println!("{:?}", order);
-                        println!("{:?}", test);
-                    }
-                    test.unwrap()
-                }
-            };
-            level.total_qty -= order.qty;
-            order.qty = 0;
-            order.status = OrderStatus::Canceled;
-            Some(*order)
-        } else {
-            None
+        };
+        if old_order.status == OrderStatus::Canceled || old_order.qty == 0 {
+            self.reject_order(order.order_id, time);
+            return None;
         }
+
+        self.event_sink.push_event(MarketEvent::new_update(
+            time,
+            order,
+            old_order.price,
+            old_order.qty,
+        ));
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: order.order_id,
+            kind: ClientEventType::Updated,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
+
+        // Cancelling the previous
+        let level = match old_order.side {
+            OrderSide::Ask => {
+                self.total_asks -= old_order.qty;
+                self.ask_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+            OrderSide::Bid => {
+                self.total_bids -= old_order.qty;
+                self.bid_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+        };
+        level.total_qty -= old_order.qty;
+        old_order.qty = 0;
+        old_order.status = OrderStatus::Canceled;
+
+        // Adding the new
+        let mut order: LimitOrder = LimitOrder::new(order);
+        self.match_order(&mut order, time);
+        if order.qty == 0 {
+            return Some(order);
+        }
+        let level = match order.side {
+            OrderSide::Bid => {
+                self.total_bids += order.qty;
+                self.bid_orders.entry(order.price).or_default()
+            }
+            OrderSide::Ask => {
+                self.total_asks += order.qty;
+                self.ask_orders.entry(order.price).or_default()
+            }
+        };
+        level.push(&order);
+        self.orders.insert(order.order_id, order);
+        Some(order)
+    }
+
+    /// Lazily cancels an order by marking it as canceled. Lazily canceled orders are pruned
+    /// by `best_bid()`, `best_ask()`, or `match_order()`
+    ///
+    /// Assumes that the old_order passed is a valid limit order from the book, but will do additional checks,
+    /// like if the order is already canceled or has a quantity of 0, before emitting events
+    ///
+    /// Emits an invalid client event if the order is already canceled or has a quantity of 0, otherwise emits
+    /// a cancel market and client event
+    fn cancel_order_and_emit_events(
+        &mut self,
+        old_id: OrderId,
+        order: Order,
+        time: Timestamp,
+    ) -> Option<LimitOrder> {
+        let old_order = match self.orders.get_mut(&old_id) {
+            Some(old_order) => old_order,
+            None => {
+                self.reject_order(order.order_id, time);
+                return None;
+            }
+        };
+        if old_order.status == OrderStatus::Canceled || old_order.qty == 0 {
+            self.reject_order(order.order_id, time);
+            return None;
+        }
+
+        self.event_sink.push_event(MarketEvent::new_cancel(
+            time,
+            order,
+            old_order.price,
+            old_order.qty,
+        ));
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: order.order_id,
+            kind: ClientEventType::Canceled,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
+
+        let level = match old_order.side {
+            OrderSide::Ask => {
+                self.total_asks -= old_order.qty;
+                self.ask_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+            OrderSide::Bid => {
+                self.total_bids -= old_order.qty;
+                self.bid_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+        };
+
+        level.total_qty -= old_order.qty;
+        old_order.qty = 0;
+        old_order.status = OrderStatus::Canceled;
+
+        Some(LimitOrder::new(order))
     }
 
     /// Matches bid orders to ask orders with lower or equal prices.
@@ -442,7 +393,7 @@ impl<T: EventSink> OrderBook<T> {
                 maker.qty -= trade_volume;
                 taker.qty -= trade_volume;
 
-                event_sink.push(MarketEvent::new(
+                event_sink.push_event(MarketEvent::new(
                     time,
                     MarketEventType::Trade(TradeEvent {
                         price: *price,
@@ -452,24 +403,20 @@ impl<T: EventSink> OrderBook<T> {
                 ));
 
                 if maker.qty == 0 {
-                    event_sink.push(MarketEvent::new(
-                        time,
-                        MarketEventType::Client(ClientEvent {
-                            order_id: maker_id,
-                            kind: ClientEventType::Filled,
-                            liquidity_flag: LiquidityFlag::Maker,
-                        }),
-                    ));
+                    event_sink.push_client_event(ClientEvent {
+                        timestamp: time,
+                        order_id: maker_id,
+                        kind: ClientEventType::Filled,
+                        liquidity_flag: LiquidityFlag::Maker,
+                    });
                     level.pop_front();
                 } else {
-                    event_sink.push(MarketEvent::new(
-                        time,
-                        MarketEventType::Client(ClientEvent {
-                            order_id: maker_id,
-                            kind: ClientEventType::PartiallyFilled(maker.qty),
-                            liquidity_flag: LiquidityFlag::Maker,
-                        }),
-                    ));
+                    event_sink.push_client_event(ClientEvent {
+                        timestamp: time,
+                        order_id: maker_id,
+                        kind: ClientEventType::PartiallyFilled(maker.qty),
+                        liquidity_flag: LiquidityFlag::Maker,
+                    });
                     break;
                 }
             }
@@ -477,17 +424,15 @@ impl<T: EventSink> OrderBook<T> {
         if taker.qty == initial_qty {
             return;
         }
-        event_sink.push(MarketEvent::new(
-            time,
-            MarketEventType::Client(ClientEvent {
-                order_id: taker.order_id,
-                kind: match taker.qty == 0 {
-                    true => ClientEventType::Filled,
-                    false => ClientEventType::PartiallyFilled(taker.qty),
-                },
-                liquidity_flag: LiquidityFlag::Taker,
-            }),
-        ));
+        event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: taker.order_id,
+            kind: match taker.qty == 0 {
+                true => ClientEventType::Filled,
+                false => ClientEventType::PartiallyFilled(taker.qty),
+            },
+            liquidity_flag: LiquidityFlag::Taker,
+        });
     }
 
     /// Gets the total quantity at a given price level
@@ -506,33 +451,35 @@ impl<T: EventSink> OrderBook<T> {
         }
     }
 
+    fn execute_market_order_and_emit_events(
+        &mut self,
+        order: Order,
+        time: Timestamp,
+    ) -> Option<LimitOrder> {
+        let mut market_order = LimitOrder::new(order);
+        if market_order.qty == 0 {
+            self.reject_order(order.order_id, time);
+            return None;
+        }
+        self.match_order(&mut market_order, time);
+        Some(market_order)
+    }
+
     /// Checks the current state of the lob and generates L1/L2 events if applicable
     /// Updates cached value for best_ask and best_bid
-    fn generate_l1_events(&mut self, time: Timestamp) {
-        let new_best_ask = self.best_ask().unwrap_or(0);
-        let new_best_bid = self.best_bid().unwrap_or(0);
-        if new_best_ask != self.best_ask {
-            self.best_ask = new_best_ask;
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::L1(L1Event {
-                    price: self.best_ask,
-                    side: OrderSide::Ask,
-                    size: self.get_qty(self.best_ask, OrderSide::Ask),
-                }),
-            ));
-        }
-        if new_best_bid != self.best_bid {
-            self.best_bid = new_best_bid;
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::L1(L1Event {
-                    price: self.best_bid,
-                    side: OrderSide::Bid,
-                    size: self.get_qty(self.best_bid, OrderSide::Bid),
-                }),
-            ));
-        }
+    fn update_snapshot(&mut self, time: Timestamp) {
+        self.best_ask = self.best_ask().unwrap_or(0);
+        self.best_bid = self.best_bid().unwrap_or(0);
+    }
+
+    /// Emits a client event rejecting an order
+    fn reject_order(&mut self, order_id: OrderId, time: Timestamp) {
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id,
+            kind: ClientEventType::Rejected,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
     }
 }
 
