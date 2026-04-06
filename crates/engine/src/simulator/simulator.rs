@@ -77,7 +77,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     }
     fn process_event(&mut self, event: Order) {
         self.time = event.timestamp;
-        self.limit_order_book.process_order(event, self.time);
+        self.limit_order_book.process_order(event);
     }
 }
 
