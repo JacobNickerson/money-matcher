@@ -528,16 +528,14 @@ mod tests {
         side: OrderSide,
         timestamp: Timestamp,
     ) -> Option<LimitOrder> {
-        book.process_order(
-            Order::new(
-                order_id,
-                side,
-                timestamp,
-                OrderType::Cancel {
-                    old_id: old_order_id,
-                },
-            ),
-        )
+        book.process_order(Order::new(
+            order_id,
+            side,
+            timestamp,
+            OrderType::Cancel {
+                old_id: old_order_id,
+            },
+        ))
     }
 
     #[test]
@@ -550,22 +548,18 @@ mod tests {
     #[test]
     fn add_bid_without_crossing() {
         let mut book = OrderBook::new(NullFeeds {});
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 1, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 1, price: 200 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 1, price: 100 },
+        ));
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 1, price: 200 },
+        ));
         assert_eq!(book.best_bid(), Some(100));
         assert_eq!(book.best_ask(), Some(200));
     }
@@ -574,19 +568,20 @@ mod tests {
     fn cancel_removes_order() {
         let mut book = OrderBook::new(NullFeeds {});
 
-        book.process_order(
-            Order::new(
-                0,
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        assert!(
+            book.process_order(Order::new(
+                1,
                 OrderSide::Bid,
                 1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        assert!(
-            book.process_order(
-                Order::new(1, OrderSide::Bid, 1, OrderType::Cancel { old_id: 0 }),
-            )
-            .is_some()
+                OrderType::Cancel { old_id: 0 }
+            ),)
+                .is_some()
         );
         assert!(book.best_bid().is_none());
     }
@@ -596,21 +591,19 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         for i in 0..=2 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Bid,
-                    i,
-                    OrderType::Limit {
-                        qty: 5,
-                        price: 100 + 5 * i,
-                    },
-                ),
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Bid,
+                i,
+                OrderType::Limit {
+                    qty: 5,
+                    price: 100 + 5 * i,
+                },
+            ));
         }
         assert_eq!(book.best_bid(), Some(110));
         for i in 3..=4 {
-            assert!(cancel_event(&mut book, 5-i, i, OrderSide::Bid, i).is_some());
+            assert!(cancel_event(&mut book, 5 - i, i, OrderSide::Bid, i).is_some());
         }
         assert_eq!(book.best_bid(), Some(100));
     }
@@ -624,54 +617,46 @@ mod tests {
     #[test]
     fn update_order_updates_order() {
         let mut book = OrderBook::new(NullFeeds {});
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
         assert_eq!(book.best_bid(), Some(100));
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Bid,
-                1,
-                OrderType::Update {
-                    old_id: 0,
-                    qty: 5,
-                    price: 500,
-                },
-            ),
-        );
+        book.process_order(Order::new(
+            1,
+            OrderSide::Bid,
+            1,
+            OrderType::Update {
+                old_id: 0,
+                qty: 5,
+                price: 500,
+            },
+        ));
         assert_eq!(book.best_bid(), Some(500));
     }
 
     #[test]
     fn update_nonexistent_order_has_no_effect() {
         let mut book = OrderBook::new(NullFeeds {});
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
         assert_eq!(book.best_bid(), Some(100));
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Bid,
-                1,
-                OrderType::Update {
-                    old_id: 1,
-                    qty: 5,
-                    price: 500,
-                },
-            ),
-        );
+        book.process_order(Order::new(
+            1,
+            OrderSide::Bid,
+            1,
+            OrderType::Update {
+                old_id: 1,
+                qty: 5,
+                price: 500,
+            },
+        ));
         assert_eq!(book.best_bid(), Some(100));
     }
 
@@ -680,17 +665,15 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         for i in 0..=2 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Bid,
-                    i,
-                    OrderType::Limit {
-                        qty: 5,
-                        price: 100 + 5 * i,
-                    },
-                ),
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Bid,
+                i,
+                OrderType::Limit {
+                    qty: 5,
+                    price: 100 + 5 * i,
+                },
+            ));
         }
         assert_eq!(book.best_bid(), Some(110));
     }
@@ -700,17 +683,15 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         for i in 0..1_000_000 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Bid,
-                    i,
-                    OrderType::Limit {
-                        qty: 10,
-                        price: 100 + (i % 10),
-                    },
-                ),
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Bid,
+                i,
+                OrderType::Limit {
+                    qty: 10,
+                    price: 100 + (i % 10),
+                },
+            ));
         }
 
         assert!(book.best_bid().is_some());
@@ -723,24 +704,20 @@ mod tests {
         let mut book = OrderBook::new(event_feeds);
 
         for i in 0..2 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Ask,
-                    i,
-                    OrderType::Limit { qty: 5, price: 100 },
-                ),
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Ask,
+                i,
+                OrderType::Limit { qty: 5, price: 100 },
+            ));
         }
 
-        book.process_order(
-            Order::new(
-                2,
-                OrderSide::Bid,
-                2,
-                OrderType::Limit { qty: 6, price: 100 },
-            ),
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Limit { qty: 6, price: 100 },
+        ));
 
         let trade_0 = client_feed.try_pop().unwrap();
         let trade_1 = client_feed.try_pop().unwrap();
@@ -754,22 +731,18 @@ mod tests {
         let (_, mut trade_events, _) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
 
         let event_0 = trade_events.try_pop().unwrap();
         assert!(trade_events.try_pop().is_none());
@@ -786,22 +759,18 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 3, price: 100 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 3, price: 100 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 3);
         assert_eq!(trade_0.price, 100);
@@ -829,30 +798,24 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 105 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                2,
-                OrderSide::Bid,
-                2,
-                OrderType::Limit { qty: 6, price: 105 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 105 },
+        ));
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Limit { qty: 6, price: 105 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
         assert_eq!(trade_0.price, 100);
@@ -893,17 +856,18 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(1, OrderSide::Bid, 1, OrderType::Market { qty: 5 }),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Bid,
+            1,
+            OrderType::Market { qty: 5 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
         assert_eq!(trade_0.price, 100);
@@ -929,26 +893,25 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 150 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
         assert_eq!(book.best_ask(), Some(100));
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Market { qty: 9 }),
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 9 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
         assert_eq!(trade_0.price, 100);
@@ -988,26 +951,25 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 150 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
         assert_eq!(book.best_ask(), Some(100));
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Market { qty: 15 }),
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 15 },
+        ));
 
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
@@ -1048,9 +1010,12 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(0, OrderSide::Bid, 0, OrderType::Market { qty: 15 }),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Bid,
+            0,
+            OrderType::Market { qty: 15 },
+        ));
 
         assert!(trade_events.try_pop().is_none());
 
@@ -1065,26 +1030,25 @@ mod tests {
         let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 150 },
-            ),
-        );
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
         assert_eq!(book.best_ask(), Some(100));
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Market { qty: 1 }),
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 1 },
+        ));
 
         while let Some(trade) = trade_events.try_pop() {
             assert!(trade.quantity != 0);

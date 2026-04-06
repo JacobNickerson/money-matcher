@@ -190,7 +190,12 @@ mod tests {
             );
             order_gen.generate(
                 4 * i + 2,
-                (OrderSide::Bid, OrderType::Cancel { old_id: order_gen.get_active_order(OrderSide::Bid) }),
+                (
+                    OrderSide::Bid,
+                    OrderType::Cancel {
+                        old_id: order_gen.get_active_order(OrderSide::Bid),
+                    },
+                ),
                 &mut seeded_rng,
             );
             order_gen.generate(
