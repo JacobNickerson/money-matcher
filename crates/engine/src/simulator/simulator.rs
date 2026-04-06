@@ -155,6 +155,7 @@ mod tests {
         assert!(saw_greater_than_zero);
 
         saw_greater_than_zero = false;
+        prev_time = client_event_cons.try_pop().unwrap().timestamp;
         while let Some(event) = client_event_cons.try_pop() {
             assert!(event.timestamp >= prev_time);
             saw_greater_than_zero = event.timestamp > 0;

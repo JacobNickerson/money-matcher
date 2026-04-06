@@ -185,6 +185,7 @@ impl<T: EventSink> OrderBook<T> {
             time,
             MarketEventType::L3(L3Event::new_limit(original_order)),
         ));
+        self.accept_order(original_order, time);
 
         self.match_order(&mut order, time);
         if order.qty == 0 {
@@ -330,7 +331,7 @@ impl<T: EventSink> OrderBook<T> {
         old_order.qty = 0;
         old_order.status = OrderStatus::Canceled;
 
-        Some(LimitOrder::new(order))
+        Some(*old_order)
     }
 
     /// Matches bid orders to ask orders with lower or equal prices.
@@ -481,6 +482,16 @@ impl<T: EventSink> OrderBook<T> {
             liquidity_flag: LiquidityFlag::Invalid,
         });
     }
+
+    /// Emits a client event accepting an order
+    fn accept_order(&mut self, order: Order, time: Timestamp) {
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: order.order_id,
+            kind: ClientEventType::Accepted,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
+    }
 }
 
 /* UNIT TESTS */
@@ -604,7 +615,7 @@ mod tests {
         }
         assert_eq!(book.best_bid(), Some(110));
         for i in 3..=4 {
-            assert!(cancel_event(&mut book, i - 3, i, OrderSide::Bid, i).is_some());
+            assert!(cancel_event(&mut book, 5-i, i, OrderSide::Bid, i).is_some());
         }
         assert_eq!(book.best_bid(), Some(100));
     }
@@ -814,6 +825,8 @@ mod tests {
         assert_eq!(trade_0.aggressor_side, OrderSide::Ask);
 
         client_events.try_pop(); // Discard Accepted event
+        client_events.try_pop(); // Discard Accepted event
+
         let client_event_0 = client_events.try_pop().unwrap();
         assert_eq!(client_event_0.order_id, 0);
         assert_eq!(client_event_0.kind, ClientEventType::PartiallyFilled(2));
@@ -849,7 +862,7 @@ mod tests {
                 1,
                 OrderType::Limit { qty: 5, price: 105 },
             ),
-            0,
+            1,
         );
         book.process_order(
             Order::new(
@@ -858,7 +871,7 @@ mod tests {
                 2,
                 OrderType::Limit { qty: 6, price: 105 },
             ),
-            0,
+            2,
         );
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
@@ -871,6 +884,7 @@ mod tests {
         assert_eq!(trade_1.aggressor_side, OrderSide::Bid);
 
         client_events.try_pop(); // discard accepted events
+        client_events.try_pop();
         client_events.try_pop();
 
         let client_event_0 = client_events.try_pop().unwrap();
