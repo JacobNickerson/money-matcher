@@ -12,11 +12,16 @@ use mm_core::{
     },
 };
 use ringbuf::{HeapProd, traits::Producer};
-use std::{collections::BTreeMap, net::UdpSocket};
+use std::{
+    collections::BTreeMap,
+    net::{SocketAddr, UdpSocket},
+};
 
 /// A UDP receiver that parses MoldUDP64 packets into internal market events.
 pub struct ReceiverHandler {
-    socket: UdpSocket,
+    multicast_socket: UdpSocket,
+    retransmission_socket: UdpSocket,
+    retransmission_addr: SocketAddr,
     output: HeapProd<MarketEvent>,
     gap_buffer: BTreeMap<u64, MarketEvent>,
     expected_sequence_number: u64,
@@ -24,32 +29,51 @@ pub struct ReceiverHandler {
 }
 
 impl ReceiverHandler {
-    /// Initializes a new receiver handler with a designated output queue and UDP socket.
-    pub fn new(output: HeapProd<MarketEvent>, socket: UdpSocket) -> Self {
+    /// Initializes a new receiver handler with a designated output queue and UDP multicast_socket.
+    pub fn new(
+        output: HeapProd<MarketEvent>,
+        multicast_socket: UdpSocket,
+        retransmission_socket: UdpSocket,
+        retransmission_addr: SocketAddr,
+    ) -> Self {
         Self {
-            socket,
+            multicast_socket,
+            retransmission_socket,
+            retransmission_addr,
             output,
             gap_buffer: BTreeMap::new(),
-            expected_sequence_number: 0,
+            expected_sequence_number: 1,
             last_requested_sequence_number: 0,
         }
     }
 
-    /// Runs the main event loop, polling the socket and spinning on `WouldBlock`.
+    /// Runs the main event loop, polling the multicast_socket and spinning on `WouldBlock`.
     pub fn run(mut self) {
-        self.socket.set_nonblocking(true).expect("err");
+        self.multicast_socket.set_nonblocking(true).expect("err");
+        self.retransmission_socket
+            .set_nonblocking(true)
+            .expect("err");
         let mut buf = [0u8; 2048];
 
         loop {
-            let (len, _) = match self.socket.recv_from(&mut buf) {
-                Ok(v) => v,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::hint::spin_loop();
-                    continue;
+            loop {
+                match self.multicast_socket.recv_from(&mut buf) {
+                    Ok((len, _)) => {
+                        self.handle_packet(&buf[..len]);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(_) => {}
                 }
-                Err(_) => continue,
-            };
-            self.handle_packet(&buf[..len]);
+            }
+            loop {
+                match self.retransmission_socket.recv_from(&mut buf) {
+                    Ok((len, _)) => {
+                        self.handle_packet(&buf[..len]);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(_) => {}
+                }
+            }
         }
     }
 
@@ -73,16 +97,12 @@ impl ReceiverHandler {
         };
         let seq_num = u64::from_be_bytes(*seq_num_bytes);
 
-        if seq_num > self.expected_sequence_number && self.expected_sequence_number != 0 {
-            if self.expected_sequence_number > self.last_requested_sequence_number {
-                let missing_count = (seq_num - self.expected_sequence_number) as u16;
-                self.send_resend_request(session_id, self.expected_sequence_number, missing_count);
-                self.last_requested_sequence_number = seq_num - 1;
-            }
-        }
-
-        if self.expected_sequence_number == 0 {
-            self.expected_sequence_number = seq_num;
+        if seq_num > self.expected_sequence_number
+            && self.expected_sequence_number > self.last_requested_sequence_number
+        {
+            let missing_count = (seq_num - self.expected_sequence_number) as u16;
+            self.send_resend_request(session_id, self.expected_sequence_number, missing_count);
+            self.last_requested_sequence_number = seq_num - 1;
         }
 
         let mc_bytes: &[u8; 2] = match bytes[18..20].try_into() {
@@ -124,13 +144,18 @@ impl ReceiverHandler {
     ) {
         let mut request_packet = [0u8; 20];
 
+        println!(
+            "SENDING RESEND REQUEST {} {}",
+            expected_sequence_number, missing_count
+        );
+
         request_packet[0..10].copy_from_slice(session_id);
         request_packet[10..18].copy_from_slice(&expected_sequence_number.to_be_bytes());
         request_packet[18..20].copy_from_slice(&missing_count.to_be_bytes());
 
         let _len = self
-            .socket
-            .send_to(&request_packet, "127.0.0.1:34555")
+            .retransmission_socket
+            .send_to(&request_packet, self.retransmission_addr)
             .expect("err");
     }
 
@@ -160,10 +185,7 @@ impl ReceiverHandler {
             return None;
         }
 
-        let event = match Self::parse_event(message_data) {
-            Some(v) => v,
-            None => return None,
-        };
+        let event = Self::parse_event(message_data)?;
 
         Some(event)
     }
@@ -299,8 +321,17 @@ mod tests {
 
     fn make_handler() -> (ReceiverHandler, HeapCons<MarketEvent>) {
         let (tx, rx) = ringbuf::HeapRb::<MarketEvent>::new(8).split();
-        let socket = UdpSocket::bind("127.0.0.1:0").expect("err");
-        (ReceiverHandler::new(tx, socket), rx)
+        let multicast_socket = UdpSocket::bind("127.0.0.1:0").expect("err");
+        let retransmission_socket = UdpSocket::bind("127.0.0.1:0").expect("err");
+        (
+            ReceiverHandler::new(
+                tx,
+                multicast_socket,
+                retransmission_socket,
+                "127.0.0.1:0".parse().unwrap(),
+            ),
+            rx,
+        )
     }
 
     #[test]

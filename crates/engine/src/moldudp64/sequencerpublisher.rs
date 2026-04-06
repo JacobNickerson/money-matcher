@@ -47,7 +47,7 @@ impl SequencerPublisher {
         packet.resize(20, 0);
 
         let flush_interval = Duration::from_micros(50);
-        let history_capacity = 1_000_000 as u64;
+        let history_capacity = 1_000_000_u64;
 
         Self {
             input,
@@ -59,7 +59,7 @@ impl SequencerPublisher {
             current_session: None,
             first_sequence_number: None,
             message_count: 0,
-            message_history: Vec::with_capacity(history_capacity as usize),
+            message_history: vec![Bytes::new(); history_capacity as usize],
             history_capacity,
             max_packet_size: 1400,
             flush_interval,
@@ -95,7 +95,71 @@ impl SequencerPublisher {
                 self.process_event(event);
             }
 
+            self.poll_retransmission_requests(); // @todo would realistically need to be in its own thread
+
             std::hint::spin_loop();
+        }
+    }
+
+    #[inline(always)]
+    /// Polls the unicast retransmission socket for new resend requests and processes them if available.
+    fn poll_retransmission_requests(&mut self) {
+        let mut buf = [0u8; 20];
+
+        if let Ok((_len, src_addr)) = self.retransmission_socket.recv_from(&mut buf) {
+            let start_seq = u64::from_be_bytes(buf[10..18].try_into().unwrap());
+            let count = u16::from_be_bytes(buf[18..20].try_into().unwrap());
+
+            println!(
+                "RECEIVED RESEND REQUEST {} {} {}",
+                src_addr, start_seq, count
+            );
+
+            self.handle_resend(src_addr, start_seq, count);
+        }
+    }
+
+    /// Handles a resend request by transmitting a single packet of historical messages.
+    fn handle_resend(&mut self, dest: SocketAddr, start: u64, count: u16) {
+        let mut current_req_seq = start;
+        let mut remaining = count;
+        let session_id = self.session_table.get_current_session();
+        let current_sequence_number = self.session_table.get_current_sequence_number();
+
+        if current_req_seq >= current_sequence_number
+            || current_req_seq < current_sequence_number.saturating_sub(self.history_capacity)
+        {
+            return;
+        }
+
+        let mut batch_buf = BytesMut::with_capacity(self.max_packet_size);
+        batch_buf.resize(20, 0);
+
+        let mut message_count = 0;
+        let batch_start_seq = current_req_seq;
+
+        while remaining > 0 && current_req_seq < current_sequence_number {
+            let index = (current_req_seq % self.history_capacity) as usize;
+            let msg = self.message_history[index].clone();
+
+            if msg.is_empty() || (batch_buf.len() + msg.len() + 2) > self.max_packet_size {
+                break;
+            }
+
+            batch_buf.put_u16(msg.len() as u16);
+            batch_buf.put_slice(&msg);
+
+            message_count += 1;
+            current_req_seq += 1;
+            remaining -= 1;
+        }
+
+        if message_count > 0 {
+            batch_buf[0..10].copy_from_slice(&session_id);
+            batch_buf[10..18].copy_from_slice(&batch_start_seq.to_be_bytes());
+            batch_buf[18..20].copy_from_slice(&(message_count as u16).to_be_bytes());
+
+            let _ = self.retransmission_socket.send_to(&batch_buf, dest);
         }
     }
 
@@ -125,18 +189,22 @@ impl SequencerPublisher {
         let message_length = event.len();
         let total_message_length = 2 + message_length;
 
-        if session_id != self.current_session.expect("err")
-            || (self.packet.len() + total_message_length) > self.max_packet_size
-        {
-            self.flush();
-
+        if self.current_session.is_none() {
             self.current_session = Some(session_id);
             self.first_sequence_number = Some(sequence_number);
         }
 
-        if self.current_session.is_none() {
-            self.first_sequence_number = Some(sequence_number);
+        let new_session = session_id != self.current_session.expect("err");
+        let packet_full = (self.packet.len() + total_message_length) > self.max_packet_size;
+        if new_session || packet_full {
+            self.flush();
+
             self.current_session = Some(session_id);
+            self.first_sequence_number = Some(sequence_number);
+
+            if new_session {
+                self.message_history.fill(Bytes::new());
+            }
         }
 
         let index = (sequence_number % self.history_capacity) as usize;

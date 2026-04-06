@@ -25,11 +25,11 @@ impl SessionTable {
         let mut table = SessionTable {
             sessions: HashMap::new(),
             current_session,
-            current_sequence_number: 0,
+            current_sequence_number: 1,
             id_prefix,
         };
 
-        table.add_session(current_session, 0_u64);
+        table.add_session(current_session, 1_u64);
 
         table
     }
@@ -53,11 +53,9 @@ impl SessionTable {
     /// Registers a new session in the table and updates the current session ID.
     #[inline(always)]
     pub fn add_session(&mut self, session_id: SessionID, sequence_number: SequenceNumber) {
-        let sequence = self
-            .sessions
-            .get_mut(&self.current_session)
-            .expect("Unknown Session");
-        *sequence = self.current_sequence_number;
+        if let Some(sequence) = self.sessions.get_mut(&self.current_session) {
+            *sequence = self.current_sequence_number;
+        }
 
         self.sessions.insert(session_id, sequence_number);
 

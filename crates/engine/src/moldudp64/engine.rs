@@ -38,14 +38,14 @@ impl MoldEngine {
         Self::start_publisher(
             "MM_L3".to_string(),
             "233.100.10.3:9503".parse().unwrap(),
-            9503,
+            "0.0.0.0:9003".parse().unwrap(),
             l3_rx,
             Arc::clone(&running),
         );
         Self::start_publisher(
             "MM_TR".to_string(),
             "233.100.10.4:9504".parse().unwrap(),
-            9504,
+            "0.0.0.0:9004".parse().unwrap(),
             trade_rx,
             Arc::clone(&running),
         );
@@ -61,7 +61,7 @@ impl MoldEngine {
     fn start_publisher(
         session_id: String,
         multicast_group: SocketAddr,
-        retransmission_port: u16,
+        retransmission_addr: SocketAddr,
         event_rx: HeapCons<Event>,
         running: Arc<AtomicBool>,
     ) {
@@ -77,7 +77,6 @@ impl MoldEngine {
 
         let std_socket: UdpSocket = socket.into();
 
-        let retransmission_addr = format!("0.0.0.0:{}", retransmission_port);
         let retransmission_socket = UdpSocket::bind(retransmission_addr).expect("err");
         retransmission_socket.set_nonblocking(true).expect("err");
 
@@ -247,6 +246,7 @@ mod tests {
             println!("Sending {:?}", limit_event);
             server.push(limit_event.clone());
         }
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         for _ in 0..5 {
             i = i + 1;
