@@ -5,6 +5,7 @@ use std::collections::HashMap;
 pub struct SessionTable {
     pub sessions: HashMap<SessionID, SequenceNumber>,
     pub current_session: SessionID,
+    pub current_sequence_number: SequenceNumber,
     pub id_prefix: String,
 }
 
@@ -24,10 +25,11 @@ impl SessionTable {
         let mut table = SessionTable {
             sessions: HashMap::new(),
             current_session,
+            current_sequence_number: 0,
             id_prefix,
         };
 
-        table.add_session(current_session, 0_u64.to_be_bytes());
+        table.add_session(current_session, 0_u64);
 
         table
     }
@@ -51,20 +53,29 @@ impl SessionTable {
     /// Registers a new session in the table and updates the current session ID.
     #[inline(always)]
     pub fn add_session(&mut self, session_id: SessionID, sequence_number: SequenceNumber) {
+        let sequence = self
+            .sessions
+            .get_mut(&self.current_session)
+            .expect("Unknown Session");
+        *sequence = self.current_sequence_number;
+
         self.sessions.insert(session_id, sequence_number);
+
+        self.current_sequence_number = sequence_number;
         self.current_session = session_id;
     }
 
-    /// Increments and returns the next big-endian sequence number for the specified session.
+    /// Increments and returns the next sequence number for the  session.
     #[inline(always)]
-    pub fn next_sequence(&mut self, session_id: SessionID) -> SequenceNumber {
-        let sequence = self.sessions.get_mut(&session_id).expect("Unknown Session");
+    pub fn next_sequence(&mut self) -> u64 {
+        self.current_sequence_number += 1;
 
-        let mut cur_u64 = u64::from_be_bytes(*sequence);
-        cur_u64 += 1;
-        *sequence = cur_u64.to_be_bytes();
+        if self.current_sequence_number >= u64::MAX {
+            let next_id = self.generate_session_id();
+            self.add_session(next_id, 1u64);
+        }
 
-        *sequence
+        self.current_sequence_number
     }
 
     /// Removes a session entry from the registry.
@@ -77,6 +88,11 @@ impl SessionTable {
     #[inline(always)]
     pub fn get_current_session(&self) -> SessionID {
         self.current_session
+    }
+    /// Returns the currently active session sequence number.
+    #[inline(always)]
+    pub fn get_current_sequence_number(&self) -> SequenceNumber {
+        self.current_sequence_number
     }
 }
 
@@ -93,7 +109,7 @@ mod tests {
 
         assert_eq!(st.sessions.len(), 1);
         assert_eq!(st.get_current_session(), s1);
-        assert_eq!(*st.sessions.get(&s1).expect("err"), 0_u64.to_be_bytes());
+        assert_eq!(*st.sessions.get(&s1).expect("err"), 0_u64);
     }
 
     #[test]
@@ -114,7 +130,7 @@ mod tests {
         let mut st = SessionTable::new(id_prefix);
 
         let s2 = SessionTable::make_session_id(2, &st.id_prefix);
-        let n1 = 12_u64.to_be_bytes();
+        let n1 = 12_u64;
 
         st.add_session(s2, n1);
 
@@ -140,27 +156,10 @@ mod tests {
         let mut st = SessionTable::new(id_prefix);
         let s1 = st.get_current_session();
 
-        let n1 = st.next_sequence(s1);
-        let n2 = st.next_sequence(s1);
+        let n1 = st.next_sequence();
+        let n2 = st.next_sequence();
 
-        assert_eq!(u64::from_be_bytes(n1), 1);
-        assert_eq!(u64::from_be_bytes(n2), 2);
-    }
-
-    #[test]
-    fn test_next_sequence_multiple_sessions() {
-        let id_prefix = "MM_L0".to_string();
-        let mut st: SessionTable = SessionTable::new(id_prefix);
-
-        let s1 = st.get_current_session();
-        let s2 = SessionTable::make_session_id(2, &st.id_prefix);
-
-        st.add_session(s2, 1_u64.to_be_bytes());
-
-        let a1 = st.next_sequence(s1);
-        let b1 = st.next_sequence(s2);
-
-        assert_eq!(u64::from_be_bytes(a1), 1);
-        assert_eq!(u64::from_be_bytes(b1), 2);
+        assert_eq!(n1, 1);
+        assert_eq!(n2, 2);
     }
 }
