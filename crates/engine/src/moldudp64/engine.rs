@@ -83,19 +83,14 @@ impl MoldEngine {
     }
 
     /// Queues a raw byte payload into the designated ring buffer for transmission.
-    pub fn push_event(channel_tx: &mut HeapProd<Bytes>, buf: &[u8]) {
+    fn push_event(channel_tx: &mut HeapProd<Bytes>, buf: &[u8]) {
         let bytes = Bytes::copy_from_slice(buf);
 
         channel_tx.try_push(bytes).ok();
     }
-}
 
-impl EventSink for MoldEngine {
-    /// Translates incoming market events into structured binary messages and queues them for multicast transmission.
-    fn push(&mut self, event: MarketEvent) {
+    pub fn push(&mut self, event: MarketEvent) {
         match event.kind {
-            MarketEventType::L1(_e) => {}
-            MarketEventType::L2(_e) => {}
             MarketEventType::L3(e) => match e.kind {
                 OrderType::Limit { qty, price } => {
                     let mut buf = [0u8; 36];
@@ -134,7 +129,7 @@ impl EventSink for MoldEngine {
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
                     Self::push_event(&mut self.l3_tx, &buf);
                 }
-                OrderType::Cancel => {
+                OrderType::Cancel { old_id } => {
                     let mut buf = [0u8; 23];
 
                     OrderCancel::encode_into(
@@ -142,8 +137,8 @@ impl EventSink for MoldEngine {
                         0, // PLACEHOLDER
                         self.current_tracking_number,
                         event.timestamp,
-                        e.order_id,
-                        0, // PLACEHOLDER
+                        old_id, // TODO: e.order_id corresponds to the order to cancel, old_id to the actual order that was canceled. Need to determine which is correct
+                        0,      // PLACEHOLDER
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -196,7 +191,9 @@ impl EventSink for MoldEngine {
 mod tests {
     use super::*;
     use mm_core::lob_core::{
-        market_events::{EventSink, L3Event, MarketEvent, MarketEventType, TradeEvent},
+        market_events::{
+            EventSink, L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent,
+        },
         market_orders::OrderSide,
     };
 
@@ -224,6 +221,7 @@ mod tests {
                         qty: 100,
                         price: 500,
                     },
+                    extra: L3EventExtra::None,
                 }),
             };
 
@@ -240,7 +238,8 @@ mod tests {
                     order_id: i,
                     timestamp: i,
                     side: OrderSide::Ask,
-                    kind: OrderType::Cancel,
+                    kind: OrderType::Cancel { old_id: 0 },
+                    extra: L3EventExtra::Cancel(500, 100),
                 }),
             };
 
@@ -262,6 +261,7 @@ mod tests {
                         qty: i,
                         price: i,
                     },
+                    extra: L3EventExtra::Update(500, 100),
                 }),
             };
 

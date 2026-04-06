@@ -495,21 +495,37 @@ mod tests {
     ) -> (
         SeparateEventFeeds,
         (
-            HeapCons<L1Event>,
-            HeapCons<L2Event>,
             HeapCons<L3Event>,
             HeapCons<TradeEvent>,
             HeapCons<ClientEvent>,
         ),
     ) {
-        let (l1_prod, l1_cons) = HeapRb::<L1Event>::new(queue_size).split();
-        let (l2_prod, l2_cons) = HeapRb::<L2Event>::new(queue_size).split();
         let (l3_prod, l3_cons) = HeapRb::<L3Event>::new(queue_size).split();
         let (t_prod, t_cons) = HeapRb::<TradeEvent>::new(queue_size).split();
         let (c_prod, c_cons) = HeapRb::<ClientEvent>::new(queue_size).split();
         (
-            SeparateEventFeeds::new(l1_prod, l2_prod, l3_prod, t_prod, c_prod),
-            (l1_cons, l2_cons, l3_cons, t_cons, c_cons),
+            SeparateEventFeeds::new(l3_prod, t_prod, c_prod),
+            (l3_cons, t_cons, c_cons),
+        )
+    }
+
+    fn cancel_event<T: EventSink>(
+        book: &mut OrderBook<T>,
+        old_order_id: OrderId,
+        order_id: OrderId,
+        side: OrderSide,
+        timestamp: Timestamp,
+    ) -> Option<LimitOrder> {
+        book.process_order(
+            Order::new(
+                order_id,
+                side,
+                timestamp,
+                OrderType::Cancel {
+                    old_id: old_order_id,
+                },
+            ),
+            timestamp,
         )
     }
 
@@ -559,8 +575,11 @@ mod tests {
             0,
         );
         assert!(
-            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel), 0)
-                .is_some()
+            book.process_order(
+                Order::new(1, OrderSide::Bid, 1, OrderType::Cancel { old_id: 0 }),
+                0
+            )
+            .is_some()
         );
         assert!(book.best_bid().is_none());
     }
@@ -584,18 +603,16 @@ mod tests {
             );
         }
         assert_eq!(book.best_bid(), Some(110));
-        assert!(book.cancel_order(1).is_some());
-        assert!(book.cancel_order(2).is_some());
+        for i in 3..=4 {
+            assert!(cancel_event(&mut book, i - 3, i, OrderSide::Bid, i).is_some());
+        }
         assert_eq!(book.best_bid(), Some(100));
     }
 
     #[test]
     fn cancel_nonexistent_returns_none() {
         let mut book = OrderBook::new(NullFeeds {});
-        assert!(
-            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel), 0)
-                .is_none()
-        );
+        assert!(cancel_event(&mut book, 0, 1, OrderSide::Bid, 0).is_none());
     }
 
     #[test]
@@ -702,7 +719,7 @@ mod tests {
     #[test]
     fn fifo_within_price_level() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, _, mut client_feed) = consumer_feeds;
+        let (_, _, mut client_feed) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         for i in 0..2 {
@@ -736,7 +753,7 @@ mod tests {
     #[test]
     fn simple_full_match() {
         let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (_, _, _, mut trade_events, _) = consumer_feeds;
+        let (_, mut trade_events, _) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -770,7 +787,7 @@ mod tests {
     #[test]
     fn partial_match_leaves_resting_qty() {
         let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -813,7 +830,7 @@ mod tests {
     #[test]
     fn multi_level_sweep() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -879,7 +896,7 @@ mod tests {
     #[test]
     fn market_order_single_level() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -917,7 +934,7 @@ mod tests {
     #[test]
     fn market_order_multi_level() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -979,7 +996,7 @@ mod tests {
     #[test]
     fn market_order_partial_fill() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -1042,7 +1059,7 @@ mod tests {
     #[test]
     fn market_order_no_fill() {
         let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(
@@ -1058,141 +1075,9 @@ mod tests {
     }
 
     #[test]
-    fn best_price_change_emits_l1_event() {
-        let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (mut l1_events, _, _, _, _) = consumer_feeds;
-        let mut book = OrderBook::new(event_feeds);
-
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(1, OrderSide::Ask, 1, OrderType::Limit { qty: 3, price: 90 }),
-            0,
-        );
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Limit { qty: 6, price: 50 }),
-            0,
-        );
-        book.process_order(
-            Order::new(3, OrderSide::Bid, 3, OrderType::Limit { qty: 4, price: 75 }),
-            0,
-        );
-
-        let event_0 = l1_events.try_pop().unwrap();
-        assert_eq!(event_0.side, OrderSide::Ask);
-        assert_eq!(event_0.price, 100);
-        assert_eq!(event_0.size, 5);
-
-        let event_1 = l1_events.try_pop().unwrap();
-        assert_eq!(event_1.side, OrderSide::Ask);
-        assert_eq!(event_1.price, 90);
-        assert_eq!(event_1.size, 3);
-
-        let event_2 = l1_events.try_pop().unwrap();
-        assert_eq!(event_2.side, OrderSide::Bid);
-        assert_eq!(event_2.price, 50);
-        assert_eq!(event_2.size, 6);
-
-        let event_3 = l1_events.try_pop().unwrap();
-        assert_eq!(event_3.side, OrderSide::Bid);
-        assert_eq!(event_3.price, 75);
-        assert_eq!(event_3.size, 4);
-    }
-
-    #[test]
-    fn quantity_and_price_changes_emit_l2_events() {
-        let (event_feeds, consumer_feeds) = create_event_feeds(16);
-        let (_, mut l2_events, _, _, _) = consumer_feeds;
-        let mut book = OrderBook::new(event_feeds);
-
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 3, price: 100 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(
-                2,
-                OrderSide::Ask,
-                2,
-                OrderType::Limit { qty: 1, price: 110 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(3, OrderSide::Bid, 3, OrderType::Limit { qty: 4, price: 75 }),
-            0,
-        );
-        book.process_order(
-            Order::new(4, OrderSide::Bid, 4, OrderType::Limit { qty: 2, price: 75 }),
-            0,
-        );
-        book.process_order(
-            Order::new(5, OrderSide::Bid, 5, OrderType::Limit { qty: 4, price: 85 }),
-            0,
-        );
-
-        let event_0 = l2_events.try_pop().unwrap();
-        assert_eq!(event_0.side, OrderSide::Ask);
-        assert_eq!(event_0.price, 100);
-        assert_eq!(event_0.level_size, 5);
-        assert_eq!(event_0.total_size, 5);
-
-        let event_1 = l2_events.try_pop().unwrap();
-        assert_eq!(event_1.side, OrderSide::Ask);
-        assert_eq!(event_1.price, 100);
-        assert_eq!(event_1.level_size, 8);
-        assert_eq!(event_1.total_size, 8);
-
-        let event_2 = l2_events.try_pop().unwrap();
-        assert_eq!(event_2.side, OrderSide::Ask);
-        assert_eq!(event_2.price, 110);
-        assert_eq!(event_2.level_size, 1);
-        assert_eq!(event_2.total_size, 9);
-
-        let event_3 = l2_events.try_pop().unwrap();
-        assert_eq!(event_3.side, OrderSide::Bid);
-        assert_eq!(event_3.price, 75);
-        assert_eq!(event_3.level_size, 4);
-        assert_eq!(event_3.total_size, 4);
-
-        let event_4 = l2_events.try_pop().unwrap();
-        assert_eq!(event_4.side, OrderSide::Bid);
-        assert_eq!(event_4.price, 75);
-        assert_eq!(event_4.level_size, 6);
-        assert_eq!(event_4.total_size, 6);
-
-        let event_5 = l2_events.try_pop().unwrap();
-        assert_eq!(event_5.side, OrderSide::Bid);
-        assert_eq!(event_5.price, 85);
-        assert_eq!(event_5.level_size, 4);
-        assert_eq!(event_5.total_size, 10);
-    }
-
-    #[test]
     fn no_zero_trade_events() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         book.process_order(

@@ -7,7 +7,7 @@ use mm_core::{
         },
     },
     lob_core::{
-        market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
+        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
         market_orders::{OrderSide, OrderType},
     },
 };
@@ -142,6 +142,7 @@ impl ReceiverHandler {
                         } else {
                             OrderType::Market { qty: shares.into() }
                         },
+                        extra: L3EventExtra::None,
                     }),
                 })
             }
@@ -174,6 +175,7 @@ impl ReceiverHandler {
                 let shares = u32::from_be_bytes(message_data[27..31].try_into().ok()?);
                 let price = u32::from_be_bytes(message_data[31..35].try_into().ok()?);
 
+                let (old_order_price, old_order_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
                 Some(MarketEvent {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
@@ -185,6 +187,7 @@ impl ReceiverHandler {
                             qty: shares.into(),
                             price: price.into(),
                         },
+                        extra: L3EventExtra::Update(old_order_price, old_order_qty),
                     }),
                 })
             }
@@ -197,13 +200,18 @@ impl ReceiverHandler {
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);
 
+                let old_order_id = 0; // TODO: see below
+                let (old_order_price, old_order_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
                 Some(MarketEvent {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: order_reference_number,
                         side: OrderSide::Ask,
                         timestamp,
-                        kind: OrderType::Cancel,
+                        kind: OrderType::Cancel {
+                            old_id: old_order_id,
+                        },
+                        extra: L3EventExtra::Cancel(old_order_price, old_order_qty),
                     }),
                 })
             }

@@ -24,13 +24,48 @@ impl OrderBook {
     pub fn process_event(&mut self, event: MarketEvent) {
         match event.kind {
             MarketEventType::L3(e) => {
-                if let OrderType::Limit { qty, price } = e.kind {
-                    let level = match e.side {
-                        OrderSide::Ask => self.ask_levels.entry(price).or_default(),
-                        OrderSide::Bid => self.bid_levels.entry(price).or_default(),
-                    };
-                    level.qty += qty;
-                    level.order_count += 1;
+                // Ignore all other events since the summary of their changes will be handled by the trade event
+                match e.kind {
+                    OrderType::Limit { qty, price } => {
+                        let level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(price).or_default(),
+                        };
+                        level.qty += qty;
+                        level.order_count += 1;
+                    }
+                    OrderType::Update {
+                        old_id: _,
+                        qty,
+                        price,
+                    } => {
+                        let (old_price, old_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
+                        let old_level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(old_price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(old_price).or_default(),
+                        };
+                        old_level.qty -= old_qty;
+                        old_level.order_count -= 1;
+
+                        let new_level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(price).or_default(),
+                        };
+                        new_level.qty += qty;
+                        new_level.order_count += 1;
+                    }
+                    OrderType::Cancel { old_id: _ } => {
+                        let (old_price, old_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
+                        let old_level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(old_price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(old_price).or_default(),
+                        };
+                        old_level.qty -= old_qty;
+                        old_level.order_count -= 1;
+                    }
+                    OrderType::Market { .. } => {
+                        // Ignore market orders, the actual result of their execution is covered by the trade event
+                    }
                 }
             }
             MarketEventType::Trade(e) => {
@@ -42,7 +77,6 @@ impl OrderBook {
                 level.qty -= e.quantity;
                 level.order_count -= 1;
             }
-            _ => {}
         }
     }
 
