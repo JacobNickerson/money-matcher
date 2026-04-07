@@ -38,12 +38,14 @@ impl MoldEngine {
         Self::start_publisher(
             "MM_L3".to_string(),
             "233.100.10.3:9503".parse().unwrap(),
+            "0.0.0.0:9003".parse().unwrap(),
             l3_rx,
             Arc::clone(&running),
         );
         Self::start_publisher(
             "MM_TR".to_string(),
             "233.100.10.4:9504".parse().unwrap(),
+            "0.0.0.0:9004".parse().unwrap(),
             trade_rx,
             Arc::clone(&running),
         );
@@ -59,6 +61,7 @@ impl MoldEngine {
     fn start_publisher(
         session_id: String,
         multicast_group: SocketAddr,
+        retransmission_addr: SocketAddr,
         event_rx: HeapCons<Event>,
         running: Arc<AtomicBool>,
     ) {
@@ -74,8 +77,17 @@ impl MoldEngine {
 
         let std_socket: UdpSocket = socket.into();
 
-        let sequencer_publisher =
-            SequencerPublisher::new(event_rx, multicast_group, std_socket, session_id, running);
+        let retransmission_socket = UdpSocket::bind(retransmission_addr).expect("err");
+        retransmission_socket.set_nonblocking(true).expect("err");
+
+        let sequencer_publisher = SequencerPublisher::new(
+            event_rx,
+            multicast_group,
+            std_socket,
+            retransmission_socket,
+            session_id,
+            running,
+        );
 
         thread::spawn(move || {
             sequencer_publisher.run();
@@ -197,9 +209,7 @@ impl MoldEngine {
 mod tests {
     use super::*;
     use mm_core::lob_core::{
-        market_events::{
-            EventSink, L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent,
-        },
+        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
         market_orders::OrderSide,
     };
 
@@ -234,6 +244,7 @@ mod tests {
             println!("Sending {:?}", limit_event);
             server.push(limit_event.clone());
         }
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         for _ in 0..5 {
             i = i + 1;
