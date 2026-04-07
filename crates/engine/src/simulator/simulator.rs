@@ -5,7 +5,7 @@ use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};
 use std::collections::{BinaryHeap, HashMap};
-use std::time::{Duration,Instant};
+use std::time::{Duration, Instant};
 
 const USER_ORDER_INGRESS: usize = 1024;
 const SIM_HEAP_CAPACITY: usize = USER_ORDER_INGRESS * 10;
@@ -27,7 +27,13 @@ pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     is_real_time: bool,
 }
 impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
-    pub fn new(order_generator: E, event_sink: S, user_orders: HeapCons<Order>, rng: R, is_real_time: bool) -> Self {
+    pub fn new(
+        order_generator: E,
+        event_sink: S,
+        user_orders: HeapCons<Order>,
+        rng: R,
+        is_real_time: bool,
+    ) -> Self {
         Self {
             time: 0,
             limit_order_book: OrderBook::new(event_sink),
@@ -88,7 +94,8 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         self.limit_order_book.process_order(event);
     }
     fn pace(&self, next_event_time: SimTime) {
-        let real_time_delta = next_event_time.saturating_sub(self.real_time.elapsed().as_nanos() as u64); 
+        let real_time_delta =
+            next_event_time.saturating_sub(self.real_time.elapsed().as_nanos() as u64);
 
         std::thread::sleep(Duration::from_nanos(real_time_delta));
     }
