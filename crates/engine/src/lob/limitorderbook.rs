@@ -229,12 +229,8 @@ impl<T: EventSink> OrderBook<T> {
             return None;
         }
 
-        self.event_sink.push_event(MarketEvent::new_update(
-            time,
-            order,
-            old_order.price,
-            old_order.qty,
-        ));
+        self.event_sink
+            .push_event(MarketEvent::new_update(time, order));
         self.event_sink.push_client_event(ClientEvent {
             timestamp: time,
             order_id: order.order_id,
@@ -304,12 +300,8 @@ impl<T: EventSink> OrderBook<T> {
             return None;
         }
 
-        self.event_sink.push_event(MarketEvent::new_cancel(
-            time,
-            order,
-            old_order.price,
-            old_order.qty,
-        ));
+        self.event_sink
+            .push_event(MarketEvent::new_cancel(time, order, old_order.qty));
         self.event_sink.push_client_event(ClientEvent {
             timestamp: time,
             order_id: order.order_id,

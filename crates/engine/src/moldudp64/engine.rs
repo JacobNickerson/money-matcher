@@ -239,7 +239,7 @@ mod tests {
                     timestamp: i,
                     side: OrderSide::Ask,
                     kind: OrderType::Cancel { old_id: 0 },
-                    extra: L3EventExtra::Cancel(500, 100),
+                    extra: L3EventExtra::Cancel(100),
                 }),
             };
 
@@ -261,7 +261,7 @@ mod tests {
                         qty: i,
                         price: i,
                     },
-                    extra: L3EventExtra::Update(500, 100),
+                    extra: L3EventExtra::None,
                 }),
             };
 

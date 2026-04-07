@@ -155,16 +155,9 @@ mod pyclient {
     #[pymethods]
     impl PyL3EventExtra {
         #[staticmethod]
-        fn update(old_price: u64, old_qty: u64) -> Self {
-            Self {
-                inner: L3EventExtra::Update(old_price, old_qty),
-            }
-        }
-
-        #[staticmethod]
         fn cancel(old_price: u64, old_qty: u64) -> Self {
             Self {
-                inner: L3EventExtra::Cancel(old_price, old_qty),
+                inner: L3EventExtra::Cancel(old_qty),
             }
         }
 

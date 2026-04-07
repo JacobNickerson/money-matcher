@@ -34,19 +34,18 @@ impl L3Event {
     pub fn new_market(order: Order) -> Self {
         Self::new(order, L3EventExtra::None)
     }
-    pub fn new_update(order: Order, old_price: Price, old_qty: u64) -> Self {
-        Self::new(order, L3EventExtra::Update(old_price, old_qty))
+    pub fn new_update(order: Order) -> Self {
+        Self::new(order, L3EventExtra::None)
     }
-    pub fn new_cancel(order: Order, old_price: Price, old_qty: u64) -> Self {
-        Self::new(order, L3EventExtra::Cancel(old_price, old_qty))
+    pub fn new_cancel(order: Order, old_qty: u64) -> Self {
+        Self::new(order, L3EventExtra::Cancel(old_qty))
     }
 }
 
-/// An enum that contains extra information needed for certain L3 events, such as updates and cancels
+/// Stores quantity for canceled events
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum L3EventExtra {
-    Update(Price, u64),
-    Cancel(Price, u64),
+    Cancel(u64),
     None,
 }
 
@@ -113,16 +112,16 @@ impl MarketEvent {
             kind: MarketEventType::L3(L3Event::new_market(order)),
         }
     }
-    pub fn new_update(timestamp: Timestamp, order: Order, old_price: Price, old_qty: u64) -> Self {
+    pub fn new_update(timestamp: Timestamp, order: Order) -> Self {
         Self {
             timestamp,
-            kind: MarketEventType::L3(L3Event::new_update(order, old_price, old_qty)),
+            kind: MarketEventType::L3(L3Event::new_update(order)),
         }
     }
-    pub fn new_cancel(timestamp: Timestamp, order: Order, old_price: Price, old_qty: u64) -> Self {
+    pub fn new_cancel(timestamp: Timestamp, order: Order, old_qty: u64) -> Self {
         Self {
             timestamp,
-            kind: MarketEventType::L3(L3Event::new_cancel(order, old_price, old_qty)),
+            kind: MarketEventType::L3(L3Event::new_cancel(order, old_qty)),
         }
     }
 }

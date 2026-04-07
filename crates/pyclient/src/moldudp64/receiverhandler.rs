@@ -187,7 +187,7 @@ impl ReceiverHandler {
                             qty: shares.into(),
                             price: price.into(),
                         },
-                        extra: L3EventExtra::Update(old_order_price, old_order_qty),
+                        extra: L3EventExtra::None,
                     }),
                 })
             }
@@ -211,7 +211,7 @@ impl ReceiverHandler {
                         kind: OrderType::Cancel {
                             old_id: old_order_id,
                         },
-                        extra: L3EventExtra::Cancel(old_order_price, old_order_qty),
+                        extra: L3EventExtra::Cancel(old_order_qty),
                     }),
                 })
             }
