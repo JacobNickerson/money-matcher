@@ -1,7 +1,8 @@
+use bytes::buf::Limit;
 use mm_core::lob_core::{
     OrderId, Price, Timestamp,
     market_events::{
-        ClientEvent, ClientEventType, EventSink, L1Event, L2Event, LiquidityFlag, MarketEvent,
+        ClientEvent, ClientEventType, EventSink, L3Event, LiquidityFlag, MarketEvent,
         MarketEventType, TradeEvent,
     },
     market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
@@ -95,37 +96,26 @@ impl<T: EventSink> OrderBook<T> {
     ///   if there is not enough liquidity
     /// CancelOrders attempt to cancel an order
     /// UpdateOrders cancel the previously existing order and resubmit a new order
-    pub fn process_order(&mut self, order: Order, time: Timestamp) -> Option<LimitOrder> {
+    pub fn process_order(&mut self, order: Order) -> Option<LimitOrder> {
         // TODO: Update return type to be more informative
-        self.event_sink.push(MarketEvent {
-            timestamp: time,
-            kind: MarketEventType::L3(order),
-        });
-        let order = match order.kind {
-            OrderType::Limit { qty: _, price: _ } => {
-                let order = self.add_order_and_emit_events(LimitOrder::new(order), time);
-                Some(order)
-            }
-            OrderType::Market { qty: _ } => {
-                let mut order = LimitOrder::new(order);
-                self.match_order(&mut order, time);
-                Some(order)
-            }
-            OrderType::Cancel => self.cancel_order_and_emit_events(order.order_id, time),
+        let time = order.timestamp;
+        let order: Option<LimitOrder> = match order.kind {
+            OrderType::Limit { qty: _, price: _ } => self.add_order_and_emit_events(order, time),
+            OrderType::Market { qty: _ } => self.execute_market_order_and_emit_events(order, time),
+            OrderType::Cancel => self.cancel_order_and_emit_events(order, time),
             OrderType::Update {
                 old_id,
                 qty: _,
                 price: _,
-            } => self.update_order(LimitOrder::new(order), old_id, time),
+            } => self.update_order_and_emit_events(old_id, order, time),
         };
-        self.generate_l1_events(time);
+        self.update_snapshot(time);
         order
     }
 
     /// Prunes lazily removed bid orders and returns the current best bid
     /// Does not update the cached value of best bid
     pub fn best_bid(&mut self) -> Option<Price> {
-        // TODO: Will probably need to adjust this when perf-profiling and trying to reduce allocations
         let mut to_delete: Vec<Price> = vec![0; self.bid_orders.len()];
         let mut deleted_count: usize = 0;
         let mut best: Option<Price> = None;
@@ -178,13 +168,90 @@ impl<T: EventSink> OrderBook<T> {
     /// Possibly emits MarketEvents
     fn add_order_and_emit_events(
         &mut self,
-        original_order: LimitOrder,
+        original_order: Order,
         time: Timestamp,
-    ) -> LimitOrder {
-        let mut order = original_order;
+    ) -> Option<LimitOrder> {
+        let mut order = LimitOrder::new(original_order);
+        if order.qty == 0 {
+            self.reject_order(original_order.order_id, time);
+            return None;
+        }
+        self.accept_order(original_order, time);
         self.match_order(&mut order, time);
         if order.qty == 0 {
-            return order;
+            return Some(order);
+        }
+
+        self.event_sink.push_event(MarketEvent::new(
+            time,
+            MarketEventType::L3(L3Event::new_limit(order, original_order.timestamp)),
+        ));
+        let level = match order.side {
+            OrderSide::Bid => {
+                self.total_bids += order.qty;
+                self.bid_orders.entry(order.price).or_default()
+            }
+            OrderSide::Ask => {
+                self.total_asks += order.qty;
+                self.ask_orders.entry(order.price).or_default()
+            }
+        };
+        level.push(&order);
+        self.orders.insert(order.order_id, order);
+        Some(order)
+    }
+
+    /// Updates an existing order by cancelling it and replacing it with a new order. Executes
+    /// a trade if a valid match can be made
+    ///
+    /// Emits ClientEvents for the cancellation, the new order, any trades that are made, and acknowledgement of the update
+    fn update_order_and_emit_events(
+        &mut self,
+        old_id: OrderId,
+        order: Order,
+        time: Timestamp,
+    ) -> Option<LimitOrder> {
+        let old_order = match self.orders.get_mut(&old_id) {
+            Some(old_order) => old_order,
+            None => {
+                self.reject_order(order.order_id, time);
+                return None;
+            }
+        };
+        if old_order.status == OrderStatus::Canceled || old_order.qty == 0 {
+            self.reject_order(order.order_id, time);
+            return None;
+        }
+
+        self.event_sink
+            .push_event(MarketEvent::new_update(time, order));
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: order.order_id,
+            kind: ClientEventType::Updated,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
+
+        // Cancelling the previous
+        let level = match old_order.side {
+            OrderSide::Ask => {
+                self.total_asks -= old_order.qty;
+                self.ask_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+            OrderSide::Bid => {
+                self.total_bids -= old_order.qty;
+                self.bid_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+        };
+        level.total_qty -= old_order.qty;
+        old_order.qty = 0;
+        old_order.status = OrderStatus::Canceled;
+
+        // Adding the new
+        let mut order: LimitOrder = LimitOrder::new(order);
+        self.match_order(&mut order, time);
+        if order.qty == 0 {
+            return Some(order);
         }
         let level = match order.side {
             OrderSide::Bid => {
@@ -198,188 +265,60 @@ impl<T: EventSink> OrderBook<T> {
         };
         level.push(&order);
         self.orders.insert(order.order_id, order);
-
-        self.event_sink.push(MarketEvent::new(
-            time,
-            MarketEventType::L2(L2Event {
-                price: (order.price),
-                side: order.side,
-                level_size: level.total_qty,
-                total_size: match order.side {
-                    OrderSide::Ask => self.total_asks,
-                    OrderSide::Bid => self.total_bids,
-                },
-            }),
-        ));
-        self.event_sink.push(MarketEvent::new(
-            time,
-            MarketEventType::Client(ClientEvent {
-                order_id: order.order_id,
-                kind: ClientEventType::Accepted,
-                liquidity_flag: LiquidityFlag::Invalid,
-            }),
-        ));
-        order
-    }
-
-    // /// Executes a trade if a valid match can be made, see match_order() for details about matching.
-    // /// Adds an order to the side of the book specified in the order if any of the order's quantity is unmatched.
-    // /// Does not emit any events
-    // fn add_order(&mut self, original_order: LimitOrder) -> LimitOrder {
-    //     let mut order = original_order;
-    //     self.match_order(&mut order);
-    //     if order.qty == 0 {
-    //         return order;
-    //     }
-    //     let level = match order.side {
-    //         OrderSide::Bid => {
-    //             self.total_bids += order.qty;
-    //             self.bid_orders.entry(order.price).or_default()
-    //         }
-    //         OrderSide::Ask => {
-    //             self.total_asks += order.qty;
-    //             self.ask_orders.entry(order.price).or_default()
-    //         }
-    //     };
-    //     level.push(&order);
-    //     self.orders.insert(order.order_id, order);
-    //     order
-    // }
-
-    /// Updates an existing order by cancelling it and replacing it with a new order. Executes
-    /// a trade if a valid match can be made
-    fn update_order(
-        &mut self,
-        order: LimitOrder,
-        old_order_id: OrderId,
-        time: Timestamp,
-    ) -> Option<LimitOrder> {
-        let x = self
-            .cancel_order(old_order_id)
-            .map(|_| self.add_order_and_emit_events(order, time));
-        if x.is_some() {
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::Client(ClientEvent {
-                    order_id: old_order_id,
-                    kind: ClientEventType::Updated,
-                    liquidity_flag: LiquidityFlag::Invalid,
-                }),
-            ));
-        } else {
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::Client(ClientEvent {
-                    order_id: old_order_id,
-                    kind: ClientEventType::Rejected,
-                    liquidity_flag: LiquidityFlag::Invalid,
-                }),
-            ));
-        }
-        x
+        Some(order)
     }
 
     /// Lazily cancels an order by marking it as canceled. Lazily canceled orders are pruned
     /// by `best_bid()`, `best_ask()`, or `match_order()`
-    /// Emits a cancellation event if order_id points to a valid order
+    ///
+    /// Assumes that the old_order passed is a valid limit order from the book, but will do additional checks,
+    /// like if the order is already canceled or has a quantity of 0, before emitting events
+    ///
+    /// Emits an invalid client event if the order is already canceled or has a quantity of 0, otherwise emits
+    /// a cancel market and client event
     fn cancel_order_and_emit_events(
         &mut self,
-        order_id: OrderId,
+        order: Order,
         time: Timestamp,
     ) -> Option<LimitOrder> {
-        match self.orders.get_mut(&order_id) {
-            Some(order) => {
-                let (level, total_qty) = match order.side {
-                    OrderSide::Ask => {
-                        self.total_asks -= order.qty;
-                        (
-                            self.ask_orders.get_mut(&order.price).unwrap(), // If order is Some() then the price level its supposed to exist in should always exist
-                            self.total_asks,
-                        )
-                    }
-                    OrderSide::Bid => {
-                        self.total_bids -= order.qty;
-                        (
-                            self.bid_orders.get_mut(&order.price).unwrap(), // If order is Some() then the price level its supposed to exist in should always exist
-                            self.total_bids,
-                        )
-                    }
-                };
-                level.total_qty -= order.qty;
-                order.qty = 0;
-                order.status = OrderStatus::Canceled;
-                self.event_sink.push(MarketEvent::new(
-                    time,
-                    MarketEventType::L2(L2Event {
-                        price: order.price,
-                        side: order.side,
-                        level_size: level.total_qty,
-                        total_size: total_qty,
-                    }),
-                ));
-                self.event_sink.push(MarketEvent::new(
-                    time,
-                    MarketEventType::Client(ClientEvent {
-                        order_id,
-                        kind: ClientEventType::Canceled,
-                        liquidity_flag: LiquidityFlag::Invalid,
-                    }),
-                ));
-                Some(*order)
-            }
+        let old_id = order.order_id;
+        let old_order = match self.orders.get_mut(&old_id) {
+            Some(old_order) => old_order,
             None => {
-                self.event_sink.push(MarketEvent::new(
-                    time,
-                    MarketEventType::Client(ClientEvent {
-                        order_id,
-                        kind: ClientEventType::Rejected,
-                        liquidity_flag: LiquidityFlag::Invalid,
-                    }),
-                ));
-                None
-            }
-        }
-    }
-
-    /// Lazily cancels an order by marking it as canceled. Lazily canceled orders are pruned
-    /// by `best_bid()`, `best_ask()`, or `match_order()`
-    /// Emits no events, even if order_id points to a valid order
-    fn cancel_order(&mut self, order_id: OrderId) -> Option<LimitOrder> {
-        if let Some(order) = self.orders.get_mut(&order_id) {
-            if order.status == OrderStatus::Canceled || order.qty == 0 {
+                self.reject_order(order.order_id, time);
                 return None;
             }
-            let level = match order.side {
-                OrderSide::Ask => {
-                    self.total_asks -= order.qty;
-                    // self.ask_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
-                    let test = self.ask_orders.get_mut(&order.price);
-                    if test.is_none() {
-                        println!("Oh great.");
-                        println!("{:?}", order);
-                        println!("{:?}", test);
-                    }
-                    test.unwrap()
-                }
-                OrderSide::Bid => {
-                    self.total_bids -= order.qty;
-                    // self.bid_orders.get_mut(&order.price).unwrap() // If order is Some() then the price level its supposed to exist in should always exist
-                    let test = self.bid_orders.get_mut(&order.price);
-                    if test.is_none() {
-                        println!("Oh great.");
-                        println!("{:?}", order);
-                        println!("{:?}", test);
-                    }
-                    test.unwrap()
-                }
-            };
-            level.total_qty -= order.qty;
-            order.qty = 0;
-            order.status = OrderStatus::Canceled;
-            Some(*order)
-        } else {
-            None
+        };
+        if old_order.status == OrderStatus::Canceled || old_order.qty == 0 {
+            self.reject_order(order.order_id, time);
+            return None;
         }
+
+        self.event_sink
+            .push_event(MarketEvent::new_cancel(time, order, old_order.qty));
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: order.order_id,
+            kind: ClientEventType::Canceled,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
+
+        let level = match old_order.side {
+            OrderSide::Ask => {
+                self.total_asks -= old_order.qty;
+                self.ask_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+            OrderSide::Bid => {
+                self.total_bids -= old_order.qty;
+                self.bid_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
+            }
+        };
+
+        level.total_qty -= old_order.qty;
+        old_order.qty = 0;
+        old_order.status = OrderStatus::Canceled;
+
+        Some(*old_order)
     }
 
     /// Matches bid orders to ask orders with lower or equal prices.
@@ -442,34 +381,31 @@ impl<T: EventSink> OrderBook<T> {
                 maker.qty -= trade_volume;
                 taker.qty -= trade_volume;
 
-                event_sink.push(MarketEvent::new(
+                event_sink.push_event(MarketEvent::new(
                     time,
                     MarketEventType::Trade(TradeEvent {
                         price: *price,
                         quantity: trade_volume,
                         aggressor_side: taker.side,
+                        maker_id: maker.order_id,
                     }),
                 ));
 
                 if maker.qty == 0 {
-                    event_sink.push(MarketEvent::new(
-                        time,
-                        MarketEventType::Client(ClientEvent {
-                            order_id: maker_id,
-                            kind: ClientEventType::Filled,
-                            liquidity_flag: LiquidityFlag::Maker,
-                        }),
-                    ));
+                    event_sink.push_client_event(ClientEvent {
+                        timestamp: time,
+                        order_id: maker_id,
+                        kind: ClientEventType::Filled,
+                        liquidity_flag: LiquidityFlag::Maker,
+                    });
                     level.pop_front();
                 } else {
-                    event_sink.push(MarketEvent::new(
-                        time,
-                        MarketEventType::Client(ClientEvent {
-                            order_id: maker_id,
-                            kind: ClientEventType::PartiallyFilled(maker.qty),
-                            liquidity_flag: LiquidityFlag::Maker,
-                        }),
-                    ));
+                    event_sink.push_client_event(ClientEvent {
+                        timestamp: time,
+                        order_id: maker_id,
+                        kind: ClientEventType::PartiallyFilled(maker.qty),
+                        liquidity_flag: LiquidityFlag::Maker,
+                    });
                     break;
                 }
             }
@@ -477,17 +413,15 @@ impl<T: EventSink> OrderBook<T> {
         if taker.qty == initial_qty {
             return;
         }
-        event_sink.push(MarketEvent::new(
-            time,
-            MarketEventType::Client(ClientEvent {
-                order_id: taker.order_id,
-                kind: match taker.qty == 0 {
-                    true => ClientEventType::Filled,
-                    false => ClientEventType::PartiallyFilled(taker.qty),
-                },
-                liquidity_flag: LiquidityFlag::Taker,
-            }),
-        ));
+        event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: taker.order_id,
+            kind: match taker.qty == 0 {
+                true => ClientEventType::Filled,
+                false => ClientEventType::PartiallyFilled(taker.qty),
+            },
+            liquidity_flag: LiquidityFlag::Taker,
+        });
     }
 
     /// Gets the total quantity at a given price level
@@ -506,33 +440,45 @@ impl<T: EventSink> OrderBook<T> {
         }
     }
 
+    fn execute_market_order_and_emit_events(
+        &mut self,
+        order: Order,
+        time: Timestamp,
+    ) -> Option<LimitOrder> {
+        let mut market_order = LimitOrder::new(order);
+        if market_order.qty == 0 {
+            self.reject_order(order.order_id, time);
+            return None;
+        }
+        self.match_order(&mut market_order, time);
+        Some(market_order)
+    }
+
     /// Checks the current state of the lob and generates L1/L2 events if applicable
     /// Updates cached value for best_ask and best_bid
-    fn generate_l1_events(&mut self, time: Timestamp) {
-        let new_best_ask = self.best_ask().unwrap_or(0);
-        let new_best_bid = self.best_bid().unwrap_or(0);
-        if new_best_ask != self.best_ask {
-            self.best_ask = new_best_ask;
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::L1(L1Event {
-                    price: self.best_ask,
-                    side: OrderSide::Ask,
-                    size: self.get_qty(self.best_ask, OrderSide::Ask),
-                }),
-            ));
-        }
-        if new_best_bid != self.best_bid {
-            self.best_bid = new_best_bid;
-            self.event_sink.push(MarketEvent::new(
-                time,
-                MarketEventType::L1(L1Event {
-                    price: self.best_bid,
-                    side: OrderSide::Bid,
-                    size: self.get_qty(self.best_bid, OrderSide::Bid),
-                }),
-            ));
-        }
+    fn update_snapshot(&mut self, time: Timestamp) {
+        self.best_ask = self.best_ask().unwrap_or(0);
+        self.best_bid = self.best_bid().unwrap_or(0);
+    }
+
+    /// Emits a client event rejecting an order
+    fn reject_order(&mut self, order_id: OrderId, time: Timestamp) {
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id,
+            kind: ClientEventType::Rejected,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
+    }
+
+    /// Emits a client event accepting an order
+    fn accept_order(&mut self, order: Order, time: Timestamp) {
+        self.event_sink.push_client_event(ClientEvent {
+            timestamp: time,
+            order_id: order.order_id,
+            kind: ClientEventType::Accepted,
+            liquidity_flag: LiquidityFlag::Invalid,
+        });
     }
 }
 
@@ -548,22 +494,27 @@ mod tests {
     ) -> (
         SeparateEventFeeds,
         (
-            HeapCons<L1Event>,
-            HeapCons<L2Event>,
             HeapCons<L3Event>,
             HeapCons<TradeEvent>,
             HeapCons<ClientEvent>,
         ),
     ) {
-        let (l1_prod, l1_cons) = HeapRb::<L1Event>::new(queue_size).split();
-        let (l2_prod, l2_cons) = HeapRb::<L2Event>::new(queue_size).split();
         let (l3_prod, l3_cons) = HeapRb::<L3Event>::new(queue_size).split();
         let (t_prod, t_cons) = HeapRb::<TradeEvent>::new(queue_size).split();
         let (c_prod, c_cons) = HeapRb::<ClientEvent>::new(queue_size).split();
         (
-            SeparateEventFeeds::new(l1_prod, l2_prod, l3_prod, t_prod, c_prod),
-            (l1_cons, l2_cons, l3_cons, t_cons, c_cons),
+            SeparateEventFeeds::new(l3_prod, t_prod, c_prod),
+            (l3_cons, t_cons, c_cons),
         )
+    }
+
+    fn cancel_event<T: EventSink>(
+        book: &mut OrderBook<T>,
+        old_order_id: OrderId,
+        side: OrderSide,
+        timestamp: Timestamp,
+    ) -> Option<LimitOrder> {
+        book.process_order(Order::new(old_order_id, side, timestamp, OrderType::Cancel))
     }
 
     #[test]
@@ -576,24 +527,18 @@ mod tests {
     #[test]
     fn add_bid_without_crossing() {
         let mut book = OrderBook::new(NullFeeds {});
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 1, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 1, price: 200 },
-            ),
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 1, price: 100 },
+        ));
+        book.process_order(Order::new(
             0,
-        );
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 1, price: 200 },
+        ));
         assert_eq!(book.best_bid(), Some(100));
         assert_eq!(book.best_ask(), Some(200));
     }
@@ -602,17 +547,14 @@ mod tests {
     fn cancel_removes_order() {
         let mut book = OrderBook::new(NullFeeds {});
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
         assert!(
-            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel), 0)
+            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel))
                 .is_some()
         );
         assert!(book.best_bid().is_none());
@@ -623,89 +565,72 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         for i in 0..=2 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Bid,
-                    i,
-                    OrderType::Limit {
-                        qty: 5,
-                        price: 100 + 5 * i,
-                    },
-                ),
-                0,
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Bid,
+                i,
+                OrderType::Limit {
+                    qty: 5,
+                    price: 100 + 5 * i,
+                },
+            ));
         }
         assert_eq!(book.best_bid(), Some(110));
-        assert!(book.cancel_order(1).is_some());
-        assert!(book.cancel_order(2).is_some());
+        for i in 3..=4 {
+            assert!(cancel_event(&mut book, 5 - i, OrderSide::Bid, i).is_some());
+        }
         assert_eq!(book.best_bid(), Some(100));
     }
 
     #[test]
     fn cancel_nonexistent_returns_none() {
         let mut book = OrderBook::new(NullFeeds {});
-        assert!(
-            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel), 0)
-                .is_none()
-        );
+        assert!(cancel_event(&mut book, 0, OrderSide::Bid, 0).is_none());
     }
 
     #[test]
     fn update_order_updates_order() {
         let mut book = OrderBook::new(NullFeeds {});
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
         assert_eq!(book.best_bid(), Some(100));
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Bid,
-                1,
-                OrderType::Update {
-                    old_id: 0,
-                    qty: 5,
-                    price: 500,
-                },
-            ),
-            0,
-        );
+        book.process_order(Order::new(
+            1,
+            OrderSide::Bid,
+            1,
+            OrderType::Update {
+                old_id: 0,
+                qty: 5,
+                price: 500,
+            },
+        ));
         assert_eq!(book.best_bid(), Some(500));
     }
 
     #[test]
     fn update_nonexistent_order_has_no_effect() {
         let mut book = OrderBook::new(NullFeeds {});
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
+            OrderSide::Bid,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
         assert_eq!(book.best_bid(), Some(100));
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Bid,
-                1,
-                OrderType::Update {
-                    old_id: 1,
-                    qty: 5,
-                    price: 500,
-                },
-            ),
-            0,
-        );
+        book.process_order(Order::new(
+            1,
+            OrderSide::Bid,
+            1,
+            OrderType::Update {
+                old_id: 1,
+                qty: 5,
+                price: 500,
+            },
+        ));
         assert_eq!(book.best_bid(), Some(100));
     }
 
@@ -714,18 +639,15 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         for i in 0..=2 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Bid,
-                    i,
-                    OrderType::Limit {
-                        qty: 5,
-                        price: 100 + 5 * i,
-                    },
-                ),
-                0,
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Bid,
+                i,
+                OrderType::Limit {
+                    qty: 5,
+                    price: 100 + 5 * i,
+                },
+            ));
         }
         assert_eq!(book.best_bid(), Some(110));
     }
@@ -735,18 +657,15 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         for i in 0..1_000_000 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Bid,
-                    i,
-                    OrderType::Limit {
-                        qty: 10,
-                        price: 100 + (i % 10),
-                    },
-                ),
-                0,
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Bid,
+                i,
+                OrderType::Limit {
+                    qty: 10,
+                    price: 100 + (i % 10),
+                },
+            ));
         }
 
         assert!(book.best_bid().is_some());
@@ -755,30 +674,24 @@ mod tests {
     #[test]
     fn fifo_within_price_level() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, _, mut client_feed) = consumer_feeds;
+        let (_, _, mut client_feed) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
         for i in 0..2 {
-            book.process_order(
-                Order::new(
-                    i,
-                    OrderSide::Ask,
-                    i,
-                    OrderType::Limit { qty: 5, price: 100 },
-                ),
-                0,
-            );
+            book.process_order(Order::new(
+                i,
+                OrderSide::Ask,
+                i,
+                OrderType::Limit { qty: 5, price: 100 },
+            ));
         }
 
-        book.process_order(
-            Order::new(
-                2,
-                OrderSide::Bid,
-                2,
-                OrderType::Limit { qty: 6, price: 100 },
-            ),
-            0,
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Limit { qty: 6, price: 100 },
+        ));
 
         let trade_0 = client_feed.try_pop().unwrap();
         let trade_1 = client_feed.try_pop().unwrap();
@@ -789,27 +702,21 @@ mod tests {
     #[test]
     fn simple_full_match() {
         let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (_, _, _, mut trade_events, _) = consumer_feeds;
+        let (_, mut trade_events, _) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+            OrderSide::Bid,
             0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
 
         let event_0 = trade_events.try_pop().unwrap();
         assert!(trade_events.try_pop().is_none());
@@ -823,33 +730,29 @@ mod tests {
     #[test]
     fn partial_match_leaves_resting_qty() {
         let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Bid,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 3, price: 100 },
-            ),
+            OrderSide::Bid,
             0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 3, price: 100 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 3);
         assert_eq!(trade_0.price, 100);
         assert_eq!(trade_0.aggressor_side, OrderSide::Ask);
 
         client_events.try_pop(); // Discard Accepted event
+        client_events.try_pop(); // Discard Accepted event
+
         let client_event_0 = client_events.try_pop().unwrap();
         assert_eq!(client_event_0.order_id, 0);
         assert_eq!(client_event_0.kind, ClientEventType::PartiallyFilled(2));
@@ -866,36 +769,27 @@ mod tests {
     #[test]
     fn multi_level_sweep() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 105 },
-            ),
+            OrderSide::Ask,
             0,
-        );
-        book.process_order(
-            Order::new(
-                2,
-                OrderSide::Bid,
-                2,
-                OrderType::Limit { qty: 6, price: 105 },
-            ),
-            0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 105 },
+        ));
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Limit { qty: 6, price: 105 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
         assert_eq!(trade_0.price, 100);
@@ -907,6 +801,7 @@ mod tests {
         assert_eq!(trade_1.aggressor_side, OrderSide::Bid);
 
         client_events.try_pop(); // discard accepted events
+        client_events.try_pop();
         client_events.try_pop();
 
         let client_event_0 = client_events.try_pop().unwrap();
@@ -932,22 +827,21 @@ mod tests {
     #[test]
     fn market_order_single_level() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(1, OrderSide::Bid, 1, OrderType::Market { qty: 5 }),
+            OrderSide::Ask,
             0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Bid,
+            1,
+            OrderType::Market { qty: 5 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
         assert_eq!(trade_0.price, 100);
@@ -970,32 +864,28 @@ mod tests {
     #[test]
     fn market_order_multi_level() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 150 },
-            ),
+            OrderSide::Ask,
             0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
         assert_eq!(book.best_ask(), Some(100));
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Market { qty: 9 }),
-            0,
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 9 },
+        ));
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
         assert_eq!(trade_0.price, 100);
@@ -1032,32 +922,28 @@ mod tests {
     #[test]
     fn market_order_partial_fill() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 150 },
-            ),
+            OrderSide::Ask,
             0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
         assert_eq!(book.best_ask(), Some(100));
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Market { qty: 15 }),
-            0,
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 15 },
+        ));
 
         let trade_0 = trade_events.try_pop().unwrap();
         assert_eq!(trade_0.quantity, 5);
@@ -1095,13 +981,15 @@ mod tests {
     #[test]
     fn market_order_no_fill() {
         let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(0, OrderSide::Bid, 0, OrderType::Market { qty: 15 }),
+        book.process_order(Order::new(
             0,
-        );
+            OrderSide::Bid,
+            0,
+            OrderType::Market { qty: 15 },
+        ));
 
         assert!(trade_events.try_pop().is_none());
 
@@ -1111,166 +999,30 @@ mod tests {
     }
 
     #[test]
-    fn best_price_change_emits_l1_event() {
-        let (event_feeds, consumer_feeds) = create_event_feeds(4);
-        let (mut l1_events, _, _, _, _) = consumer_feeds;
-        let mut book = OrderBook::new(event_feeds);
-
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(1, OrderSide::Ask, 1, OrderType::Limit { qty: 3, price: 90 }),
-            0,
-        );
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Limit { qty: 6, price: 50 }),
-            0,
-        );
-        book.process_order(
-            Order::new(3, OrderSide::Bid, 3, OrderType::Limit { qty: 4, price: 75 }),
-            0,
-        );
-
-        let event_0 = l1_events.try_pop().unwrap();
-        assert_eq!(event_0.side, OrderSide::Ask);
-        assert_eq!(event_0.price, 100);
-        assert_eq!(event_0.size, 5);
-
-        let event_1 = l1_events.try_pop().unwrap();
-        assert_eq!(event_1.side, OrderSide::Ask);
-        assert_eq!(event_1.price, 90);
-        assert_eq!(event_1.size, 3);
-
-        let event_2 = l1_events.try_pop().unwrap();
-        assert_eq!(event_2.side, OrderSide::Bid);
-        assert_eq!(event_2.price, 50);
-        assert_eq!(event_2.size, 6);
-
-        let event_3 = l1_events.try_pop().unwrap();
-        assert_eq!(event_3.side, OrderSide::Bid);
-        assert_eq!(event_3.price, 75);
-        assert_eq!(event_3.size, 4);
-    }
-
-    #[test]
-    fn quantity_and_price_changes_emit_l2_events() {
-        let (event_feeds, consumer_feeds) = create_event_feeds(16);
-        let (_, mut l2_events, _, _, _) = consumer_feeds;
-        let mut book = OrderBook::new(event_feeds);
-
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 3, price: 100 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(
-                2,
-                OrderSide::Ask,
-                2,
-                OrderType::Limit { qty: 1, price: 110 },
-            ),
-            0,
-        );
-        book.process_order(
-            Order::new(3, OrderSide::Bid, 3, OrderType::Limit { qty: 4, price: 75 }),
-            0,
-        );
-        book.process_order(
-            Order::new(4, OrderSide::Bid, 4, OrderType::Limit { qty: 2, price: 75 }),
-            0,
-        );
-        book.process_order(
-            Order::new(5, OrderSide::Bid, 5, OrderType::Limit { qty: 4, price: 85 }),
-            0,
-        );
-
-        let event_0 = l2_events.try_pop().unwrap();
-        assert_eq!(event_0.side, OrderSide::Ask);
-        assert_eq!(event_0.price, 100);
-        assert_eq!(event_0.level_size, 5);
-        assert_eq!(event_0.total_size, 5);
-
-        let event_1 = l2_events.try_pop().unwrap();
-        assert_eq!(event_1.side, OrderSide::Ask);
-        assert_eq!(event_1.price, 100);
-        assert_eq!(event_1.level_size, 8);
-        assert_eq!(event_1.total_size, 8);
-
-        let event_2 = l2_events.try_pop().unwrap();
-        assert_eq!(event_2.side, OrderSide::Ask);
-        assert_eq!(event_2.price, 110);
-        assert_eq!(event_2.level_size, 1);
-        assert_eq!(event_2.total_size, 9);
-
-        let event_3 = l2_events.try_pop().unwrap();
-        assert_eq!(event_3.side, OrderSide::Bid);
-        assert_eq!(event_3.price, 75);
-        assert_eq!(event_3.level_size, 4);
-        assert_eq!(event_3.total_size, 4);
-
-        let event_4 = l2_events.try_pop().unwrap();
-        assert_eq!(event_4.side, OrderSide::Bid);
-        assert_eq!(event_4.price, 75);
-        assert_eq!(event_4.level_size, 6);
-        assert_eq!(event_4.total_size, 6);
-
-        let event_5 = l2_events.try_pop().unwrap();
-        assert_eq!(event_5.side, OrderSide::Bid);
-        assert_eq!(event_5.price, 85);
-        assert_eq!(event_5.level_size, 4);
-        assert_eq!(event_5.total_size, 10);
-    }
-
-    #[test]
     fn no_zero_trade_events() {
         let (event_feeds, consumer_feeds) = create_event_feeds(32);
-        let (_, _, _, mut trade_events, mut client_events) = consumer_feeds;
+        let (_, mut trade_events, mut client_events) = consumer_feeds;
         let mut book = OrderBook::new(event_feeds);
 
-        book.process_order(
-            Order::new(
-                0,
-                OrderSide::Ask,
-                0,
-                OrderType::Limit { qty: 5, price: 100 },
-            ),
+        book.process_order(Order::new(
             0,
-        );
-        book.process_order(
-            Order::new(
-                1,
-                OrderSide::Ask,
-                1,
-                OrderType::Limit { qty: 5, price: 150 },
-            ),
+            OrderSide::Ask,
             0,
-        );
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
         assert_eq!(book.best_ask(), Some(100));
-        book.process_order(
-            Order::new(2, OrderSide::Bid, 2, OrderType::Market { qty: 1 }),
-            0,
-        );
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Market { qty: 1 },
+        ));
 
         while let Some(trade) = trade_events.try_pop() {
             assert!(trade.quantity != 0);
@@ -1290,5 +1042,54 @@ mod tests {
         assert_eq!(client_event_1.liquidity_flag, LiquidityFlag::Taker);
 
         assert!(client_events.try_pop().is_none());
+    }
+
+    #[test]
+    fn limit_order_correct_qty_after_trades() {
+        let (event_feeds, consumer_feeds) = create_event_feeds(32);
+        let (mut l3_events, mut trade_events, _) = consumer_feeds;
+        let mut book = OrderBook::new(event_feeds);
+
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Limit {
+                qty: 15,
+                price: 150,
+            },
+        ));
+
+        let trade_event_0 = trade_events.try_pop().unwrap();
+        assert_eq!(trade_event_0.maker_id, 0);
+        assert_eq!(trade_event_0.price, 100);
+        assert_eq!(trade_event_0.quantity, 5);
+        assert_eq!(trade_event_0.aggressor_side, OrderSide::Bid);
+
+        let trade_event_1 = trade_events.try_pop().unwrap();
+        assert_eq!(trade_event_1.maker_id, 1);
+        assert_eq!(trade_event_1.price, 150);
+        assert_eq!(trade_event_1.quantity, 5);
+        assert_eq!(trade_event_1.aggressor_side, OrderSide::Bid);
+
+        l3_events.try_pop(); // discard L3 event for order 0 being accepted
+        l3_events.try_pop(); // discard L3 event for order 1 being accepted
+        let l3_event_0 = l3_events.try_pop().unwrap();
+        assert_eq!(l3_event_0.order_id, 2);
+        assert_eq!(l3_event_0.side, OrderSide::Bid);
+        assert_eq!(l3_event_0.timestamp, 2);
+        assert_eq!(l3_event_0.kind, OrderType::Limit { qty: 5, price: 150 });
     }
 }

@@ -6,7 +6,7 @@ use mm_core::{
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
     },
     lob_core::{
-        market_events::{EventSink, MarketEvent, MarketEventType},
+        market_events::{EventSink, L3EventExtra, MarketEvent, MarketEventType},
         market_orders::OrderType,
     },
     moldudp64_core::types::Event,
@@ -83,19 +83,14 @@ impl MoldEngine {
     }
 
     /// Queues a raw byte payload into the designated ring buffer for transmission.
-    pub fn push_event(channel_tx: &mut HeapProd<Bytes>, buf: &[u8]) {
+    fn push_event(channel_tx: &mut HeapProd<Bytes>, buf: &[u8]) {
         let bytes = Bytes::copy_from_slice(buf);
 
         channel_tx.try_push(bytes).ok();
     }
-}
 
-impl EventSink for MoldEngine {
-    /// Translates incoming market events into structured binary messages and queues them for multicast transmission.
-    fn push(&mut self, event: MarketEvent) {
+    pub fn push(&mut self, event: MarketEvent) {
         match event.kind {
-            MarketEventType::L1(_e) => {}
-            MarketEventType::L2(_e) => {}
             MarketEventType::L3(e) => match e.kind {
                 OrderType::Limit { qty, price } => {
                     let mut buf = [0u8; 36];
@@ -137,13 +132,19 @@ impl EventSink for MoldEngine {
                 OrderType::Cancel => {
                     let mut buf = [0u8; 23];
 
+                    let L3EventExtra::Cancel(cancel_qty) = e.extra else {
+                        panic!(
+                            "Expected L3EventExtra::Cancel for cancel event, but got {:?}",
+                            e.extra
+                        );
+                    };
                     OrderCancel::encode_into(
                         &mut buf,
                         0, // PLACEHOLDER
                         self.current_tracking_number,
                         event.timestamp,
                         e.order_id,
-                        0, // PLACEHOLDER
+                        cancel_qty.try_into().unwrap(), // TODO: Need to update various struct members to be the same byte size
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -176,7 +177,7 @@ impl EventSink for MoldEngine {
                     0, // PLACEHOLDER
                     self.current_tracking_number,
                     event.timestamp,
-                    0, // PLACEHOLDER
+                    e.maker_id,
                     e.quantity as u32,
                     0,    // PLACEHOLDER
                     b'Y', // PLACEHOLDER
@@ -196,7 +197,9 @@ impl EventSink for MoldEngine {
 mod tests {
     use super::*;
     use mm_core::lob_core::{
-        market_events::{EventSink, L3Event, MarketEvent, MarketEventType, TradeEvent},
+        market_events::{
+            EventSink, L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent,
+        },
         market_orders::OrderSide,
     };
 
@@ -224,6 +227,7 @@ mod tests {
                         qty: 100,
                         price: 500,
                     },
+                    extra: L3EventExtra::None,
                 }),
             };
 
@@ -241,6 +245,7 @@ mod tests {
                     timestamp: i,
                     side: OrderSide::Ask,
                     kind: OrderType::Cancel,
+                    extra: L3EventExtra::Cancel(100),
                 }),
             };
 
@@ -262,6 +267,7 @@ mod tests {
                         qty: i,
                         price: i,
                     },
+                    extra: L3EventExtra::None,
                 }),
             };
 
@@ -277,6 +283,7 @@ mod tests {
                     price: i,
                     quantity: i,
                     aggressor_side: OrderSide::Ask,
+                    maker_id: i,
                 }),
                 timestamp: i,
             };

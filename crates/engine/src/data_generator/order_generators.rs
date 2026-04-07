@@ -86,12 +86,16 @@ impl OrderGenerator for GaussianOrderGenerator {
                 self.current_time,
                 OrderType::Market { qty },
             ),
+            // NOTE: Ignore old_id, it's a junk value since the resolution of active orders should be handled by
+            //       the OrderGenerator
             OrderType::Cancel => Order::new(
                 self.get_active_order(side),
                 side,
                 self.current_time,
                 OrderType::Cancel,
             ),
+            // NOTE: Ignore old_id, qty, and price, they are junk values since their determination should be handled by
+            //       the OrderGenerator
             OrderType::Update {
                 old_id: _,
                 qty: _,

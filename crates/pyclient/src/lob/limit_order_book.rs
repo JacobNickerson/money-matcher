@@ -1,6 +1,6 @@
 use mm_core::lob_core::{
     OrderId, Price,
-    market_events::{MarketEvent, MarketEventType},
+    market_events::{L3EventExtra, MarketEvent, MarketEventType},
     market_orders::{LimitOrder, OrderSide, OrderType},
 };
 use std::collections::{BTreeMap, HashMap};
@@ -24,25 +24,112 @@ impl OrderBook {
     pub fn process_event(&mut self, event: MarketEvent) {
         match event.kind {
             MarketEventType::L3(e) => {
-                if let OrderType::Limit { qty, price } = e.kind {
-                    let level = match e.side {
-                        OrderSide::Ask => self.ask_levels.entry(price).or_default(),
-                        OrderSide::Bid => self.bid_levels.entry(price).or_default(),
-                    };
-                    level.qty += qty;
-                    level.order_count += 1;
+                // Ignore all other events since the summary of their changes will be handled by the trade event
+                match e.kind {
+                    OrderType::Limit { qty, price } => {
+                        let level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(price).or_default(),
+                        };
+                        level.qty += qty;
+                        level.order_count += 1;
+                        self.user_orders.insert(
+                            e.order_id,
+                            LimitOrder {
+                                order_id: e.order_id,
+                                side: e.side,
+                                status: mm_core::lob_core::market_orders::OrderStatus::Active,
+                                qty,
+                                price,
+                            },
+                        );
+                    }
+                    OrderType::Update { old_id, qty, price } => {
+                        let old_order = match self.user_orders.get_mut(&old_id) {
+                            Some(o) => o,
+                            None => {
+                                panic!(
+                                    "Expected to find order with id {} for update event, but it did not exist",
+                                    old_id
+                                );
+                            }
+                        };
+
+                        let old_level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(old_order.price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(old_order.price).or_default(),
+                        };
+                        old_level.qty -= old_order.qty;
+                        old_level.order_count -= 1;
+                        self.user_orders.remove(&old_id);
+
+                        let new_level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(price).or_default(),
+                        };
+                        new_level.qty += qty;
+                        new_level.order_count += 1;
+                        self.user_orders.insert(
+                            e.order_id,
+                            LimitOrder {
+                                order_id: e.order_id,
+                                side: e.side,
+                                status: mm_core::lob_core::market_orders::OrderStatus::Active,
+                                qty,
+                                price,
+                            },
+                        );
+                    }
+                    OrderType::Cancel => {
+                        let old_order = match self.user_orders.get_mut(&e.order_id) {
+                            Some(o) => o,
+                            None => {
+                                panic!(
+                                    "Expected to find order with id {} for cancel event, but it did not exist",
+                                    e.order_id
+                                );
+                            }
+                        };
+                        let old_price = old_order.price;
+                        let L3EventExtra::Cancel(old_qty) = e.extra else {
+                            panic!("Expected cancel event to have cancel extras");
+                        };
+
+                        let old_level = match e.side {
+                            OrderSide::Ask => self.ask_levels.entry(old_price).or_default(),
+                            OrderSide::Bid => self.bid_levels.entry(old_price).or_default(),
+                        };
+                        old_level.qty -= old_qty;
+                        old_level.order_count -= 1;
+                        self.user_orders.remove(&e.order_id);
+                    }
+                    OrderType::Market { .. } => {
+                        // Ignore market orders, the actual result of their execution is covered by the trade event
+                    }
                 }
             }
             MarketEventType::Trade(e) => {
+                let maker = match self.user_orders.get_mut(&e.maker_id) {
+                    Some(o) => o,
+                    None => {
+                        panic!(
+                            "Expected to find order with id {} for trade event, but it did not exist",
+                            e.maker_id
+                        );
+                    }
+                };
                 //  SAFETY: A trade being made should always have an order that exists on the maker side at the given price level
                 let level = match e.aggressor_side {
                     OrderSide::Ask => self.bid_levels.get_mut(&e.price).unwrap(),
                     OrderSide::Bid => self.ask_levels.get_mut(&e.price).unwrap(),
                 };
                 level.qty -= e.quantity;
-                level.order_count -= 1;
+                maker.qty -= e.quantity;
+                if maker.qty == 0 {
+                    level.order_count -= 1;
+                    self.user_orders.remove(&e.maker_id);
+                }
             }
-            _ => {}
         }
     }
 

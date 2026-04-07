@@ -118,7 +118,7 @@ impl LimitOrder {
                 qty,
                 price,
             },
-            _ => {
+            OrderType::Cancel => {
                 panic!("LimitOrder cannot be constructed from an Order representing a cancel");
             }
         }

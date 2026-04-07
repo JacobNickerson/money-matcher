@@ -1,5 +1,5 @@
 use clap::Parser;
-use mm_core::lob_core::market_events::{EventSink, MarketEventType, SingleEventFeed};
+use mm_core::lob_core::market_events::{ClientEvent, EventSink, MarketEventType, SingleEventFeed};
 use mm_core::lob_core::{market_events::MarketEvent, market_orders::Order};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -111,6 +111,8 @@ fn main() {
     let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
     let (mut market_event_prod, mut market_event_cons) =
         HeapRb::<MarketEvent>::new(1 << 24).split();
+    let (mut client_event_prod, mut client_event_cons) =
+        HeapRb::<ClientEvent>::new(1 << 24).split();
     println!("Initialized order queues");
 
     let mut sim = Simulator::new(
@@ -126,7 +128,7 @@ fn main() {
             GaussianOrderGenerator::new(args.avg_price, args.price_dev),
             rng.clone(),
         ),
-        SingleEventFeed::new(market_event_prod),
+        SingleEventFeed::new(market_event_prod, client_event_prod),
         user_order_cons,
         rng.clone(),
     );

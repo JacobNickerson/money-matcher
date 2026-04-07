@@ -31,7 +31,7 @@ pub struct OrderCancel {
 impl FIXBusinessMessage for OrderCancel {
     fn to_order(self) -> Order {
         Order {
-            order_id: self.cl_ord_id,
+            order_id: self.orig_cl_ord_id,
             side: OrderSide::Bid,
             timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
             kind: OrderType::Cancel,
@@ -45,7 +45,10 @@ impl FIXBusinessMessage for OrderCancel {
         Ok(Self {
             cl_ord_id: order.order_id,
             qty: 0,
-            orig_cl_ord_id: 0,
+            orig_cl_ord_id: match order.kind {
+                OrderType::Cancel => order.order_id,
+                _ => return Err("Invalid order kind"),
+            },
             transact_time: Some(to_timestamp(order.timestamp)),
         })
     }

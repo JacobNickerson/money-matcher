@@ -77,7 +77,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     }
     fn process_event(&mut self, event: Order) {
         self.time = event.timestamp;
-        self.limit_order_book.process_order(event, self.time);
+        self.limit_order_book.process_order(event);
     }
 }
 
@@ -88,7 +88,7 @@ mod tests {
         event_source::PoissonSource, order_generators::GaussianOrderGenerator,
         rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
     };
-    use mm_core::lob_core::market_events::{MarketEvent, NullFeeds, SingleEventFeed};
+    use mm_core::lob_core::market_events::{ClientEvent, MarketEvent, NullFeeds, SingleEventFeed};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use ringbuf::HeapRb;
@@ -108,7 +108,6 @@ mod tests {
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
         );
-        let start = Instant::now();
         sim.step();
         let mut prev_time: SimTime = 0;
         while sim.time < 1_000_000_000 {
@@ -129,6 +128,8 @@ mod tests {
         let (_, user_order_cons) = HeapRb::<Order>::new(SIM_HEAP_CAPACITY).split();
         let (market_event_prod, mut market_event_cons) =
             HeapRb::<MarketEvent>::new(1 << 24).split();
+        let (client_event_prod, mut client_event_cons) =
+            HeapRb::<ClientEvent>::new(1 << 24).split();
         let mut sim = Simulator::new(
             PoissonSource::new(
                 ConstantPoissonRate::new(100_000.0),
@@ -136,7 +137,7 @@ mod tests {
                 GaussianOrderGenerator::new(150.0, 30.0),
                 ChaCha8Rng::seed_from_u64(0),
             ),
-            SingleEventFeed::new(market_event_prod),
+            SingleEventFeed::new(market_event_prod, client_event_prod),
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
         );
@@ -147,6 +148,15 @@ mod tests {
         let mut prev_time = market_event_cons.try_pop().unwrap().timestamp;
         let mut saw_greater_than_zero = false;
         while let Some(event) = market_event_cons.try_pop() {
+            assert!(event.timestamp >= prev_time);
+            saw_greater_than_zero = event.timestamp > 0;
+            prev_time = event.timestamp;
+        }
+        assert!(saw_greater_than_zero);
+
+        saw_greater_than_zero = false;
+        prev_time = client_event_cons.try_pop().unwrap().timestamp;
+        while let Some(event) = client_event_cons.try_pop() {
             assert!(event.timestamp >= prev_time);
             saw_greater_than_zero = event.timestamp > 0;
             prev_time = event.timestamp;

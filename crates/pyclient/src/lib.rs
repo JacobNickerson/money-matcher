@@ -13,10 +13,11 @@ mod pyclient {
         lob::limit_order_book::OrderBook,
         moldudp64::client::MoldClient,
     };
+    use mio::event;
     use mm_core::{
         fix_core::messages::{FIXEvent, types::EncryptMethod},
         lob_core::{
-            market_events::{MarketEvent, MarketEventType, TradeEvent},
+            market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
             market_orders::{LimitOrder, Order, OrderSide, OrderType},
         },
     };
@@ -78,9 +79,9 @@ mod pyclient {
         }
 
         #[staticmethod]
-        fn cancel() -> Self {
+        fn cancel(old_id: u64) -> Self {
             Self {
-                inner: OrderType::Cancel {},
+                inner: OrderType::Cancel,
             }
         }
     }
@@ -147,6 +148,40 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
+    struct PyL3EventExtra {
+        inner: L3EventExtra,
+    }
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl PyL3EventExtra {
+        #[staticmethod]
+        fn cancel(old_price: u64, old_qty: u64) -> Self {
+            Self {
+                inner: L3EventExtra::Cancel(old_qty),
+            }
+        }
+
+        #[staticmethod]
+        fn none() -> Self {
+            Self {
+                inner: L3EventExtra::None,
+            }
+        }
+    }
+    impl From<PyL3EventExtra> for L3EventExtra {
+        fn from(value: PyL3EventExtra) -> Self {
+            value.inner
+        }
+    }
+    impl From<L3EventExtra> for PyL3EventExtra {
+        fn from(value: L3EventExtra) -> Self {
+            Self { inner: value }
+        }
+    }
+
+    #[gen_stub_pyclass]
+    #[pyclass]
+    #[derive(Debug, Clone, Copy)]
     struct PyMarketEventType {
         inner: MarketEventType,
     }
@@ -154,18 +189,25 @@ mod pyclient {
     #[pymethods]
     impl PyMarketEventType {
         #[staticmethod]
-        fn l3(event: PyOrder) -> Self {
+        fn l3(event: PyOrder, extra: PyL3EventExtra) -> Self {
             Self {
-                inner: MarketEventType::L3(Order::from(event)),
+                inner: MarketEventType::L3(L3Event {
+                    order_id: event.inner.order_id,
+                    side: event.inner.side,
+                    timestamp: event.inner.timestamp,
+                    kind: event.inner.kind,
+                    extra: L3EventExtra::from(extra),
+                }),
             }
         }
         #[staticmethod]
-        fn trade(price: u64, quantity: u64, aggressor_side: PyOrderSide) -> Self {
+        fn trade(price: u64, quantity: u64, aggressor_side: PyOrderSide, maker_id: u64) -> Self {
             Self {
                 inner: MarketEventType::Trade(TradeEvent {
                     price,
                     quantity,
                     aggressor_side: OrderSide::from(aggressor_side),
+                    maker_id,
                 }),
             }
         }

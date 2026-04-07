@@ -7,7 +7,7 @@ use mm_core::{
         },
     },
     lob_core::{
-        market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
+        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
         market_orders::{OrderSide, OrderType},
     },
 };
@@ -142,6 +142,7 @@ impl ReceiverHandler {
                         } else {
                             OrderType::Market { qty: shares.into() }
                         },
+                        extra: L3EventExtra::None,
                     }),
                 })
             }
@@ -151,6 +152,7 @@ impl ReceiverHandler {
                 }
 
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
+                let maker_id = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
                 let execution_price = u32::from_be_bytes(message_data[32..36].try_into().ok()?);
 
@@ -160,6 +162,7 @@ impl ReceiverHandler {
                         quantity: executed_shares.into(),
                         price: execution_price.into(),
                         aggressor_side: OrderSide::Ask,
+                        maker_id,
                     }),
                 })
             }
@@ -185,6 +188,7 @@ impl ReceiverHandler {
                             qty: shares.into(),
                             price: price.into(),
                         },
+                        extra: L3EventExtra::None,
                     }),
                 })
             }
@@ -196,6 +200,7 @@ impl ReceiverHandler {
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);
+                let old_order_qty = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
 
                 Some(MarketEvent {
                     timestamp,
@@ -204,6 +209,7 @@ impl ReceiverHandler {
                         side: OrderSide::Ask,
                         timestamp,
                         kind: OrderType::Cancel,
+                        extra: L3EventExtra::Cancel(old_order_qty as u64), // TODO: Need to update all byte sizes to be consistent between modules
                     }),
                 })
             }
