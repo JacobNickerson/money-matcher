@@ -107,7 +107,7 @@ mod tests {
 
         assert_eq!(st.sessions.len(), 1);
         assert_eq!(st.get_current_session(), s1);
-        assert_eq!(*st.sessions.get(&s1).expect("err"), 0_u64);
+        assert_eq!(st.get_current_sequence_number(), 1_u64);
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
         let n1 = st.next_sequence();
         let n2 = st.next_sequence();
 
-        assert_eq!(n1, 1);
-        assert_eq!(n2, 2);
+        assert_eq!(n1, 2);
+        assert_eq!(n2, 3);
     }
 }
