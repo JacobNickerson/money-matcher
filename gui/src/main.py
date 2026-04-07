@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 from PyQt5.QtWidgets import ( 
     QApplication, QWidget, QGridLayout, QHBoxLayout,
     QSizePolicy, QStackedWidget, QVBoxLayout
@@ -7,6 +8,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import (
     Qt, QTimer
 )
+from controllers.strategy_runner import StrategyRunner
 from widgets.sidebar import SideBar
 from windows.dashboard import (
     MarketEvents, OrderBook, TradeHistory, OrderEntry, Strategies
@@ -32,6 +34,7 @@ class Dashboard(QWidget):
     def __init__(self, fix_client=None):
         super().__init__()
         self.setStyleSheet("background-color: #080808;")
+        self.strategy_runners = {}
 
         layout = QGridLayout(self)
         layout.setContentsMargins(20, 64, 20, 20)
@@ -65,7 +68,43 @@ class Dashboard(QWidget):
         self.update_timer.timeout.connect(self.update_from_market_data)
         self.update_timer.start(250)
 
+    def start_bot(self, bot_config):
+        bot_id = bot_config["id"]
+
+        if bot_id in self.strategy_runners:
+            return
+
+        try:
+            runner = StrategyRunner(
+                bot_config["strategy_file_path"],
+                bot_config,
+                order_entry=self.order_entry
+            )
+            runner.strategy_log.connect(
+                lambda msg, bot_id=bot_id: self.log_strategy_message(bot_id, msg)
+            )
+            runner.load_strategy()
+            runner.start()
+            self.strategy_runners[bot_id] = runner
+
+        except Exception as e:
+            print(f"Error starting bot {bot_id}: {e}")
+
+    def stop_bot(self, bot_id):
+        runner = self.strategy_runners.get(bot_id)
+        if runner is None:
+            return
+        
+        try:
+            runner.stop()
+        except Exception as e:
+            print(f"Error stopping bot {bot_id}: {e}")
+        finally:
+            del self.strategy_runners[bot_id]
+
     def update_from_market_data(self):
+        processed_event = False
+
         while True:
             event = self.mold_client.next_event()
             if event is None:
@@ -74,15 +113,30 @@ class Dashboard(QWidget):
             try:
                 self.rust_book.process_event(event)
                 self.market_events.handle_market_event(event)
+
+                for runner in self.strategy_runners.values():
+                    runner.on_market_event(event, self.rust_book)
+
+                processed_event = True
             except Exception as e:
                 print(f"Error processing event {event}: {e}")
                 break
 
-        self.order_book.refresh_order_book_display(self.rust_book)
-        self.market_events.refresh_chart()
+        if processed_event:
+            self.order_book.refresh_order_book_display(self.rust_book)
+            self.market_events.refresh_chart()
+
+        now = time.time()
+        for runner in self.strategy_runners.values():
+            runner.on_timer(now)
     
     def closeEvent(self, event):
         self.update_timer.stop()
+        for bot_id, runner in self.strategy_runners.items():
+            try:
+                runner.stop()
+            except Exception as e:
+                print(f"Error stopping bot {bot_id}: {e}")
         super().closeEvent(event)
 
 class Bots(QWidget):
