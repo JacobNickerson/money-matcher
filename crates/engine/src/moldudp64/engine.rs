@@ -209,9 +209,7 @@ impl MoldEngine {
 mod tests {
     use super::*;
     use mm_core::lob_core::{
-        market_events::{
-            EventSink, L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent,
-        },
+        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
         market_orders::OrderSide,
     };
 
