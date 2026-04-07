@@ -55,20 +55,25 @@ impl OrderBook {
                             }
                         };
 
-                        let old_level = match old_order.side {
-                            OrderSide::Ask => self.ask_levels.entry(old_order.price).or_default(),
-                            OrderSide::Bid => self.bid_levels.entry(old_order.price).or_default(),
-                        };
-                        old_level.qty -= old_order.qty;
-                        old_level.order_count -= 1;
-                        self.user_orders.remove(&old_id);
-
                         let new_level = match e.side {
                             OrderSide::Ask => self.ask_levels.entry(price).or_default(),
                             OrderSide::Bid => self.bid_levels.entry(price).or_default(),
                         };
                         new_level.qty += qty;
                         new_level.order_count += 1;
+
+                        let old_side = match old_order.side {
+                            // SAFETY: A valid update will always have an old order on the price level it is expected to be on
+                            OrderSide::Ask => &mut self.ask_levels,
+                            OrderSide::Bid => &mut self.bid_levels,
+                        };
+                        let old_level = old_side.get_mut(&old_order.price).unwrap();
+                        old_level.qty -= old_order.qty;
+                        old_level.order_count -= 1;
+                        if old_level.qty == 0 {
+                            old_side.remove(&old_order.price);
+                        }
+
                         self.user_orders.insert(
                             e.order_id,
                             LimitOrder {
@@ -79,29 +84,36 @@ impl OrderBook {
                                 price,
                             },
                         );
+                        self.user_orders.remove(&old_id);
+
                     }
                     OrderType::Cancel => {
-                        let old_order = match self.user_orders.get_mut(&e.order_id) {
-                            Some(o) => o,
+                        let (old_price, old_qty) = match self.user_orders.get_mut(&e.order_id) {
+                            Some(o) => {
+                                (o.price, o.qty)
+                            },
                             None => {
                                 panic!(
                                     "Expected to find order with id {} for cancel event, but it did not exist",
                                     e.order_id
                                 );
-                            }
-                        };
-                        let old_price = old_order.price;
-                        let L3EventExtra::Cancel(old_qty) = e.extra else {
-                            panic!("Expected cancel event to have cancel extras");
+                            },
                         };
 
-                        let old_level = match e.side {
-                            OrderSide::Ask => self.ask_levels.entry(old_price).or_default(),
-                            OrderSide::Bid => self.bid_levels.entry(old_price).or_default(),
+                        let side = match e.side {
+                            OrderSide::Ask => &mut self.ask_levels,
+                            OrderSide::Bid => &mut self.bid_levels,
                         };
-                        old_level.qty -= old_qty;
-                        old_level.order_count -= 1;
-                        self.user_orders.remove(&e.order_id);
+                        let level_qty = {
+                            let level = side.get_mut(&old_price).unwrap();
+                            level.qty -= old_qty;
+                            level.order_count -= 1;
+                            self.user_orders.remove(&e.order_id);
+                            level.qty
+                        };
+                        if level_qty == 0 {
+                            side.remove(&old_price);
+                        }
                     }
                     OrderType::Market { .. } => {
                         // Ignore market orders, the actual result of their execution is covered by the trade event
@@ -120,16 +132,23 @@ impl OrderBook {
                 };
                 //  NOTE: The market event includes the aggressor side, however it is currently broken
                 //        MoldEngine does not properly parse/send the aggressor side, when read by MoldClient it always defaults to same value
-                let level = match maker.side {
+                let side = match maker.side {
                 //  SAFETY: A trade being made should always have an order that exists on the maker side at the given price level
-                    OrderSide::Ask => self.ask_levels.get_mut(&e.price).unwrap(),
-                    OrderSide::Bid => self.bid_levels.get_mut(&e.price).unwrap(),
+                    OrderSide::Ask => &mut self.ask_levels,
+                    OrderSide::Bid => &mut self.bid_levels,
                 };
-                level.qty -= e.quantity;
-                maker.qty -= e.quantity;
-                if maker.qty == 0 {
-                    level.order_count -= 1;
-                    self.user_orders.remove(&e.maker_id);
+                let level_qty = {
+                    let level = side.get_mut(&e.price).unwrap();
+                    level.qty -= e.quantity;
+                    maker.qty -= e.quantity;
+                    if maker.qty == 0 {
+                        level.order_count -= 1;
+                        self.user_orders.remove(&e.maker_id);
+                    }
+                    level.qty
+                };
+                if level_qty == 0 {
+                    side.remove(&e.price);
                 }
             }
         }
