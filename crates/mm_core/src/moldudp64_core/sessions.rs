@@ -68,7 +68,7 @@ impl SessionTable {
     pub fn next_sequence(&mut self) -> u64 {
         self.current_sequence_number += 1;
 
-        if self.current_sequence_number >= u64::MAX {
+        if self.current_sequence_number == u64::MAX {
             let next_id = self.generate_session_id();
             self.add_session(next_id, 1u64);
         }
