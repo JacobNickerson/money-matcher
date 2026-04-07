@@ -201,12 +201,13 @@ mod pyclient {
             }
         }
         #[staticmethod]
-        fn trade(price: u64, quantity: u64, aggressor_side: PyOrderSide) -> Self {
+        fn trade(price: u64, quantity: u64, aggressor_side: PyOrderSide, maker_id: u64) -> Self {
             Self {
                 inner: MarketEventType::Trade(TradeEvent {
                     price,
                     quantity,
                     aggressor_side: OrderSide::from(aggressor_side),
+                    maker_id,
                 }),
             }
         }

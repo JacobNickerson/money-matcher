@@ -181,17 +181,16 @@ impl<T: EventSink> OrderBook<T> {
             self.reject_order(original_order.order_id, time);
             return None;
         }
-
-        self.event_sink.push_event(MarketEvent::new(
-            time,
-            MarketEventType::L3(L3Event::new_limit(original_order)),
-        ));
         self.accept_order(original_order, time);
-
         self.match_order(&mut order, time);
         if order.qty == 0 {
             return Some(order);
         }
+
+        self.event_sink.push_event(MarketEvent::new(
+            time,
+            MarketEventType::L3(L3Event::new_limit(order, original_order.timestamp)),
+        ));
         let level = match order.side {
             OrderSide::Bid => {
                 self.total_bids += order.qty;
@@ -393,6 +392,7 @@ impl<T: EventSink> OrderBook<T> {
                         price: *price,
                         quantity: trade_volume,
                         aggressor_side: taker.side,
+                        maker_id: maker.order_id,
                     }),
                 ));
 
@@ -1060,5 +1060,54 @@ mod tests {
         assert_eq!(client_event_1.liquidity_flag, LiquidityFlag::Taker);
 
         assert!(client_events.try_pop().is_none());
+    }
+
+    #[test]
+    fn limit_order_correct_qty_after_trades() {
+        let (event_feeds, consumer_feeds) = create_event_feeds(32);
+        let (mut l3_events, mut trade_events, _) = consumer_feeds;
+        let mut book = OrderBook::new(event_feeds);
+
+        book.process_order(Order::new(
+            0,
+            OrderSide::Ask,
+            0,
+            OrderType::Limit { qty: 5, price: 100 },
+        ));
+        book.process_order(Order::new(
+            1,
+            OrderSide::Ask,
+            1,
+            OrderType::Limit { qty: 5, price: 150 },
+        ));
+        book.process_order(Order::new(
+            2,
+            OrderSide::Bid,
+            2,
+            OrderType::Limit {
+                qty: 15,
+                price: 150,
+            },
+        ));
+
+        let trade_event_0 = trade_events.try_pop().unwrap();
+        assert_eq!(trade_event_0.maker_id, 0);
+        assert_eq!(trade_event_0.price, 100);
+        assert_eq!(trade_event_0.quantity, 5);
+        assert_eq!(trade_event_0.aggressor_side, OrderSide::Bid);
+
+        let trade_event_1 = trade_events.try_pop().unwrap();
+        assert_eq!(trade_event_1.maker_id, 1);
+        assert_eq!(trade_event_1.price, 150);
+        assert_eq!(trade_event_1.quantity, 5);
+        assert_eq!(trade_event_1.aggressor_side, OrderSide::Bid);
+
+        l3_events.try_pop(); // discard L3 event for order 0 being accepted
+        l3_events.try_pop(); // discard L3 event for order 1 being accepted
+        let l3_event_0 = l3_events.try_pop().unwrap();
+        assert_eq!(l3_event_0.order_id, 2);
+        assert_eq!(l3_event_0.side, OrderSide::Bid);
+        assert_eq!(l3_event_0.timestamp, 2);
+        assert_eq!(l3_event_0.kind, OrderType::Limit { qty: 5, price: 150 });
     }
 }

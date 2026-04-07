@@ -171,7 +171,7 @@ impl MoldEngine {
                     0, // PLACEHOLDER
                     self.current_tracking_number,
                     event.timestamp,
-                    0, // PLACEHOLDER
+                    e.maker_id,
                     e.quantity as u32,
                     0,    // PLACEHOLDER
                     b'Y', // PLACEHOLDER
@@ -277,6 +277,7 @@ mod tests {
                     price: i,
                     quantity: i,
                     aggressor_side: OrderSide::Ask,
+                    maker_id: i,
                 }),
                 timestamp: i,
             };

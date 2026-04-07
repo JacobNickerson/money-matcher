@@ -2,10 +2,11 @@ use crate::{
     fix_core::messages::execution_report,
     lob_core::{
         OrderId, Price, Timestamp,
-        market_orders::{Order, OrderSide, OrderType},
+        market_orders::{LimitOrder, Order, OrderSide, OrderType},
     },
 };
 use ringbuf::{HeapProd, traits::Producer};
+use time::Time;
 
 /// Event type representing a single L3 data point, ie an individual order
 /// Emitted on every order received by the limit order book
@@ -28,10 +29,17 @@ impl L3Event {
             extra,
         }
     }
-    pub fn new_limit(order: Order) -> Self {
-        Self::new(order, L3EventExtra::None)
-    }
-    pub fn new_market(order: Order) -> Self {
+    /// Constructors for different order types for ease of use
+    pub fn new_limit(order: LimitOrder, timestamp: Timestamp) -> Self {
+        let order = Order::new(
+            order.order_id,
+            order.side,
+            timestamp,
+            OrderType::Limit {
+                qty: order.qty,
+                price: order.price,
+            },
+        );
         Self::new(order, L3EventExtra::None)
     }
     pub fn new_update(order: Order) -> Self {
@@ -56,6 +64,7 @@ pub struct TradeEvent {
     pub price: Price,
     pub quantity: u64,
     pub aggressor_side: OrderSide,
+    pub maker_id: OrderId,
 }
 
 /// Event type for sending specific information regarding market events to clients involved
@@ -100,16 +109,10 @@ impl MarketEvent {
     pub fn new(timestamp: Timestamp, kind: MarketEventType) -> Self {
         Self { timestamp, kind }
     }
-    pub fn new_limit(timestamp: Timestamp, order: Order) -> Self {
+    pub fn new_limit(timestamp: Timestamp, order: LimitOrder) -> Self {
         Self {
             timestamp,
-            kind: MarketEventType::L3(L3Event::new_limit(order)),
-        }
-    }
-    pub fn new_market(timestamp: Timestamp, order: Order) -> Self {
-        Self {
-            timestamp,
-            kind: MarketEventType::L3(L3Event::new_market(order)),
+            kind: MarketEventType::L3(L3Event::new_limit(order, timestamp)),
         }
     }
     pub fn new_update(timestamp: Timestamp, order: Order) -> Self {

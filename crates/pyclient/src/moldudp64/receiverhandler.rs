@@ -152,6 +152,7 @@ impl ReceiverHandler {
                 }
 
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
+                let maker_id = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
                 let execution_price = u32::from_be_bytes(message_data[32..36].try_into().ok()?);
 
@@ -161,6 +162,7 @@ impl ReceiverHandler {
                         quantity: executed_shares.into(),
                         price: execution_price.into(),
                         aggressor_side: OrderSide::Ask,
+                        maker_id,
                     }),
                 })
             }
