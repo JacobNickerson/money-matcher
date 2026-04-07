@@ -5,6 +5,7 @@ use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};
 use std::collections::{BinaryHeap, HashMap};
+use std::time::{Duration, Instant};
 
 const USER_ORDER_INGRESS: usize = 1024;
 const SIM_HEAP_CAPACITY: usize = USER_ORDER_INGRESS * 10;
@@ -22,9 +23,17 @@ pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     id_counter: u64,
     latency_settings: HashMap<u64, LatencyConfig>, // TODO: type def for identifier?
     rng: R,
+    real_time: Instant,
+    is_real_time: bool,
 }
 impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
-    pub fn new(order_generator: E, event_sink: S, user_orders: HeapCons<Order>, rng: R) -> Self {
+    pub fn new(
+        order_generator: E,
+        event_sink: S,
+        user_orders: HeapCons<Order>,
+        rng: R,
+        is_real_time: bool,
+    ) -> Self {
         Self {
             time: 0,
             limit_order_book: OrderBook::new(event_sink),
@@ -34,6 +43,8 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             user_orders,
             id_counter: 0,
             rng,
+            real_time: Instant::now(),
+            is_real_time,
         }
     }
     pub fn step(&mut self) {
@@ -43,6 +54,9 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         let synth_order = self.generate_single_order();
         self.orders.push(synth_order);
         let event = self.orders.pop().unwrap();
+        if self.is_real_time {
+            self.pace(event.timestamp);
+        }
         self.process_event(event);
     }
     pub fn time(&self) -> SimTime {
@@ -79,6 +93,12 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         self.time = event.timestamp;
         self.limit_order_book.process_order(event);
     }
+    fn pace(&self, next_event_time: SimTime) {
+        let real_time_delta =
+            next_event_time.saturating_sub(self.real_time.elapsed().as_nanos() as u64);
+
+        std::thread::sleep(Duration::from_nanos(real_time_delta));
+    }
 }
 
 #[cfg(test)]
@@ -107,6 +127,7 @@ mod tests {
             NullFeeds {}, // use this since nothing is draining the market events
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
+            false,
         );
         sim.step();
         let mut prev_time: SimTime = 0;
@@ -140,6 +161,7 @@ mod tests {
             SingleEventFeed::new(market_event_prod, client_event_prod),
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
+            false,
         );
         // for _ in 0..100_000 {
         for _ in 0..25 {
