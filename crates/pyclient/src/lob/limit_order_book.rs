@@ -55,7 +55,7 @@ impl OrderBook {
                             }
                         };
 
-                        let old_level = match e.side {
+                        let old_level = match old_order.side {
                             OrderSide::Ask => self.ask_levels.entry(old_order.price).or_default(),
                             OrderSide::Bid => self.bid_levels.entry(old_order.price).or_default(),
                         };
