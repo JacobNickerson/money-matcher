@@ -14,7 +14,7 @@ from PyQt5.QtGui import (
     QFont, QColor, QPainter
 )
 from PyQt5.QtCore import (
-    Qt, QRect, QTimer
+    Qt, QRect, QTime
 )
 
 import models.order_book_model as order_book_model
@@ -539,14 +539,18 @@ class OrderEntry(QWidget):
                     background-color: #C44B4B;
                 }
             """)
-
-    def submit_order(self):
+    
+    def submit_order(self, bot_order=False, _side=None, _price=None, _qty=None):
         try:
-            side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
-            
-            price = int(Decimal(self.price_input.text()) * Decimal("1e4"))
-            qty = int(Decimal(self.amount_input.text()) * Decimal("1e4"))
-            
+            if bot_order:
+                side = pyclient.PyOrderSide.Bid if _side.upper() == "BUY" else pyclient.PyOrderSide.Ask
+                price = int(Decimal(_price) * Decimal("1e4"))
+                qty = int(Decimal(_qty) * Decimal("1e4"))
+            else:
+                side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
+                price = int(Decimal(self.price_input.text()) * Decimal("1e4"))
+                qty = int(Decimal(self.amount_input.text()) * Decimal("1e4"))
+
             order_type = pyclient.PyOrderType.limit(qty, price) if self.limit_btn.isChecked() else pyclient.PyOrderType.market(qty)
             order = pyclient.PyOrder(order_id=self.orderid_gen.next(), side=side, timestamp=int(time.time() * 1000), kind=order_type)
             
@@ -759,6 +763,9 @@ class Strategies(QWidget):
                 border-radius: 16px;
             }
         """)
+        self.strategy_map = {}
+        self.current_bot_id = None
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
@@ -800,15 +807,11 @@ class Strategies(QWidget):
                 color: white;
             }
         """)
-        self.strategy_list.addItems(["Momentum", "Arbitrage", "Scalping"])
+        self.strategy_list.currentIndexChanged.connect(self.on_strategy_changed)
         layout.addWidget(self.strategy_list)
 
         self.log_card = LogCard()
         layout.addWidget(self.log_card, stretch=2)
-
-        self.log_card.add_log("Target profit set $744.12 (+5%)", "#00C278", "03:14")
-        self.log_card.add_log("Entry Conditions Triggered!", "white", "03:14")
-        self.log_card.add_log("Metatron was activated!", "white", "03:14")
 
         open_card = QFrame()
         open_card.setStyleSheet("""
@@ -820,8 +823,8 @@ class Strategies(QWidget):
         """)
         open_layout = QVBoxLayout(open_card)
         open_layout.setContentsMargins(8, 8, 8, 8)
-        open_layout.addLayout(self.row("Open $ Profit/Loss", "+10.00", "#999999", "#00C278"))
-        open_layout.addLayout(self.row("Open Trade", "1", "#999999", "white"))
+        self.open_pnl_value = self.row(open_layout, "Open $ Profit/Loss", "--", "#999999", "#00C278")
+        self.open_trade_value = self.row(open_layout, "Open Trade", "0", "#999999", "white")
         layout.addWidget(open_card)
 
         risk_card = QFrame()
@@ -834,25 +837,112 @@ class Strategies(QWidget):
         """)
         risk_layout = QVBoxLayout(risk_card)
         risk_layout.setContentsMargins(8, 8, 8, 8)
-        risk_layout.addLayout(self.row("Risk/Reward", "1.74","#00C278", "white"))
-        risk_layout.addLayout(self.row("Avg. Win", "$236","#00C278", "white"))
-        risk_layout.addLayout(self.row("Avg. Loss", "$126","#EB5757", "white"))
-        risk_layout.addLayout(self.row("Max Drawdown", "9%","#EB5757", "white"))
-        layout.addWidget(risk_card)
 
+        self.risk_reward_value = self.row(risk_layout, "Risk/Reward", "--", "#00C278", "white")
+        self.avg_win_value = self.row(risk_layout, "Avg. Win", "--", "#00C278", "white")
+        self.avg_loss_value = self.row(risk_layout, "Avg. Loss", "--", "#EB5757", "white")
+        self.max_drawdown_value = self.row(risk_layout, "Max Drawdown", "--", "#EB5757", "white")
+
+        layout.addWidget(risk_card)
         layout.addStretch()
 
-    def row(self, label, value, label_color, value_color):
-        layout = QHBoxLayout()
+    def row(self, parent_layout, label, value, label_color, value_color):
+        row = QHBoxLayout()
+
         left = QLabel(label)
         left.setFont(QFont("Inter", 10, QFont.Normal))
         left.setStyleSheet(f"color: {label_color}; border: none;")
 
         right = QLabel(value)
         right.setFont(QFont("Inter", 10, QFont.Normal))
-        right.setStyleSheet((f"color: {value_color}; border: none;"))
+        right.setStyleSheet(f"color: {value_color}; border: none;")
         right.setAlignment(Qt.AlignmentFlag.AlignRight)
 
-        layout.addWidget(left)
-        layout.addWidget(right)
-        return layout
+        row.addWidget(left)
+        row.addWidget(right)
+        parent_layout.addLayout(row)
+
+        return right
+
+    def on_strategy_changed(self):
+        self.current_bot_id = self.strategy_list.currentData()
+
+    def set_active_strategies(self, runners):
+        current_bot_id = self.current_bot_id
+
+        self.strategy_list.blockSignals(True)
+        self.strategy_list.clear()
+
+        for bot_id, runner in runners.items():
+            stats = runner.get_stats()
+            strategy_name = stats.get("strategy_name", "Unknown strategy")
+            self.strategy_list.addItem(strategy_name, bot_id)
+
+        self.strategy_list.blockSignals(False)
+
+        if self.strategy_list.count() > 0:
+            index = 0
+
+            if current_bot_id is not None:
+                for i in range(self.strategy_list.count()):
+                    if self.strategy_list.itemData(i) == current_bot_id:
+                        index = i
+                        break
+
+            self.strategy_list.setCurrentIndex(index)
+            self.on_strategy_changed()
+        else:
+            self.current_bot_id = None
+            self.clear_stats()
+            self.clear_logs()
+
+    def set_logs(self, logs):
+        self.clear_logs()
+        for log in logs:
+            self.add_strategy_log(self.current_bot_id, log)
+
+    def clear_stats(self):
+        self.open_pnl_value.setText("--")
+        self.open_trade_value.setText("0")
+        self.risk_reward_value.setText("--")
+        self.avg_win_value.setText("--")
+        self.avg_loss_value.setText("--")
+        self.max_drawdown_value.setText("--")
+
+    def clear_logs(self):
+        while self.log_card.log_layout.count():
+            item = self.log_card.log_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+    def update_strategy_stats(self, stats):
+        if stats is None:
+            self.clear_stats()
+            return
+
+        # TODO: format values properly
+        position = stats.get("position", 0.0)
+        best_bid = stats.get("best_bid")
+        best_ask = stats.get("best_ask")
+        mid_price = stats.get("mid_price")
+
+        self.open_trade_value.setText("1" if position != 0 else "0")
+
+        if best_bid is not None and best_ask is not None:
+            pnl = position * mid_price
+            self.open_pnl_value.setText(f"{pnl:.2f}")
+        else:
+            self.open_pnl_value.setText("--")
+
+        self.risk_reward_value.setText("--")
+        self.avg_win_value.setText("--")
+        self.avg_loss_value.setText("--")
+        self.max_drawdown_value.setText("--")
+
+    def add_strategy_log(self, bot_id, message):
+        if bot_id != self.current_bot_id:
+            return
+
+        timestamp = QTime.currentTime().toString("hh:mm")
+        self.log_card.add_log(message, "white", timestamp)

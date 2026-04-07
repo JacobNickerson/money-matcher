@@ -35,6 +35,7 @@ class Dashboard(QWidget):
         super().__init__()
         self.setStyleSheet("background-color: #080808;")
         self.strategy_runners = {}
+        self.strategy_logs = {}
 
         layout = QGridLayout(self)
         layout.setContentsMargins(20, 64, 20, 20)
@@ -86,6 +87,8 @@ class Dashboard(QWidget):
             runner.load_strategy()
             runner.start()
             self.strategy_runners[bot_id] = runner
+            self.strategies.set_active_strategies(self.strategy_runners)
+            self.refresh_strategy_panel()
 
         except Exception as e:
             print(f"Error starting bot {bot_id}: {e}")
@@ -101,6 +104,8 @@ class Dashboard(QWidget):
             print(f"Error stopping bot {bot_id}: {e}")
         finally:
             del self.strategy_runners[bot_id]
+            self.strategies.set_active_strategies(self.strategy_runners)
+            self.refresh_strategy_panel()
 
     def update_from_market_data(self):
         processed_event = False
@@ -129,6 +134,8 @@ class Dashboard(QWidget):
         now = time.time()
         for runner in self.strategy_runners.values():
             runner.on_timer(now)
+
+        self.refresh_strategy_panel()
     
     def closeEvent(self, event):
         self.update_timer.stop()
@@ -138,6 +145,31 @@ class Dashboard(QWidget):
             except Exception as e:
                 print(f"Error stopping bot {bot_id}: {e}")
         super().closeEvent(event)
+
+    def refresh_strategy_panel(self):
+        bot_id = self.strategies.current_bot_id
+        if bot_id is None:
+            self.strategies.clear_stats()
+            self.strategies.clear_logs()
+            return
+
+        runner = self.strategy_runners.get(bot_id)
+        if runner is None:
+            self.strategies.clear_stats()
+            self.strategies.clear_logs()
+            return
+
+        stats = runner.get_stats()
+        self.strategies.update_strategy_stats(stats)
+        self.strategies.set_logs(self.strategy_logs.get(bot_id, []))
+
+    def log_strategy_message(self, bot_id, msg):
+        if bot_id not in self.strategy_logs:
+            self.strategy_logs[bot_id] = []
+
+        self.strategy_logs[bot_id].append(msg)
+        self.strategy_logs[bot_id] = self.strategy_logs[bot_id][-100:]
+        self.strategies.add_strategy_log(bot_id, msg)
 
 class Bots(QWidget):
     def __init__(self):
@@ -224,6 +256,10 @@ class EngineWindow(QWidget):
         self.bots_page = Bots()
         self.strat_page = Strats()
         self.perf_page = Performance()
+
+        bot_list = self.bots_page.table
+        bot_list.bot_started.connect(self.dashboard_page.start_bot)
+        bot_list.bot_stopped.connect(self.dashboard_page.stop_bot)
 
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(self.bots_page)

@@ -119,14 +119,16 @@ class StrategyRunner(QObject):
             self.on_order_book_update(rust_book)
 
             if self.book_state is not None:
-                if (
-                    old_book is None
-                    or old_book.best_bid != self.book_state.best_bid
-                    or old_book.best_ask != self.book_state.best_ask
-                    or old_book.spread != self.book_state.spread
-                    or old_book.mid_price != self.book_state.mid_price
-                ):
-                    self.strategy.on_book(self.book_state)
+                if (self.book_state.best_bid is not None
+                    and self.book_state.best_ask is not None
+                    and self.book_state.spread is not None):
+                    changed = (old_book is None
+                        or old_book.best_bid != self.book_state.best_bid
+                        or old_book.best_ask != self.book_state.best_ask
+                        or old_book.spread != self.book_state.spread
+                        or old_book.mid_price != self.book_state.mid_price)
+                    if changed:
+                        self.strategy.on_book(self.book_state)
 
             if event.kind.is_trade():
                 trade = Trade(
@@ -185,9 +187,10 @@ class StrategyRunner(QObject):
 
             if self.order_entry is not None:
                 self.order_entry.submit_order(
-                    side=side,
-                    price=price,
-                    qty=qty
+                    bot_order=True,
+                    _side=side,
+                    _price=price,
+                    _qty=qty
                 )
                 self.log(f"Submitted {side} order: qty={qty}, price={price}")
 
@@ -255,6 +258,7 @@ class StrategyRunner(QObject):
             "bot_id": self.bot_id,
             "bot_name": self.bot_name,
             "symbol": self.symbol,
+            "strategy_name": self.bot_config.get("strategy_name", "Unknown strategy"),
             "status": self.status,
             "position": self.position,
             "order_size": self.order_size,

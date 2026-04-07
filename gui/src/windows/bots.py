@@ -420,7 +420,7 @@ class ActionsDelegate(QStyledItemDelegate):
         icon_size = 20
         spacing = 12
 
-        state = self.row_states.get(index.row(), "active")
+        state = self.row_states.get(index.row(), "paused")
 
         pause_or_play = self.pause_icon if state == "active" else self.play_icon
         icons = [pause_or_play, self.copy_icon, self.settings_icon, self.delete_icon]
@@ -722,6 +722,9 @@ class CheckBoxDelegate(QStyledItemDelegate):
         return False
 
 class BotList(QWidget):
+    bot_started = pyqtSignal(dict)
+    bot_stopped = pyqtSignal(int)
+
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -812,9 +815,11 @@ class BotList(QWidget):
     def on_bot_started(self, bot_config):
         bot_id = bot_config["id"]
         self.update_bot_status(bot_id, "Active")
+        self.bot_started.emit(bot_config)
 
     def on_bot_stopped(self, bot_id):
-        pass
+        self.update_bot_status(bot_id, "Paused")
+        self.bot_stopped.emit(bot_id)
 
     def update_bot_status(self, bot_id, status):
         conn = sqlite3.connect(self.getDatabasePath())
