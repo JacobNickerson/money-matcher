@@ -229,7 +229,7 @@ mod tests {
             rx,
             SocketAddr::V4("233.100.10.100:9600".parse().unwrap()),
             UdpSocket::bind("0.0.0.0:0").expect("err"),
-            UdpSocket::bind("0.0.0.0:8500").expect("err"),
+            UdpSocket::bind("0.0.0.0:0").expect("err"),
             "MM_L0".to_string(),
             Arc::new(AtomicBool::new(true)),
         )
