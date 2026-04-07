@@ -25,8 +25,16 @@ impl MoldClient {
         let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
         let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
 
-        Self::start_receiver("233.100.10.3:9503".parse().unwrap(), l3_tx);
-        Self::start_receiver("233.100.10.4:9504".parse().unwrap(), trade_tx);
+        Self::start_receiver(
+            "233.100.10.3:9503".parse().unwrap(),
+            "127.0.0.1:9003".parse().unwrap(),
+            l3_tx,
+        );
+        Self::start_receiver(
+            "233.100.10.4:9504".parse().unwrap(),
+            "127.0.0.1:9004".parse().unwrap(),
+            trade_tx,
+        );
 
         Self {
             l3_rx: Mutex::new(l3_rx),
@@ -37,23 +45,36 @@ impl MoldClient {
     }
 
     /// Configures a UDP socket to join a specific multicast group and spawns a `ReceiverHandler` to process incoming packets.
-    fn start_receiver(addr: SocketAddr, tx: HeapProd<MarketEvent>) {
-        let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
-        socket.set_recv_buffer_size(32 * 1024 * 1024).expect("err");
-
-        socket.set_reuse_address(true).expect("err");
+    fn start_receiver(
+        addr: SocketAddr,
+        retransmission_addr: SocketAddr,
+        tx: HeapProd<MarketEvent>,
+    ) {
+        let multicast_socket =
+            Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).expect("err");
+        multicast_socket
+            .set_recv_buffer_size(32 * 1024 * 1024)
+            .expect("err");
+        multicast_socket.set_reuse_address(true).expect("err");
 
         let bind_addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), addr.port());
-        socket.bind(&SockAddr::from(bind_addr)).expect("err");
+        multicast_socket
+            .bind(&SockAddr::from(bind_addr))
+            .expect("err");
 
         if let IpAddr::V4(ip) = addr.ip() {
-            socket
+            multicast_socket
                 .join_multicast_v4(&ip, &Ipv4Addr::LOCALHOST)
                 .expect("Failed to join");
         }
 
-        let std_socket: UdpSocket = socket.into();
-        let receiver_handler = ReceiverHandler::new(tx, std_socket);
+        let std_socket: UdpSocket = multicast_socket.into();
+
+        let retransmission_socket =
+            UdpSocket::bind(SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0).into(), 0)).expect("err");
+        retransmission_socket.set_nonblocking(true).expect("err");
+        let receiver_handler =
+            ReceiverHandler::new(tx, std_socket, retransmission_socket, retransmission_addr);
 
         thread::spawn(move || {
             receiver_handler.run();
@@ -107,10 +128,10 @@ mod tests {
         loop {
             let now = Instant::now();
             if let Some(event) = mold_client.next_event() {
-                //println!("Received {:?}", event);
+                println!("Received {:?}", event);
                 count = count + 1;
                 last_received = now;
-            } else if count > 0 && now - last_received > Duration::from_secs(5) {
+            } else if count > 0 && now - last_received > Duration::from_secs(10) {
                 println!("\n\nReceived {} events", count);
                 count = 0;
             } else {
