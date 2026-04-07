@@ -100,8 +100,7 @@ impl ReceiverHandler {
         if seq_num > self.expected_sequence_number
             && self.expected_sequence_number > self.last_requested_sequence_number
         {
-            let missing_count = (seq_num - self.expected_sequence_number) as u16;
-            self.send_resend_request(session_id, self.expected_sequence_number, missing_count);
+            self.send_resend_request(session_id, self.expected_sequence_number, seq_num);
             self.last_requested_sequence_number = seq_num - 1;
         }
 
@@ -140,13 +139,14 @@ impl ReceiverHandler {
         &mut self,
         session_id: &[u8; 10],
         expected_sequence_number: u64,
-        missing_count: u16,
+        seq_num: u64,
     ) {
         let mut request_packet = [0u8; 20];
+        let missing_count = (seq_num - expected_sequence_number) as u16;
 
         println!(
-            "SENDING RESEND REQUEST {} {}",
-            expected_sequence_number, missing_count
+            "RESEND REQUEST | EXPECTED: SEQ NUM {} | RECEIVED: SEQ NUM {} | MISSING: {} MESSAGES",
+            expected_sequence_number, seq_num, missing_count
         );
 
         request_packet[0..10].copy_from_slice(session_id);
