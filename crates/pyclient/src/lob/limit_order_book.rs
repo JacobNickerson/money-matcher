@@ -118,10 +118,12 @@ impl OrderBook {
                         );
                     }
                 };
+                //  NOTE: The market event includes the aggressor side, however it is currently broken
+                //        MoldEngine does not properly parse/send the aggressor side, when read by MoldClient it always defaults to same value
+                let level = match maker.side {
                 //  SAFETY: A trade being made should always have an order that exists on the maker side at the given price level
-                let level = match e.aggressor_side {
-                    OrderSide::Ask => self.bid_levels.get_mut(&e.price).unwrap(),
-                    OrderSide::Bid => self.ask_levels.get_mut(&e.price).unwrap(),
+                    OrderSide::Ask => self.ask_levels.get_mut(&e.price).unwrap(),
+                    OrderSide::Bid => self.bid_levels.get_mut(&e.price).unwrap(),
                 };
                 level.qty -= e.quantity;
                 maker.qty -= e.quantity;
