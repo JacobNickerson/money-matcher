@@ -395,32 +395,32 @@ mod tests {
         let mut msg_payload = [0u8; 36];
         AddOrder::encode_into(&mut msg_payload, 1, 12, 123, 5000, b'B', 10, stock, 99);
 
-        h.expected_sequence_number = 2; // Expecting 2
+        h.expected_sequence_number = 1; // Expecting 1
 
         let mut packet = vec![0u8; 20];
-        packet[10..18].copy_from_slice(&3u64.to_be_bytes()); // Set Packet Sequence Number to 3, skipping 2
-        packet[18..20].copy_from_slice(&1u16.to_be_bytes());
+        packet[10..18].copy_from_slice(&2u64.to_be_bytes()); // Set Packet Sequence Number to 2, skipping 1
+        packet[18..20].copy_from_slice(&5u16.to_be_bytes());
         packet.extend_from_slice(&(msg_payload.len() as u16).to_be_bytes());
         packet.extend_from_slice(&msg_payload);
 
         h.handle_packet(&packet);
 
-        assert_eq!(h.expected_sequence_number, 2);
+        assert_eq!(h.expected_sequence_number, 1);
 
         assert_eq!(h.gap_buffer.len(), 1);
-        assert!(h.gap_buffer.contains_key(&3));
+        assert!(h.gap_buffer.contains_key(&2));
 
         assert!(rx.try_pop().is_none());
 
         let mut missing_packet = vec![0u8; 20];
-        missing_packet[10..18].copy_from_slice(&2u64.to_be_bytes());
+        missing_packet[10..18].copy_from_slice(&1u64.to_be_bytes());
         missing_packet[18..20].copy_from_slice(&1u16.to_be_bytes());
         missing_packet.extend_from_slice(&(msg_payload.len() as u16).to_be_bytes());
         missing_packet.extend_from_slice(&msg_payload);
 
         h.handle_packet(&missing_packet);
 
-        assert_eq!(h.expected_sequence_number, 4);
+        assert_eq!(h.expected_sequence_number, 3);
 
         assert_eq!(h.gap_buffer.len(), 0);
 
