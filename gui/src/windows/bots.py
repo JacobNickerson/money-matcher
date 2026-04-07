@@ -399,6 +399,9 @@ class StatusDelegate(QStyledItemDelegate):
         painter.restore()
 
 class ActionsDelegate(QStyledItemDelegate):
+    bot_started = pyqtSignal(dict)
+    bot_stopped = pyqtSignal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.row_states = {}
@@ -506,16 +509,21 @@ class ActionsDelegate(QStyledItemDelegate):
     
     def handleAction(self, action, index):
         row = index.row()
+        model = index.model()
+        bot_id = model.rows[row]["id"]
+        bot_name = model.rows[row]["Bot Name"]
 
         if action == "pause":
             current = self.row_states.get(row, "active")
 
             if current == "active":
                 self.row_states[row] = "paused"
-                print("Paused bot", row)
+                self.bot_stopped.emit(bot_id)
             else:
                 self.row_states[row] = "active"
-                print("Started bot", row)
+                bot_config = self.get_bot_config(bot_id)
+                if bot_config:
+                    self.bot_started.emit(bot_config)
 
         elif action == "delete":
             model = index.model()
@@ -553,6 +561,34 @@ class ActionsDelegate(QStyledItemDelegate):
             print("Open settings", row)
 
         self.parent().viewport().update()
+
+    def get_bot_config(self, bot_id):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, bot_name, strategy_name, symbol, strategy_file_path, order_size, max_position, latency, jitter, status
+            FROM bots
+            WHERE id = ?
+        """, (bot_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "id": result[0],
+                "bot_name": result[1],
+                "strategy_name": result[2],
+                "symbol": result[3],
+                "strategy_file_path": result[4],
+                "order_size": result[5],
+                "max_position": result[6],
+                "latency": result[7],
+                "jitter": result[8],
+                "status": result[9],
+            }
+        return None
 
     def getDatabasePath(self):
         root_dir = Path(__file__).resolve().parents[2]
@@ -764,11 +800,36 @@ class BotList(QWidget):
         self.table.setItemDelegateForColumn(6, self.status_delegate)
         self.table.setItemDelegateForColumn(7, self.actions_delegate)
 
+        self.actions_delegate.bot_started.connect(self.on_bot_started)
+        self.actions_delegate.bot_stopped.connect(self.on_bot_stopped)
+
         #self.load_test_data()
         self.loadBots()
         self.table.horizontalHeader().viewport().update()
 
         layout.addWidget(self.table)
+
+    def on_bot_started(self, bot_config):
+        bot_id = bot_config["id"]
+        self.update_bot_status(bot_id, "Active")
+
+    def on_bot_stopped(self, bot_id):
+        pass
+
+    def update_bot_status(self, bot_id, status):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE bots
+            SET status = ?
+            WHERE id = ?
+        """, (status, bot_id))
+
+        conn.commit()
+        conn.close()
+
+        self.loadBots()
 
     def getDatabasePath(self):
         root_dir = Path(__file__).resolve().parents[2]
