@@ -120,6 +120,7 @@ mod tests {
             NullFeeds {}, // use this since nothing is draining the market events
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
+            false,
         );
         sim.step();
         let mut prev_time: SimTime = 0;
@@ -153,6 +154,7 @@ mod tests {
             SingleEventFeed::new(market_event_prod, client_event_prod),
             user_order_cons,
             ChaCha8Rng::seed_from_u64(67),
+            false,
         );
         // for _ in 0..100_000 {
         for _ in 0..25 {
