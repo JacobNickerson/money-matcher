@@ -98,15 +98,11 @@ impl<T: EventSink> OrderBook<T> {
     /// UpdateOrders cancel the previously existing order and resubmit a new order
     pub fn process_order(&mut self, order: Order) -> Option<LimitOrder> {
         // TODO: Update return type to be more informative
-        // self.event_sink.push(MarketEvent {
-        //     timestamp: time,
-        //     kind: MarketEventType::L3(L3Event::new(order, L3EventExtra::None)),
-        // });
         let time = order.timestamp;
         let order: Option<LimitOrder> = match order.kind {
             OrderType::Limit { qty: _, price: _ } => self.add_order_and_emit_events(order, time),
             OrderType::Market { qty: _ } => self.execute_market_order_and_emit_events(order, time),
-            OrderType::Cancel { old_id } => self.cancel_order_and_emit_events(old_id, order, time),
+            OrderType::Cancel => self.cancel_order_and_emit_events(order, time),
             OrderType::Update {
                 old_id,
                 qty: _,
@@ -120,7 +116,6 @@ impl<T: EventSink> OrderBook<T> {
     /// Prunes lazily removed bid orders and returns the current best bid
     /// Does not update the cached value of best bid
     pub fn best_bid(&mut self) -> Option<Price> {
-        // TODO: Will probably need to adjust this when perf-profiling and trying to reduce allocations
         let mut to_delete: Vec<Price> = vec![0; self.bid_orders.len()];
         let mut deleted_count: usize = 0;
         let mut best: Option<Price> = None;
@@ -283,10 +278,10 @@ impl<T: EventSink> OrderBook<T> {
     /// a cancel market and client event
     fn cancel_order_and_emit_events(
         &mut self,
-        old_id: OrderId,
         order: Order,
         time: Timestamp,
     ) -> Option<LimitOrder> {
+        let old_id = order.order_id;
         let old_order = match self.orders.get_mut(&old_id) {
             Some(old_order) => old_order,
             None => {
@@ -516,18 +511,10 @@ mod tests {
     fn cancel_event<T: EventSink>(
         book: &mut OrderBook<T>,
         old_order_id: OrderId,
-        order_id: OrderId,
         side: OrderSide,
         timestamp: Timestamp,
     ) -> Option<LimitOrder> {
-        book.process_order(Order::new(
-            order_id,
-            side,
-            timestamp,
-            OrderType::Cancel {
-                old_id: old_order_id,
-            },
-        ))
+        book.process_order(Order::new(old_order_id, side, timestamp, OrderType::Cancel))
     }
 
     #[test]
@@ -567,12 +554,7 @@ mod tests {
             OrderType::Limit { qty: 5, price: 100 },
         ));
         assert!(
-            book.process_order(Order::new(
-                1,
-                OrderSide::Bid,
-                1,
-                OrderType::Cancel { old_id: 0 }
-            ),)
+            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel))
                 .is_some()
         );
         assert!(book.best_bid().is_none());
@@ -595,7 +577,7 @@ mod tests {
         }
         assert_eq!(book.best_bid(), Some(110));
         for i in 3..=4 {
-            assert!(cancel_event(&mut book, 5 - i, i, OrderSide::Bid, i).is_some());
+            assert!(cancel_event(&mut book, 5 - i, OrderSide::Bid, i).is_some());
         }
         assert_eq!(book.best_bid(), Some(100));
     }
@@ -603,7 +585,7 @@ mod tests {
     #[test]
     fn cancel_nonexistent_returns_none() {
         let mut book = OrderBook::new(NullFeeds {});
-        assert!(cancel_event(&mut book, 0, 1, OrderSide::Bid, 0).is_none());
+        assert!(cancel_event(&mut book, 0, OrderSide::Bid, 0).is_none());
     }
 
     #[test]

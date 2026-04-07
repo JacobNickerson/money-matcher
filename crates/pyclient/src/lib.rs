@@ -81,7 +81,7 @@ mod pyclient {
         #[staticmethod]
         fn cancel(old_id: u64) -> Self {
             Self {
-                inner: OrderType::Cancel { old_id },
+                inner: OrderType::Cancel,
             }
         }
     }

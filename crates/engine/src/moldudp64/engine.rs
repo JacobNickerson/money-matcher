@@ -6,7 +6,7 @@ use mm_core::{
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
     },
     lob_core::{
-        market_events::{EventSink, MarketEvent, MarketEventType},
+        market_events::{EventSink, L3EventExtra, MarketEvent, MarketEventType},
         market_orders::OrderType,
     },
     moldudp64_core::types::Event,
@@ -129,16 +129,22 @@ impl MoldEngine {
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
                     Self::push_event(&mut self.l3_tx, &buf);
                 }
-                OrderType::Cancel { old_id } => {
+                OrderType::Cancel => {
                     let mut buf = [0u8; 23];
 
+                    let L3EventExtra::Cancel(cancel_qty) = e.extra else {
+                        panic!(
+                            "Expected L3EventExtra::Cancel for cancel event, but got {:?}",
+                            e.extra
+                        );
+                    };
                     OrderCancel::encode_into(
                         &mut buf,
                         0, // PLACEHOLDER
                         self.current_tracking_number,
                         event.timestamp,
-                        old_id, // TODO: e.order_id corresponds to the order to cancel, old_id to the actual order that was canceled. Need to determine which is correct
-                        0,      // PLACEHOLDER
+                        e.order_id,
+                        cancel_qty.try_into().unwrap(), // TODO: Need to update various struct members to be the same byte size
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -238,7 +244,7 @@ mod tests {
                     order_id: i,
                     timestamp: i,
                     side: OrderSide::Ask,
-                    kind: OrderType::Cancel { old_id: 0 },
+                    kind: OrderType::Cancel,
                     extra: L3EventExtra::Cancel(100),
                 }),
             };

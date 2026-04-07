@@ -177,7 +177,6 @@ impl ReceiverHandler {
                 let shares = u32::from_be_bytes(message_data[27..31].try_into().ok()?);
                 let price = u32::from_be_bytes(message_data[31..35].try_into().ok()?);
 
-                let (old_order_price, old_order_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
                 Some(MarketEvent {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
@@ -201,19 +200,16 @@ impl ReceiverHandler {
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);
+                let old_order_qty = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
 
-                let old_order_id = 0; // TODO: see below
-                let (old_order_price, old_order_qty) = (0, 0); // TODO: Need to determine the old price level and quantity
                 Some(MarketEvent {
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: order_reference_number,
                         side: OrderSide::Ask,
                         timestamp,
-                        kind: OrderType::Cancel {
-                            old_id: old_order_id,
-                        },
-                        extra: L3EventExtra::Cancel(old_order_qty),
+                        kind: OrderType::Cancel,
+                        extra: L3EventExtra::Cancel(old_order_qty as u64), // TODO: Need to update all byte sizes to be consistent between modules
                     }),
                 })
             }

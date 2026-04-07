@@ -88,13 +88,11 @@ impl OrderGenerator for GaussianOrderGenerator {
             ),
             // NOTE: Ignore old_id, it's a junk value since the resolution of active orders should be handled by
             //       the OrderGenerator
-            OrderType::Cancel { old_id: _ } => Order::new(
-                self.order_counter,
+            OrderType::Cancel => Order::new(
+                self.get_active_order(side),
                 side,
                 self.current_time,
-                OrderType::Cancel {
-                    old_id: self.get_active_order(side),
-                },
+                OrderType::Cancel,
             ),
             // NOTE: Ignore old_id, qty, and price, they are junk values since their determination should be handled by
             //       the OrderGenerator
@@ -190,12 +188,7 @@ mod tests {
             );
             order_gen.generate(
                 4 * i + 2,
-                (
-                    OrderSide::Bid,
-                    OrderType::Cancel {
-                        old_id: order_gen.get_active_order(OrderSide::Bid),
-                    },
-                ),
+                (OrderSide::Bid, OrderType::Cancel),
                 &mut seeded_rng,
             );
             order_gen.generate(

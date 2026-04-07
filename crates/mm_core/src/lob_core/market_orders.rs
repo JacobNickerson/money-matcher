@@ -73,9 +73,7 @@ pub enum OrderType {
         qty: u64,
         price: Price,
     },
-    Cancel {
-        old_id: OrderId,
-    },
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +118,7 @@ impl LimitOrder {
                 qty,
                 price,
             },
-            _ => {
+            OrderType::Cancel => {
                 panic!("LimitOrder cannot be constructed from an Order representing a cancel");
             }
         }

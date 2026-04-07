@@ -80,13 +80,13 @@ impl OrderBook {
                             },
                         );
                     }
-                    OrderType::Cancel { old_id } => {
-                        let old_order = match self.user_orders.get_mut(&old_id) {
+                    OrderType::Cancel => {
+                        let old_order = match self.user_orders.get_mut(&e.order_id) {
                             Some(o) => o,
                             None => {
                                 panic!(
                                     "Expected to find order with id {} for cancel event, but it did not exist",
-                                    old_id
+                                    e.order_id
                                 );
                             }
                         };
@@ -101,7 +101,7 @@ impl OrderBook {
                         };
                         old_level.qty -= old_qty;
                         old_level.order_count -= 1;
-                        self.user_orders.remove(&old_id);
+                        self.user_orders.remove(&e.order_id);
                     }
                     OrderType::Market { .. } => {
                         // Ignore market orders, the actual result of their execution is covered by the trade event
