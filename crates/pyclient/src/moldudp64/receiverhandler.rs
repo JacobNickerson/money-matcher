@@ -328,7 +328,7 @@ mod tests {
                 tx,
                 multicast_socket,
                 retransmission_socket,
-                "127.0.0.1:0".parse().unwrap(),
+                "127.0.0.1:9000".parse().unwrap(),
             ),
             rx,
         )

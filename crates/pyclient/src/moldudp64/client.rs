@@ -131,7 +131,7 @@ mod tests {
                 println!("Received {:?}", event);
                 count = count + 1;
                 last_received = now;
-            } else if count > 0 && now - last_received > Duration::from_secs(5) {
+            } else if count > 0 && now - last_received > Duration::from_secs(10) {
                 println!("\n\nReceived {} events", count);
                 count = 0;
             } else {
