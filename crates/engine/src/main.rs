@@ -88,6 +88,10 @@ struct Args {
     /// RNG seed for randomly sampled values, if unspecified a random one is picked
     #[arg(long)]
     seed: Option<u64>,
+
+    /// Attempt to run the simulation in real-time by attempting to keep sim time and real time synchronized
+    #[arg(long)]
+    real_time: bool,
 }
 
 fn main() {
@@ -131,6 +135,7 @@ fn main() {
         SingleEventFeed::new(market_event_prod, client_event_prod),
         user_order_cons,
         rng.clone(),
+        args.real_time,
     );
     println!("Spawned simulator");
 
