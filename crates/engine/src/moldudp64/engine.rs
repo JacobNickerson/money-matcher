@@ -32,8 +32,8 @@ pub struct MoldEngine {
 impl MoldEngine {
     /// Initializes the engine and spawns background threads for L3 and Trade multicast publishers.
     pub fn start(running: Arc<AtomicBool>) -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1 << 20).split();
-        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1 << 20).split();
+        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1 << 24).split();
+        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1 << 24).split();
 
         Self::start_publisher(
             "MM_L3".to_string(),
