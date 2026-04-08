@@ -22,8 +22,8 @@ pub struct MoldClient {
 impl MoldClient {
     /// Initializes the client and spawns background threads for L3 and Trade multicast receivers.
     pub fn start() -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
-        let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(1 << 20).split();
+        let (l3_tx, l3_rx) = HeapRb::<MarketEvent>::new(1 << 24).split();
+        let (trade_tx, trade_rx) = HeapRb::<MarketEvent>::new(1 << 24).split();
 
         Self::start_receiver(
             "233.100.10.3:9503".parse().unwrap(),
