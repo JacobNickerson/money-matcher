@@ -929,7 +929,8 @@ class Strategies(QWidget):
 
         self.open_trade_value.setText("1" if position != 0 else "0")
 
-        if best_bid is not None and best_ask is not None:
+        if None not in (best_bid, best_ask):
+            mid_price = (best_bid + best_ask) / 2.0
             pnl = position * mid_price
             self.open_pnl_value.setText(f"{pnl:.2f}")
         else:

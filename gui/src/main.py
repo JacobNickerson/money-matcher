@@ -36,6 +36,7 @@ class Dashboard(QWidget):
         self.setStyleSheet("background-color: #080808;")
         self.strategy_runners = {}
         self.strategy_logs = {}
+        self.strategy_sessions = {}
 
         layout = QGridLayout(self)
         layout.setContentsMargins(20, 64, 20, 20)
@@ -67,7 +68,11 @@ class Dashboard(QWidget):
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_from_market_data)
-        self.update_timer.start(250)
+        self.update_timer.start(500)
+
+        self.strategy_timer = QTimer(self)
+        self.strategy_timer.timeout.connect(self.on_strategy_timer)
+        self.strategy_timer.start(1000)
 
     def start_bot(self, bot_config):
         bot_id = bot_config["id"]
@@ -76,18 +81,23 @@ class Dashboard(QWidget):
             return
 
         try:
-            runner = StrategyRunner(
-                bot_config["strategy_file_path"],
-                bot_config,
-                order_entry=self.order_entry
-            )
-            runner.strategy_log.connect(
-                lambda msg, bot_id=bot_id: self.log_strategy_message(bot_id, msg)
-            )
-            runner.load_strategy()
+            runner = self.strategy_sessions.get(bot_id)
+
+            if runner is None:
+                runner = StrategyRunner(
+                    bot_config["strategy_file_path"],
+                    bot_config,
+                    order_entry=self.order_entry
+                )
+                runner.strategy_log.connect(
+                    lambda msg, bot_id=bot_id: self.log_strategy_message(bot_id, msg)
+                )
+                runner.load_strategy()
+                self.strategy_sessions[bot_id] = runner
+
             runner.start()
             self.strategy_runners[bot_id] = runner
-            self.strategies.set_active_strategies(self.strategy_runners)
+            self.strategies.set_active_strategies(self.strategy_sessions)
             self.refresh_strategy_panel()
 
         except Exception as e:
@@ -104,16 +114,20 @@ class Dashboard(QWidget):
             print(f"Error stopping bot {bot_id}: {e}")
         finally:
             del self.strategy_runners[bot_id]
-            self.strategies.set_active_strategies(self.strategy_runners)
+            self.strategies.set_active_strategies(self.strategy_sessions)
             self.refresh_strategy_panel()
 
     def update_from_market_data(self):
         processed_event = False
+        event_count = 0
+        max_events_per_tick = 1000
 
-        while True:
+        while event_count < max_events_per_tick:
             event = self.mold_client.next_event()
             if event is None:
                 break
+
+            event_count += 1
 
             try:
                 self.rust_book.process_event(event)
@@ -136,6 +150,14 @@ class Dashboard(QWidget):
             runner.on_timer(now)
 
         self.refresh_strategy_panel()
+
+    def on_strategy_timer(self):
+        now = time.time()
+        for runner in self.strategy_runners.values():
+            try:
+                runner.on_timer(now)
+            except Exception as e:
+                print(f"Error in strategy timer: {e}")
     
     def closeEvent(self, event):
         self.update_timer.stop()
@@ -147,13 +169,15 @@ class Dashboard(QWidget):
         super().closeEvent(event)
 
     def refresh_strategy_panel(self):
+        self.strategies.set_active_strategies(self.strategy_sessions)
+
         bot_id = self.strategies.current_bot_id
         if bot_id is None:
             self.strategies.clear_stats()
             self.strategies.clear_logs()
             return
 
-        runner = self.strategy_runners.get(bot_id)
+        runner = self.strategy_sessions.get(bot_id)
         if runner is None:
             self.strategies.clear_stats()
             self.strategies.clear_logs()

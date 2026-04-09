@@ -16,12 +16,12 @@ class CandlestickAggregator:
         self.current_candle = None
         self.history = []
 
-    def bucket_start(self, ts_ms):
-        ts = pd.to_datetime(ts_ms, unit="ms", utc=True)
+    def bucket_start(self, ts_ns):
+        ts = pd.to_datetime(ts_ns, unit="ns", utc=True)
         return ts.floor(f"{self.interval_seconds}s")
 
-    def process_trade(self, timestamp_ms, price, quantity):
-        bucket_time = self.bucket_start(timestamp_ms)
+    def process_trade(self, timestamp_ns, price, quantity):
+        bucket_time = self.bucket_start(timestamp_ns)
 
         if self.current_candle is None:
             self.current_candle = Candle(
@@ -74,7 +74,7 @@ class CandlestickController:
     def __init__(self, chart):
         self.chart = chart
         self.symbol = "SOL/USD"
-        self.aggregator = CandlestickAggregator(interval_seconds=60)
+        self.aggregator = CandlestickAggregator(interval_seconds=5)
         self.full_refresh = False
         self.partial = None
 
@@ -109,7 +109,7 @@ class CandlestickController:
         quantity = float(event.kind.trade_quantity())
 
         finished = self.aggregator.process_trade(
-            timestamp_ms=event.timestamp,
+            timestamp_ns=event.timestamp,
             price=price,
             quantity=quantity,
         )

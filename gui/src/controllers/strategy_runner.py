@@ -130,20 +130,23 @@ class StrategyRunner(QObject):
                     if changed:
                         self.strategy.on_book(self.book_state)
 
-            if event.kind.is_trade():
-                trade = Trade(
-                    symbol=self.symbol,
-                    price=float(event.kind.trade_price()),
-                    qty=int(event.kind.trade_quantity()),
-                    side="BUY" if "Bid" in str(event.kind.aggressor_side) else "SELL",
-                    timestamp=int(event.timestamp),
-                )
+                if type(event.kind).__name__ == "Trade":
+                    try:
+                        trade = Trade(
+                            symbol=self.symbol,
+                            price=float(event.kind.price),
+                            qty=int(event.kind.quantity),
+                            side="BUY" if "Bid" in str(event.kind.aggressor_side) else "SELL",
+                            timestamp=int(event.timestamp),
+                        )
 
-                self.trades_processed += 1
-                self.last_trade_time = time.time()
-                self.last_trade = trade
+                        self.trades_processed += 1
+                        self.last_trade_time = time.time()
+                        self.last_trade = trade
 
-                self.strategy.on_trade(trade)
+                        self.strategy.on_trade(trade)
+                    except (AttributeError, ValueError) as e:
+                        print(f"Error parsing trade event: {e}")
 
         except Exception as e:
             self.log(f"Error handling market event: {e}")
