@@ -117,6 +117,40 @@ class Dashboard(QWidget):
             self.strategies.set_active_strategies(self.strategy_sessions)
             self.refresh_strategy_panel()
 
+    def start_bot(self, bot_config):
+        bot_id = bot_config["id"]
+
+        if bot_id in self.strategy_runners:
+            return
+
+        try:
+            runner = StrategyRunner(
+                bot_config["strategy_file_path"],
+                bot_config,
+                order_entry=self.order_entry
+            )
+            runner.strategy_log.connect(
+                lambda msg, bot_id=bot_id: self.log_strategy_message(bot_id, msg)
+            )
+            runner.load_strategy()
+            runner.start()
+            self.strategy_runners[bot_id] = runner
+
+        except Exception as e:
+            print(f"Error starting bot {bot_id}: {e}")
+
+    def stop_bot(self, bot_id):
+        runner = self.strategy_runners.get(bot_id)
+        if runner is None:
+            return
+        
+        try:
+            runner.stop()
+        except Exception as e:
+            print(f"Error stopping bot {bot_id}: {e}")
+        finally:
+            del self.strategy_runners[bot_id]
+
     def update_from_market_data(self):
         processed_event = False
         event_count = 0
