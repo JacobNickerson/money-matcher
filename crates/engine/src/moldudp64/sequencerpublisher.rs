@@ -40,13 +40,13 @@ impl SequencerPublisher {
         multicast_group: SocketAddr,
         multicast_socket: UdpSocket,
         retransmission_socket: UdpSocket,
+        flush_interval: Duration,
         session_id: String,
         running: Arc<AtomicBool>,
     ) -> Self {
         let mut packet = BytesMut::with_capacity(1400);
         packet.resize(20, 0);
 
-        let flush_interval = Duration::from_micros(50);
         let history_capacity = 1_000_000_u64;
 
         Self {
@@ -230,6 +230,7 @@ mod tests {
             SocketAddr::V4("233.100.10.100:9600".parse().unwrap()),
             UdpSocket::bind("0.0.0.0:0").expect("err"),
             UdpSocket::bind("0.0.0.0:0").expect("err"),
+            Duration::from_micros(50),
             "MM_L0".to_string(),
             Arc::new(AtomicBool::new(true)),
         )
