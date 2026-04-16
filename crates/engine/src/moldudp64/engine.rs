@@ -20,6 +20,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     sync::{Arc, atomic::AtomicBool},
     thread,
+    time::Duration,
 };
 
 /// A multicast engine that translates internal market events into ITCH protocol messages for UDP broadcast.
@@ -39,6 +40,7 @@ impl MoldEngine {
             "MM_L3".to_string(),
             "233.100.10.3:9503".parse().unwrap(),
             "0.0.0.0:9003".parse().unwrap(),
+            Duration::from_micros(25),
             l3_rx,
             Arc::clone(&running),
         );
@@ -46,6 +48,7 @@ impl MoldEngine {
             "MM_TR".to_string(),
             "233.100.10.4:9504".parse().unwrap(),
             "0.0.0.0:9004".parse().unwrap(),
+            Duration::from_micros(50),
             trade_rx,
             Arc::clone(&running),
         );
@@ -62,6 +65,7 @@ impl MoldEngine {
         session_id: String,
         multicast_group: SocketAddr,
         retransmission_addr: SocketAddr,
+        flush_interval: Duration,
         event_rx: HeapCons<Event>,
         running: Arc<AtomicBool>,
     ) {
@@ -85,6 +89,7 @@ impl MoldEngine {
             multicast_group,
             std_socket,
             retransmission_socket,
+            flush_interval,
             session_id,
             running,
         );
