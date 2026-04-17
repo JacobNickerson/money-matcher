@@ -58,6 +58,16 @@ impl Ord for Order {
             .then_with(|| self.order_id.cmp(&other.order_id))
     }
 }
+impl Default for Order {
+    fn default() -> Order {
+        Order {
+            order_id: 0,
+            side: OrderSide::Ask,
+            timestamp: 0,
+            kind: OrderType::Cancel,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderType {

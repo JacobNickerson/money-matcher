@@ -20,6 +20,7 @@ pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     orders: BinaryHeap<Order>,
     order_generator: E,
     user_orders: HeapCons<Order>,
+    user_order_buffer: Vec<Order>,
     id_counter: u64,
     latency_settings: LatencyConfig,
     rng: R,
@@ -42,6 +43,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             latency_settings,
             order_generator,
             user_orders,
+            user_order_buffer: vec![Order::default(); USER_ORDER_INGRESS],
             id_counter: 0,
             rng,
             real_time: Instant::now(),
@@ -50,7 +52,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     }
     pub fn step(&mut self) {
         // TODO: Tune the ingress_value
-        self.drain_user_orders(USER_ORDER_INGRESS);
+        self.drain_user_orders();
         // TODO: Evaluate this is correct and doesn't cause issues
         let synth_order = self.generate_single_order();
         self.orders.push(synth_order);
@@ -63,18 +65,15 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     pub fn time(&self) -> SimTime {
         self.time
     }
-    fn drain_user_orders(&mut self, ingress_size: usize) {
-        for _ in 0..ingress_size {
-            if let Some(mut order) = self.user_orders.try_pop() {
-                order.timestamp = self.time
-                    + self.latency_settings.latency
-                    + self.latency_settings.jitter.sample(&mut self.rng);
-                order.order_id = self.id_counter;
-                self.id_counter += 1;
-                self.orders.push(order)
-            } else {
-                break;
-            }
+    fn drain_user_orders(&mut self) {
+        for i in 0..self.user_orders.pop_slice(&mut self.user_order_buffer) {
+            let mut order = self.user_order_buffer[i];
+            order.timestamp = self.time
+                + self.latency_settings.latency
+                + self.latency_settings.jitter.sample(&mut self.rng);
+            order.order_id = self.id_counter;
+            self.id_counter += 1;
+            self.orders.push(order)
         }
     }
     fn generate_single_order(&mut self) -> Order {
