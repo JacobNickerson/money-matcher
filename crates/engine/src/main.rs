@@ -180,7 +180,9 @@ fn main() {
                 // TODO: Find a more elegant way to handle this
                 while user_order_prod.try_push(order).is_err() {
                     if args.logging {
-                        println!("OrderGateway failed to push an event into processing queue, buffer may be full");
+                        println!(
+                            "OrderGateway failed to push an event into processing queue, buffer may be full"
+                        );
                     }
                 }
             }
@@ -236,7 +238,7 @@ fn main() {
             elapsed.as_nanos()
         );
     } else if (args.benchmark) {
-        println!("{},{},{}",sim_step_count,elapsed.as_nanos(),sim.time());
+        println!("{},{},{}", sim_step_count, elapsed.as_nanos(), sim.time());
     }
 
     let _ = event_broadcast_thread.join();
