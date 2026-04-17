@@ -93,6 +93,7 @@ pub enum LiquidityFlag {
 /// For example, if a trade is made then the owner of the filled order will be sent a ClientEvent
 #[derive(Copy, Clone, Debug)]
 pub struct ClientEvent {
+    pub id: u64,
     pub timestamp: Timestamp,
     pub order_id: OrderId,
     pub kind: ClientEventType,
@@ -102,27 +103,35 @@ pub struct ClientEvent {
 /// Generic market event struct, encompasses all types of market events
 #[derive(Copy, Clone, Debug)]
 pub struct MarketEvent {
+    pub id: u16,
     pub timestamp: Timestamp,
     pub kind: MarketEventType,
 }
 impl MarketEvent {
-    pub fn new(timestamp: Timestamp, kind: MarketEventType) -> Self {
-        Self { timestamp, kind }
-    }
-    pub fn new_limit(timestamp: Timestamp, order: LimitOrder) -> Self {
+    pub fn new(id: u16, timestamp: Timestamp, kind: MarketEventType) -> Self {
         Self {
+            id,
+            timestamp,
+            kind,
+        }
+    }
+    pub fn new_limit(id: u16, timestamp: Timestamp, order: LimitOrder) -> Self {
+        Self {
+            id,
             timestamp,
             kind: MarketEventType::L3(L3Event::new_limit(order, timestamp)),
         }
     }
-    pub fn new_update(timestamp: Timestamp, order: Order) -> Self {
+    pub fn new_update(id: u16, timestamp: Timestamp, order: Order) -> Self {
         Self {
+            id,
             timestamp,
             kind: MarketEventType::L3(L3Event::new_update(order)),
         }
     }
-    pub fn new_cancel(timestamp: Timestamp, order: Order, old_qty: u64) -> Self {
+    pub fn new_cancel(id: u16, timestamp: Timestamp, order: Order, old_qty: u64) -> Self {
         Self {
+            id,
             timestamp,
             kind: MarketEventType::L3(L3Event::new_cancel(order, old_qty)),
         }

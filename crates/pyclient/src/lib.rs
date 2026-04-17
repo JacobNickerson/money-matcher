@@ -245,6 +245,7 @@ mod pyclient {
     #[pyclass]
     #[derive(Copy, Clone, Debug)]
     struct PyMarketEvent {
+        pub id: u16,
         pub timestamp: u64,
         pub kind: PyMarketEventType,
     }
@@ -252,8 +253,17 @@ mod pyclient {
     #[pymethods]
     impl PyMarketEvent {
         #[new]
-        fn new(timestamp: u64, kind: PyMarketEventType) -> Self {
-            Self { timestamp, kind }
+        fn new(id: u16, timestamp: u64, kind: PyMarketEventType) -> Self {
+            Self {
+                id,
+                timestamp,
+                kind,
+            }
+        }
+
+        #[getter]
+        fn id(&self) -> u16 {
+            self.id
         }
 
         #[getter]
@@ -269,6 +279,7 @@ mod pyclient {
     impl From<MarketEvent> for PyMarketEvent {
         fn from(value: MarketEvent) -> Self {
             Self {
+                id: value.id,
                 timestamp: value.timestamp,
                 kind: PyMarketEventType::from(value.kind),
             }
@@ -277,6 +288,7 @@ mod pyclient {
     impl From<PyMarketEvent> for MarketEvent {
         fn from(value: PyMarketEvent) -> Self {
             Self {
+                id: value.id,
                 timestamp: value.timestamp,
                 kind: MarketEventType::from(value.kind),
             }

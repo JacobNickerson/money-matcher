@@ -7,6 +7,7 @@ use mm_core::lob_core::{
     },
     market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
 };
+use rand_distr::num_traits::WrappingAdd;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 #[derive(Debug, Default)]
@@ -75,6 +76,8 @@ pub struct OrderBook<T: EventSink> {
     best_ask: Price, //       they should be considered potentially out of date
     total_asks: u64,
     total_bids: u64,
+    market_event_counter: u16,
+    client_event_counter: u64,
 }
 impl<T: EventSink> OrderBook<T> {
     pub fn new(event_sink: T) -> Self {
@@ -87,6 +90,8 @@ impl<T: EventSink> OrderBook<T> {
             best_ask: 0,
             total_asks: 0,
             total_bids: 0,
+            market_event_counter: 0,
+            client_event_counter: 0,
         }
     }
     /// Accepts an Order and handles it according to its OrderType
@@ -183,9 +188,11 @@ impl<T: EventSink> OrderBook<T> {
         }
 
         self.event_sink.push_event(MarketEvent::new(
+            self.market_event_counter,
             time,
             MarketEventType::L3(L3Event::new_limit(order, original_order.timestamp)),
         ));
+        let _ = self.market_event_counter.wrapping_add(1u16);
         let level = match order.side {
             OrderSide::Bid => {
                 self.total_bids += order.qty;
@@ -223,14 +230,20 @@ impl<T: EventSink> OrderBook<T> {
             return None;
         }
 
-        self.event_sink
-            .push_event(MarketEvent::new_update(time, order));
+        self.event_sink.push_event(MarketEvent::new_update(
+            self.market_event_counter,
+            time,
+            order,
+        ));
+        let _ = self.market_event_counter.wrapping_add(1u16);
         self.event_sink.push_client_event(ClientEvent {
+            id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
             kind: ClientEventType::Updated,
             liquidity_flag: LiquidityFlag::Invalid,
         });
+        self.client_event_counter += 1;
 
         // Cancelling the previous
         let level = match old_order.side {
@@ -294,14 +307,21 @@ impl<T: EventSink> OrderBook<T> {
             return None;
         }
 
-        self.event_sink
-            .push_event(MarketEvent::new_cancel(time, order, old_order.qty));
+        self.event_sink.push_event(MarketEvent::new_cancel(
+            self.market_event_counter,
+            time,
+            order,
+            old_order.qty,
+        ));
+        let _ = self.market_event_counter.wrapping_add(1u16);
         self.event_sink.push_client_event(ClientEvent {
+            id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
             kind: ClientEventType::Canceled,
             liquidity_flag: LiquidityFlag::Invalid,
         });
+        self.client_event_counter += 1;
 
         let level = match old_order.side {
             OrderSide::Ask => {
@@ -333,6 +353,8 @@ impl<T: EventSink> OrderBook<T> {
                 &mut self.event_sink,
                 order,
                 time,
+                &mut self.market_event_counter,
+                &mut self.client_event_counter,
             ),
             OrderSide::Ask => Self::make_trades(
                 self.bid_orders.iter_mut().rev(),
@@ -340,6 +362,8 @@ impl<T: EventSink> OrderBook<T> {
                 &mut self.event_sink,
                 order,
                 time,
+                &mut self.market_event_counter,
+                &mut self.client_event_counter,
             ),
         }
     }
@@ -353,6 +377,8 @@ impl<T: EventSink> OrderBook<T> {
         event_sink: &mut T,
         taker: &mut LimitOrder,
         time: Timestamp,
+        market_event_counter: &mut u16,
+        client_event_counter: &mut u64,
     ) {
         let initial_qty = taker.qty;
         for (price, level) in iter {
@@ -382,6 +408,7 @@ impl<T: EventSink> OrderBook<T> {
                 taker.qty -= trade_volume;
 
                 event_sink.push_event(MarketEvent::new(
+                    *market_event_counter,
                     time,
                     MarketEventType::Trade(TradeEvent {
                         price: *price,
@@ -390,22 +417,27 @@ impl<T: EventSink> OrderBook<T> {
                         maker_id: maker.order_id,
                     }),
                 ));
+                let _ = market_event_counter.wrapping_add(1u16);
 
                 if maker.qty == 0 {
                     event_sink.push_client_event(ClientEvent {
+                        id: *client_event_counter,
                         timestamp: time,
                         order_id: maker_id,
                         kind: ClientEventType::Filled,
                         liquidity_flag: LiquidityFlag::Maker,
                     });
+                    *client_event_counter += 1;
                     level.pop_front();
                 } else {
                     event_sink.push_client_event(ClientEvent {
+                        id: *client_event_counter,
                         timestamp: time,
                         order_id: maker_id,
                         kind: ClientEventType::PartiallyFilled(maker.qty),
                         liquidity_flag: LiquidityFlag::Maker,
                     });
+                    *client_event_counter += 1;
                     break;
                 }
             }
@@ -414,6 +446,7 @@ impl<T: EventSink> OrderBook<T> {
             return;
         }
         event_sink.push_client_event(ClientEvent {
+            id: *client_event_counter,
             timestamp: time,
             order_id: taker.order_id,
             kind: match taker.qty == 0 {
@@ -422,6 +455,7 @@ impl<T: EventSink> OrderBook<T> {
             },
             liquidity_flag: LiquidityFlag::Taker,
         });
+        *client_event_counter += 1;
     }
 
     /// Gets the total quantity at a given price level
@@ -464,21 +498,25 @@ impl<T: EventSink> OrderBook<T> {
     /// Emits a client event rejecting an order
     fn reject_order(&mut self, order_id: OrderId, time: Timestamp) {
         self.event_sink.push_client_event(ClientEvent {
+            id: self.client_event_counter,
             timestamp: time,
             order_id,
             kind: ClientEventType::Rejected,
             liquidity_flag: LiquidityFlag::Invalid,
         });
+        self.client_event_counter += 1;
     }
 
     /// Emits a client event accepting an order
     fn accept_order(&mut self, order: Order, time: Timestamp) {
         self.event_sink.push_client_event(ClientEvent {
+            id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
             kind: ClientEventType::Accepted,
             liquidity_flag: LiquidityFlag::Invalid,
         });
+        self.client_event_counter += 1;
     }
 }
 
