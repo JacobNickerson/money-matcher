@@ -1,13 +1,11 @@
 use clap::Parser;
 use mm_core::fix_core::messages::execution_report::ExecutionReport;
 use mm_core::fix_core::messages::{FIXEvent, FIXPayload, ReportMessage};
-use mm_core::lob_core::market_events::{ClientEvent, EventSink, MarketEventType, SingleEventFeed};
+use mm_core::lob_core::market_events::{ClientEvent, SingleEventFeed};
 use mm_core::lob_core::{market_events::MarketEvent, market_orders::Order};
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ringbuf::{HeapRb, traits::*};
-use std::fs::File;
-use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::sync::{
     Arc,
@@ -22,31 +20,16 @@ use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
 use crate::fix::engine::FixEngine;
 use crate::moldudp64::engine::MoldEngine;
+use crate::simulator::latency_config::{JitterCfg, SimJitter};
 use crate::simulator::simulator::Simulator;
+
+use engine::{positive_float_parser, prob_parser};
 
 mod data_generator;
 mod fix;
 mod lob;
 mod moldudp64;
 mod simulator;
-
-fn prob_parser(s: &str) -> Result<f64, String> {
-    let val: f64 = s.parse().map_err(|_| "invalid float")?;
-    if (0.0..=1.0).contains(&val) {
-        Ok(val)
-    } else {
-        Err("must be between 0 and 1".into())
-    }
-}
-
-fn positive_float_parser(s: &str) -> Result<f64, String> {
-    let val: f64 = s.parse().map_err(|_| "invalid float")?;
-    if val > 0.0 {
-        Ok(val)
-    } else {
-        Err("must be > 0.0".into())
-    }
-}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -90,6 +73,14 @@ struct Args {
     /// RNG seed for randomly sampled values, if unspecified a random one is picked
     #[arg(long)]
     seed: Option<u64>,
+
+    /// Simulated latency in nanoseconds
+    #[arg(long, default_value_t = 0)]
+    sim_latency: u64,
+
+    /// Configure simulated jitter
+    #[command(subcommand)]
+    sim_jitter: Option<JitterCfg>,
 
     /// Attempt to run the simulation in real-time by attempting to keep sim time and real time synchronized
     #[arg(long)]
