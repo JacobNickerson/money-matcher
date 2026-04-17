@@ -20,6 +20,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     sync::{Arc, atomic::AtomicBool},
     thread,
+    time::Duration,
 };
 
 /// A multicast engine that translates internal market events into ITCH protocol messages for UDP broadcast.
@@ -32,18 +33,22 @@ pub struct MoldEngine {
 impl MoldEngine {
     /// Initializes the engine and spawns background threads for L3 and Trade multicast publishers.
     pub fn start(running: Arc<AtomicBool>) -> Self {
-        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1 << 20).split();
-        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1 << 20).split();
+        let (l3_tx, l3_rx) = HeapRb::<Event>::new(1 << 24).split();
+        let (trade_tx, trade_rx) = HeapRb::<Event>::new(1 << 24).split();
 
         Self::start_publisher(
             "MM_L3".to_string(),
             "233.100.10.3:9503".parse().unwrap(),
+            "0.0.0.0:9003".parse().unwrap(),
+            Duration::from_micros(25),
             l3_rx,
             Arc::clone(&running),
         );
         Self::start_publisher(
             "MM_TR".to_string(),
             "233.100.10.4:9504".parse().unwrap(),
+            "0.0.0.0:9004".parse().unwrap(),
+            Duration::from_micros(50),
             trade_rx,
             Arc::clone(&running),
         );
@@ -59,6 +64,8 @@ impl MoldEngine {
     fn start_publisher(
         session_id: String,
         multicast_group: SocketAddr,
+        retransmission_addr: SocketAddr,
+        flush_interval: Duration,
         event_rx: HeapCons<Event>,
         running: Arc<AtomicBool>,
     ) {
@@ -74,8 +81,18 @@ impl MoldEngine {
 
         let std_socket: UdpSocket = socket.into();
 
-        let sequencer_publisher =
-            SequencerPublisher::new(event_rx, multicast_group, std_socket, session_id, running);
+        let retransmission_socket = UdpSocket::bind(retransmission_addr).expect("err");
+        retransmission_socket.set_nonblocking(true).expect("err");
+
+        let sequencer_publisher = SequencerPublisher::new(
+            event_rx,
+            multicast_group,
+            std_socket,
+            retransmission_socket,
+            flush_interval,
+            session_id,
+            running,
+        );
 
         thread::spawn(move || {
             sequencer_publisher.run();
@@ -197,9 +214,7 @@ impl MoldEngine {
 mod tests {
     use super::*;
     use mm_core::lob_core::{
-        market_events::{
-            EventSink, L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent,
-        },
+        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
         market_orders::OrderSide,
     };
 
@@ -218,6 +233,7 @@ mod tests {
             i = i + 1;
 
             let limit_event = MarketEvent {
+                id: 0,
                 timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
@@ -234,11 +250,13 @@ mod tests {
             println!("Sending {:?}", limit_event);
             server.push(limit_event.clone());
         }
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         for _ in 0..5 {
             i = i + 1;
 
             let cancel_event = MarketEvent {
+                id: 0,
                 timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
@@ -257,6 +275,7 @@ mod tests {
             i = i + 1;
 
             let update_event = MarketEvent {
+                id: 0,
                 timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
@@ -264,8 +283,8 @@ mod tests {
                     side: OrderSide::Ask,
                     kind: OrderType::Update {
                         old_id: i - 1,
-                        qty: i,
-                        price: i,
+                        qty: i as u32,
+                        price: i as u32,
                     },
                     extra: L3EventExtra::None,
                 }),
@@ -279,9 +298,10 @@ mod tests {
             i = i + 1;
 
             let trade_event = MarketEvent {
+                id: 0,
                 kind: MarketEventType::Trade(TradeEvent {
-                    price: i,
-                    quantity: i,
+                    price: i as u32,
+                    quantity: i as u32,
                     aggressor_side: OrderSide::Ask,
                     maker_id: i,
                 }),

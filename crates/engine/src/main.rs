@@ -1,11 +1,11 @@
 use clap::Parser;
-use mm_core::lob_core::market_events::{ClientEvent, EventSink, MarketEventType, SingleEventFeed};
+use mm_core::fix_core::messages::execution_report::ExecutionReport;
+use mm_core::fix_core::messages::{FIXEvent, FIXPayload, ReportMessage};
+use mm_core::lob_core::market_events::{ClientEvent, SingleEventFeed};
 use mm_core::lob_core::{market_events::MarketEvent, market_orders::Order};
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ringbuf::{HeapRb, traits::*};
-use std::fs::File;
-use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::sync::{
     Arc,
@@ -20,31 +20,16 @@ use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
 use crate::fix::engine::FixEngine;
 use crate::moldudp64::engine::MoldEngine;
+use crate::simulator::latency_config::{JitterCfg, LatencyConfig, SimJitter};
 use crate::simulator::simulator::Simulator;
+
+use engine::{positive_float_parser, prob_parser};
 
 mod data_generator;
 mod fix;
 mod lob;
 mod moldudp64;
 mod simulator;
-
-fn prob_parser(s: &str) -> Result<f64, String> {
-    let val: f64 = s.parse().map_err(|_| "invalid float")?;
-    if (0.0..=1.0).contains(&val) {
-        Ok(val)
-    } else {
-        Err("must be between 0 and 1".into())
-    }
-}
-
-fn positive_float_parser(s: &str) -> Result<f64, String> {
-    let val: f64 = s.parse().map_err(|_| "invalid float")?;
-    if val > 0.0 {
-        Ok(val)
-    } else {
-        Err("must be > 0.0".into())
-    }
-}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -89,10 +74,30 @@ struct Args {
     #[arg(long)]
     seed: Option<u64>,
 
+    /// Simulated latency in nanoseconds
+    #[arg(long, default_value_t = 0)]
+    sim_latency: u64,
+
+    /// Configure simulated jitter
+    #[command(subcommand)]
+    sim_jitter: Option<JitterCfg>,
+
     /// Attempt to run the simulation in real-time by attempting to keep sim time and real time synchronized
     #[arg(long)]
     real_time: bool,
+
+    /// Log errors and initialization steps to stdout
+    #[arg(long, default_value_t = false)]
+    logging: bool,
+
+    /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
+    ///
+    /// Output is in CSV format: step_count,run_time(nanosec),sim_time(nanosec)
+    #[arg(long, default_value_t = false)]
+    benchmark: bool,
 }
+
+const BUFFER_SIZE: usize = 1 << 24;
 
 fn main() {
     let args = Args::parse();
@@ -108,17 +113,25 @@ fn main() {
 
     ctrlc::set_handler(move || {
         running_handler.store(false, Ordering::Relaxed);
-        println!("Simulation terminated, stopping...");
+        if args.logging {
+            println!("Simulation terminated, stopping...");
+        }
     })
     .unwrap();
 
-    let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
-    let (mut market_event_prod, mut market_event_cons) =
-        HeapRb::<MarketEvent>::new(1 << 24).split();
-    let (mut client_event_prod, mut client_event_cons) =
-        HeapRb::<ClientEvent>::new(1 << 24).split();
-    println!("Initialized order queues");
+    let (mut user_order_prod, user_order_cons) = HeapRb::<Order>::new(BUFFER_SIZE).split();
+    let (market_event_prod, mut market_event_cons) =
+        HeapRb::<MarketEvent>::new(BUFFER_SIZE).split();
+    let (client_event_prod, mut client_event_cons) =
+        HeapRb::<ClientEvent>::new(BUFFER_SIZE).split();
+    if args.logging {
+        println!("Initialized order queues");
+    }
 
+    let latency_settings = LatencyConfig {
+        latency: args.sim_latency,
+        jitter: SimJitter::from(args.sim_jitter),
+    };
     let mut sim = Simulator::new(
         PoissonSource::new(
             ConstantPoissonRate::new(args.order_rate),
@@ -134,10 +147,13 @@ fn main() {
         ),
         SingleEventFeed::new(market_event_prod, client_event_prod),
         user_order_cons,
+        latency_settings,
         rng.clone(),
         args.real_time,
     );
-    println!("Spawned simulator");
+    if args.logging {
+        println!("Spawned simulator");
+    }
 
     let mut mold_engine = MoldEngine::start(Arc::clone(&running));
     let broadcast_running = Arc::clone(&running);
@@ -148,7 +164,9 @@ fn main() {
             }
         }
     });
-    println!("MoldEngine started");
+    if args.logging {
+        println!("MoldEngine started");
+    }
 
     let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
     let gateway_running = Arc::clone(&running);
@@ -157,15 +175,30 @@ fn main() {
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
-                while user_order_prod.try_push(order).is_err() {}
+                while user_order_prod.try_push(order).is_err() {
+                    if args.logging {
+                        println!(
+                            "OrderGateway failed to push an event into processing queue, buffer may be full"
+                        );
+                    }
+                }
+            }
+            if let Some(client_event) = client_event_cons.try_pop() {
+                let exec_report = ExecutionReport::from(client_event);
+                let msg = FIXEvent {
+                    comp_id: "".into(),
+                    payload: FIXPayload::Report(ReportMessage::ExecutionReport(exec_report)),
+                };
+                handler.send_message(msg);
             }
         }
     });
-    println!("FixEngine started");
-
-    let time = Instant::now();
-    println!("Running...");
+    if args.logging {
+        println!("FixEngine started");
+        println!("Running...");
+    }
     let mut sim_step_count: u128 = 0;
+    let time = Instant::now();
     match args.count {
         Some(range) => {
             for _ in 0..range {
@@ -188,18 +221,22 @@ fn main() {
     let elapsed = time.elapsed();
     running.store(false, Ordering::Relaxed);
 
-    println!("Job finished");
-    println!("Simulation covered {} steps", sim_step_count);
-    println!(
-        "Sim time: {}s ({}ns)",
-        sim.time() as f64 / 1_000_000_000.0,
-        sim.time()
-    );
-    println!(
-        "Real time: {}s ({}ns)",
-        elapsed.as_nanos() as f64 / 1_000_000_000.0,
-        elapsed.as_nanos()
-    );
+    if args.logging && !args.benchmark {
+        println!("Job finished");
+        println!("Simulation covered {} steps", sim_step_count);
+        println!(
+            "Sim time: {}s ({}ns)",
+            sim.time() as f64 / 1_000_000_000.0,
+            sim.time()
+        );
+        println!(
+            "Real time: {}s ({}ns)",
+            elapsed.as_nanos() as f64 / 1_000_000_000.0,
+            elapsed.as_nanos()
+        );
+    } else if (args.benchmark) {
+        println!("{},{},{}", sim_step_count, elapsed.as_nanos(), sim.time());
+    }
 
     let _ = event_broadcast_thread.join();
     let _ = order_gateway_thread.join();

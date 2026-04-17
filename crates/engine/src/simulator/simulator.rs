@@ -5,7 +5,7 @@ use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};
 use std::collections::{BinaryHeap, HashMap};
-use std::time::{Duration,Instant};
+use std::time::{Duration, Instant};
 
 const USER_ORDER_INGRESS: usize = 1024;
 const SIM_HEAP_CAPACITY: usize = USER_ORDER_INGRESS * 10;
@@ -20,21 +20,30 @@ pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     orders: BinaryHeap<Order>,
     order_generator: E,
     user_orders: HeapCons<Order>,
+    user_order_buffer: Vec<Order>,
     id_counter: u64,
-    latency_settings: HashMap<u64, LatencyConfig>, // TODO: type def for identifier?
+    latency_settings: LatencyConfig,
     rng: R,
     real_time: Instant,
     is_real_time: bool,
 }
 impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
-    pub fn new(order_generator: E, event_sink: S, user_orders: HeapCons<Order>, rng: R, is_real_time: bool) -> Self {
+    pub fn new(
+        order_generator: E,
+        event_sink: S,
+        user_orders: HeapCons<Order>,
+        latency_settings: LatencyConfig,
+        rng: R,
+        is_real_time: bool,
+    ) -> Self {
         Self {
             time: 0,
             limit_order_book: OrderBook::new(event_sink),
             orders: BinaryHeap::with_capacity(SIM_HEAP_CAPACITY),
-            latency_settings: HashMap::new(),
+            latency_settings,
             order_generator,
             user_orders,
+            user_order_buffer: vec![Order::default(); USER_ORDER_INGRESS],
             id_counter: 0,
             rng,
             real_time: Instant::now(),
@@ -43,7 +52,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     }
     pub fn step(&mut self) {
         // TODO: Tune the ingress_value
-        self.drain_user_orders(USER_ORDER_INGRESS);
+        self.drain_user_orders();
         // TODO: Evaluate this is correct and doesn't cause issues
         let synth_order = self.generate_single_order();
         self.orders.push(synth_order);
@@ -56,16 +65,15 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     pub fn time(&self) -> SimTime {
         self.time
     }
-    fn drain_user_orders(&mut self, ingress_size: usize) {
-        for _ in 0..ingress_size {
-            if let Some(mut order) = self.user_orders.try_pop() {
-                let ind: u64 = 0; // TODO: Attach some type of session identifier to each user message
-                let cfg = self.latency_settings[&ind];
-                order.timestamp = self.time + cfg.latency + cfg.jitter.sample(&mut self.rng);
-                order.order_id = self.id_counter;
-                self.id_counter += 1;
-                self.orders.push(order)
-            }
+    fn drain_user_orders(&mut self) {
+        for i in 0..self.user_orders.pop_slice(&mut self.user_order_buffer) {
+            let mut order = self.user_order_buffer[i];
+            order.timestamp = self.time
+                + self.latency_settings.latency
+                + self.latency_settings.jitter.sample(&mut self.rng);
+            order.order_id = self.id_counter;
+            self.id_counter += 1;
+            self.orders.push(order)
         }
     }
     fn generate_single_order(&mut self) -> Order {
@@ -88,7 +96,8 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         self.limit_order_book.process_order(event);
     }
     fn pace(&self, next_event_time: SimTime) {
-        let real_time_delta = next_event_time.saturating_sub(self.real_time.elapsed().as_nanos() as u64); 
+        let real_time_delta =
+            next_event_time.saturating_sub(self.real_time.elapsed().as_nanos() as u64);
 
         std::thread::sleep(Duration::from_nanos(real_time_delta));
     }
@@ -97,9 +106,12 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_generator::{
-        event_source::PoissonSource, order_generators::GaussianOrderGenerator,
-        rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
+    use crate::{
+        data_generator::{
+            event_source::PoissonSource, order_generators::GaussianOrderGenerator,
+            rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
+        },
+        simulator::latency_config::SimJitter,
     };
     use mm_core::lob_core::market_events::{ClientEvent, MarketEvent, NullFeeds, SingleEventFeed};
     use rand::SeedableRng;
@@ -119,6 +131,10 @@ mod tests {
             ),
             NullFeeds {}, // use this since nothing is draining the market events
             user_order_cons,
+            LatencyConfig {
+                latency: 0,
+                jitter: SimJitter::None,
+            },
             ChaCha8Rng::seed_from_u64(67),
             false,
         );
@@ -153,6 +169,10 @@ mod tests {
             ),
             SingleEventFeed::new(market_event_prod, client_event_prod),
             user_order_cons,
+            LatencyConfig {
+                latency: 0,
+                jitter: SimJitter::None,
+            },
             ChaCha8Rng::seed_from_u64(67),
             false,
         );

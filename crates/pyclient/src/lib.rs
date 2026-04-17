@@ -17,6 +17,7 @@ mod pyclient {
     use mm_core::{
         fix_core::messages::{FIXEvent, types::EncryptMethod},
         lob_core::{
+            OrderId, OrderQty, Price,
             market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
             market_orders::{LimitOrder, Order, OrderSide, OrderType},
         },
@@ -58,28 +59,28 @@ mod pyclient {
     #[pymethods]
     impl PyOrderType {
         #[staticmethod]
-        fn limit(qty: u64, price: u64) -> Self {
+        fn limit(qty: OrderQty, price: Price) -> Self {
             Self {
                 inner: OrderType::Limit { qty, price },
             }
         }
 
         #[staticmethod]
-        fn market(qty: u64) -> Self {
+        fn market(qty: OrderQty) -> Self {
             Self {
                 inner: OrderType::Market { qty },
             }
         }
 
         #[staticmethod]
-        fn update(old_id: u64, qty: u64, price: u64) -> Self {
+        fn update(old_id: OrderId, qty: OrderQty, price: Price) -> Self {
             Self {
                 inner: OrderType::Update { old_id, qty, price },
             }
         }
 
         #[staticmethod]
-        fn cancel(old_id: u64) -> Self {
+        fn cancel(old_id: OrderId) -> Self {
             Self {
                 inner: OrderType::Cancel,
             }
@@ -155,7 +156,7 @@ mod pyclient {
     #[pymethods]
     impl PyL3EventExtra {
         #[staticmethod]
-        fn cancel(old_price: u64, old_qty: u64) -> Self {
+        fn cancel(old_price: Price, old_qty: OrderQty) -> Self {
             Self {
                 inner: L3EventExtra::Cancel(old_qty),
             }
@@ -201,7 +202,12 @@ mod pyclient {
             }
         }
         #[staticmethod]
-        fn trade(price: u64, quantity: u64, aggressor_side: PyOrderSide, maker_id: u64) -> Self {
+        fn trade(
+            price: Price,
+            quantity: OrderQty,
+            aggressor_side: PyOrderSide,
+            maker_id: OrderId,
+        ) -> Self {
             Self {
                 inner: MarketEventType::Trade(TradeEvent {
                     price,
@@ -216,14 +222,14 @@ mod pyclient {
             matches!(self.inner, MarketEventType::Trade(_))
         }
 
-        fn trade_price(&self) -> Option<u64> {
+        fn trade_price(&self) -> Option<Price> {
             match self.inner {
                 MarketEventType::Trade(trade) => Some(trade.price),
                 _ => None,
             }
         }
 
-        fn trade_quantity(&self) -> Option<u64> {
+        fn trade_quantity(&self) -> Option<OrderQty> {
             match self.inner {
                 MarketEventType::Trade(trade) => Some(trade.quantity),
                 _ => None,
@@ -245,6 +251,7 @@ mod pyclient {
     #[pyclass]
     #[derive(Copy, Clone, Debug)]
     struct PyMarketEvent {
+        pub id: u16,
         pub timestamp: u64,
         pub kind: PyMarketEventType,
     }
@@ -252,8 +259,17 @@ mod pyclient {
     #[pymethods]
     impl PyMarketEvent {
         #[new]
-        fn new(timestamp: u64, kind: PyMarketEventType) -> Self {
-            Self { timestamp, kind }
+        fn new(id: u16, timestamp: u64, kind: PyMarketEventType) -> Self {
+            Self {
+                id,
+                timestamp,
+                kind,
+            }
+        }
+
+        #[getter]
+        fn id(&self) -> u16 {
+            self.id
         }
 
         #[getter]
@@ -269,6 +285,7 @@ mod pyclient {
     impl From<MarketEvent> for PyMarketEvent {
         fn from(value: MarketEvent) -> Self {
             Self {
+                id: value.id,
                 timestamp: value.timestamp,
                 kind: PyMarketEventType::from(value.kind),
             }
@@ -277,6 +294,7 @@ mod pyclient {
     impl From<PyMarketEvent> for MarketEvent {
         fn from(value: PyMarketEvent) -> Self {
             Self {
+                id: value.id,
                 timestamp: value.timestamp,
                 kind: MarketEventType::from(value.kind),
             }
@@ -306,22 +324,22 @@ mod pyclient {
         }
 
         /// Returns the best bidding price or None if there are no bids
-        pub fn best_bid(&self) -> Option<u64> {
+        pub fn best_bid(&self) -> Option<Price> {
             self.inner.best_bid()
         }
 
         /// Returns a tuple of (best_bid_price,qty) or None if there are no bids
-        pub fn best_bid_and_size(&self) -> Option<(u64, u64)> {
+        pub fn best_bid_and_size(&self) -> Option<(Price, u64)> {
             self.inner.best_bid_and_size()
         }
 
         /// Returns the best asking price or None if there are no bids
-        pub fn best_ask(&self) -> Option<u64> {
+        pub fn best_ask(&self) -> Option<Price> {
             self.inner.best_ask()
         }
 
         /// Returns a tuple of (best_ask_price,qty) or None if there are no bids
-        pub fn best_ask_and_size(&self) -> Option<(u64, u64)> {
+        pub fn best_ask_and_size(&self) -> Option<(Price, u64)> {
             self.inner.best_ask_and_size()
         }
 
@@ -331,17 +349,17 @@ mod pyclient {
         }
 
         /// Returns the difference between the best asking and bidding prices or None if there are no bids or no orders
-        pub fn spread(&self) -> Option<u64> {
+        pub fn spread(&self) -> Option<Price> {
             self.inner.spread()
         }
 
         /// Returns the quantity of a given price level on the specified side
-        pub fn get_level(&self, price: u64, side: PyOrderSide) -> u64 {
+        pub fn get_level(&self, price: Price, side: PyOrderSide) -> u64 {
             self.inner.get_level(price, OrderSide::from(side))
         }
 
         /// Returns the quantities of the top n price levels on the specified side
-        pub fn get_top_levels(&self, side: PyOrderSide, n: usize) -> Vec<(u64, u64)> {
+        pub fn get_top_levels(&self, side: PyOrderSide, n: usize) -> Vec<(Price, u64)> {
             self.inner.get_top_levels(OrderSide::from(side), n)
         }
     }
@@ -406,8 +424,8 @@ mod pyclient {
                 side: OrderSide::Bid,
                 timestamp: 5_u64,
                 kind: OrderType::Limit {
-                    qty: 10_u64,
-                    price: 666_u64,
+                    qty: 10 as OrderQty,
+                    price: 666 as Price,
                 },
             };
 
