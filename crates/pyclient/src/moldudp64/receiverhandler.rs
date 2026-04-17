@@ -299,7 +299,7 @@ impl ReceiverHandler {
                         side: OrderSide::Ask,
                         timestamp,
                         kind: OrderType::Cancel,
-                        extra: L3EventExtra::Cancel(old_order_qty as u64), // TODO: Need to update all byte sizes to be consistent between modules
+                        extra: L3EventExtra::Cancel(old_order_qty),
                     }),
                 })
             }

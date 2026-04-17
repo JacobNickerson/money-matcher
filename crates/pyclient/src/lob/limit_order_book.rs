@@ -1,5 +1,5 @@
 use mm_core::lob_core::{
-    OrderId, Price,
+    OrderId, OrderQty, Price,
     market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
     market_orders::{LimitOrder, OrderSide, OrderType},
 };
@@ -39,12 +39,12 @@ impl OrderBook {
         }
     }
 
-    fn handle_limit(&mut self, e: L3Event, qty: u64, price: Price) {
+    fn handle_limit(&mut self, e: L3Event, qty: OrderQty, price: Price) {
         let level = match e.side {
             OrderSide::Ask => self.ask_levels.entry(price).or_default(),
             OrderSide::Bid => self.bid_levels.entry(price).or_default(),
         };
-        level.qty += qty;
+        level.qty += qty as u64;
         level.order_count += 1;
         self.user_orders.insert(
             e.order_id,
@@ -75,7 +75,7 @@ impl OrderBook {
         };
         let level_order_count = {
             let level = side.get_mut(&old_price).unwrap();
-            level.qty -= old_qty;
+            level.qty -= old_qty as u64;
             level.order_count -= 1;
             self.user_orders.remove(&e.order_id);
             level.order_count
@@ -84,7 +84,7 @@ impl OrderBook {
             side.remove(&old_price);
         }
     }
-    fn handle_update(&mut self, e: L3Event, old_id: OrderId, qty: u64, price: Price) {
+    fn handle_update(&mut self, e: L3Event, old_id: OrderId, qty: OrderQty, price: Price) {
         let old_order = match self.user_orders.get_mut(&old_id) {
             Some(o) => o,
             None => {
@@ -99,7 +99,7 @@ impl OrderBook {
             OrderSide::Ask => self.ask_levels.entry(price).or_default(),
             OrderSide::Bid => self.bid_levels.entry(price).or_default(),
         };
-        new_level.qty += qty;
+        new_level.qty += qty as u64;
         new_level.order_count += 1;
 
         let old_side = match old_order.side {
@@ -108,7 +108,7 @@ impl OrderBook {
         };
         // SAFETY: A valid update will always have an old order on the price level it is expected to be on
         let old_level = old_side.get_mut(&old_order.price).unwrap();
-        old_level.qty -= old_order.qty;
+        old_level.qty -= old_order.qty as u64;
         old_level.order_count -= 1;
         if old_level.order_count == 0 {
             old_side.remove(&old_order.price);
@@ -145,7 +145,7 @@ impl OrderBook {
         };
         let level_order_count = {
             let level = side.get_mut(&e.price).unwrap();
-            level.qty -= e.quantity;
+            level.qty -= e.quantity as u64;
             maker.qty -= e.quantity;
             if maker.qty == 0 {
                 level.order_count -= 1;

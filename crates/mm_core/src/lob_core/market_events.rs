@@ -1,7 +1,7 @@
 use crate::{
     fix_core::messages::execution_report,
     lob_core::{
-        OrderId, Price, Timestamp,
+        OrderId, OrderQty, Price, Timestamp,
         market_orders::{LimitOrder, Order, OrderSide, OrderType},
     },
 };
@@ -45,7 +45,7 @@ impl L3Event {
     pub fn new_update(order: Order) -> Self {
         Self::new(order, L3EventExtra::None)
     }
-    pub fn new_cancel(order: Order, old_qty: u64) -> Self {
+    pub fn new_cancel(order: Order, old_qty: OrderQty) -> Self {
         Self::new(order, L3EventExtra::Cancel(old_qty))
     }
 }
@@ -53,7 +53,7 @@ impl L3Event {
 /// Stores quantity for canceled events
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum L3EventExtra {
-    Cancel(u64),
+    Cancel(OrderQty),
     None,
 }
 
@@ -62,7 +62,7 @@ pub enum L3EventExtra {
 #[derive(Copy, Clone, Debug)]
 pub struct TradeEvent {
     pub price: Price,
-    pub quantity: u64,
+    pub quantity: OrderQty,
     pub aggressor_side: OrderSide,
     pub maker_id: OrderId,
 }
@@ -71,12 +71,12 @@ pub struct TradeEvent {
 /// For example, after a trade, these will be sent to the two clients that executed the trade
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ClientEventType {
-    Accepted,
+    Accepted(OrderQty),
     Rejected,
     Updated,
     Canceled,
     // Contains the unfilled quantity
-    PartiallyFilled(u64),
+    PartiallyFilled(OrderQty),
     Filled,
 }
 
@@ -96,6 +96,7 @@ pub struct ClientEvent {
     pub id: u64,
     pub timestamp: Timestamp,
     pub order_id: OrderId,
+    pub order_side: OrderSide,
     pub kind: ClientEventType,
     pub liquidity_flag: LiquidityFlag,
 }
@@ -129,7 +130,7 @@ impl MarketEvent {
             kind: MarketEventType::L3(L3Event::new_update(order)),
         }
     }
-    pub fn new_cancel(id: u16, timestamp: Timestamp, order: Order, old_qty: u64) -> Self {
+    pub fn new_cancel(id: u16, timestamp: Timestamp, order: Order, old_qty: OrderQty) -> Self {
         Self {
             id,
             timestamp,

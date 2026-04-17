@@ -1,4 +1,4 @@
-use crate::lob_core::{OrderId, Price, Timestamp};
+use crate::lob_core::{OrderId, OrderQty, Price, Timestamp};
 use std::cmp::Ordering;
 
 #[repr(u8)]
@@ -62,15 +62,15 @@ impl Ord for Order {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderType {
     Limit {
-        qty: u64,
+        qty: OrderQty,
         price: Price,
     },
     Market {
-        qty: u64,
+        qty: OrderQty,
     },
     Update {
         old_id: OrderId,
-        qty: u64,
+        qty: OrderQty,
         price: Price,
     },
     Cancel,
@@ -81,7 +81,7 @@ pub struct LimitOrder {
     pub order_id: OrderId,
     pub side: OrderSide,
     pub status: OrderStatus,
-    pub qty: u64,
+    pub qty: OrderQty,
     pub price: Price,
 }
 
@@ -104,7 +104,7 @@ impl LimitOrder {
                 qty,
                 price: match order.side {
                     OrderSide::Ask => 0,
-                    OrderSide::Bid => u64::MAX,
+                    OrderSide::Bid => OrderQty::MAX,
                 },
             },
             OrderType::Update {
