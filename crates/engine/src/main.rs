@@ -94,6 +94,16 @@ struct Args {
     /// Attempt to run the simulation in real-time by attempting to keep sim time and real time synchronized
     #[arg(long)]
     real_time: bool,
+
+    /// Log errors and initialization steps to stdout
+    #[arg(long, default_value_t = false)]
+    logging: bool,
+
+    /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
+    ///
+    /// Output is in CSV format: step_count,run_time(nanosec),sim_time(nanosec)
+    #[arg(long, default_value_t = false)]
+    benchmark: bool,
 }
 
 const BUFFER_SIZE: usize = 1 << 24;
@@ -112,7 +122,9 @@ fn main() {
 
     ctrlc::set_handler(move || {
         running_handler.store(false, Ordering::Relaxed);
-        println!("Simulation terminated, stopping...");
+        if args.logging {
+            println!("Simulation terminated, stopping...");
+        }
     })
     .unwrap();
 
@@ -121,7 +133,9 @@ fn main() {
         HeapRb::<MarketEvent>::new(BUFFER_SIZE).split();
     let (client_event_prod, mut client_event_cons) =
         HeapRb::<ClientEvent>::new(BUFFER_SIZE).split();
-    println!("Initialized order queues");
+    if args.logging {
+        println!("Initialized order queues");
+    }
 
     let mut sim = Simulator::new(
         PoissonSource::new(
@@ -141,7 +155,9 @@ fn main() {
         rng.clone(),
         args.real_time,
     );
-    println!("Spawned simulator");
+    if args.logging {
+        println!("Spawned simulator");
+    }
 
     let mut mold_engine = MoldEngine::start(Arc::clone(&running));
     let broadcast_running = Arc::clone(&running);
@@ -152,7 +168,9 @@ fn main() {
             }
         }
     });
-    println!("MoldEngine started");
+    if args.logging {
+        println!("MoldEngine started");
+    }
 
     let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
     let gateway_running = Arc::clone(&running);
@@ -161,7 +179,13 @@ fn main() {
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
-                while user_order_prod.try_push(order).is_err() {}
+                while user_order_prod.try_push(order).is_err() {
+                    if args.logging {
+                        println!(
+                            "OrderGateway failed to push an event into processing queue, buffer may be full"
+                        );
+                    }
+                }
             }
             if let Some(client_event) = client_event_cons.try_pop() {
                 let exec_report = ExecutionReport::from(client_event);
@@ -173,11 +197,12 @@ fn main() {
             }
         }
     });
-    println!("FixEngine started");
-
-    let time = Instant::now();
-    println!("Running...");
+    if args.logging {
+        println!("FixEngine started");
+        println!("Running...");
+    }
     let mut sim_step_count: u128 = 0;
+    let time = Instant::now();
     match args.count {
         Some(range) => {
             for _ in 0..range {
@@ -200,18 +225,22 @@ fn main() {
     let elapsed = time.elapsed();
     running.store(false, Ordering::Relaxed);
 
-    println!("Job finished");
-    println!("Simulation covered {} steps", sim_step_count);
-    println!(
-        "Sim time: {}s ({}ns)",
-        sim.time() as f64 / 1_000_000_000.0,
-        sim.time()
-    );
-    println!(
-        "Real time: {}s ({}ns)",
-        elapsed.as_nanos() as f64 / 1_000_000_000.0,
-        elapsed.as_nanos()
-    );
+    if args.logging && !args.benchmark {
+        println!("Job finished");
+        println!("Simulation covered {} steps", sim_step_count);
+        println!(
+            "Sim time: {}s ({}ns)",
+            sim.time() as f64 / 1_000_000_000.0,
+            sim.time()
+        );
+        println!(
+            "Real time: {}s ({}ns)",
+            elapsed.as_nanos() as f64 / 1_000_000_000.0,
+            elapsed.as_nanos()
+        );
+    } else if (args.benchmark) {
+        println!("{},{},{}", sim_step_count, elapsed.as_nanos(), sim.time());
+    }
 
     let _ = event_broadcast_thread.join();
     let _ = order_gateway_thread.join();
