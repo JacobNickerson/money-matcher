@@ -21,7 +21,7 @@ pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     order_generator: E,
     user_orders: HeapCons<Order>,
     id_counter: u64,
-    latency_settings: HashMap<u64, LatencyConfig>, // TODO: type def for identifier?
+    latency_settings: LatencyConfig,
     rng: R,
     real_time: Instant,
     is_real_time: bool,
@@ -31,6 +31,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         order_generator: E,
         event_sink: S,
         user_orders: HeapCons<Order>,
+        latency_settings: LatencyConfig,
         rng: R,
         is_real_time: bool,
     ) -> Self {
@@ -38,7 +39,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             time: 0,
             limit_order_book: OrderBook::new(event_sink),
             orders: BinaryHeap::with_capacity(SIM_HEAP_CAPACITY),
-            latency_settings: HashMap::new(),
+            latency_settings,
             order_generator,
             user_orders,
             id_counter: 0,
@@ -65,12 +66,14 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     fn drain_user_orders(&mut self, ingress_size: usize) {
         for _ in 0..ingress_size {
             if let Some(mut order) = self.user_orders.try_pop() {
-                let ind: u64 = 0; // TODO: Attach some type of session identifier to each user message
-                let cfg = self.latency_settings[&ind];
-                order.timestamp = self.time + cfg.latency + cfg.jitter.sample(&mut self.rng);
+                order.timestamp = self.time
+                    + self.latency_settings.latency
+                    + self.latency_settings.jitter.sample(&mut self.rng);
                 order.order_id = self.id_counter;
                 self.id_counter += 1;
                 self.orders.push(order)
+            } else {
+                break;
             }
         }
     }
@@ -104,9 +107,12 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_generator::{
-        event_source::PoissonSource, order_generators::GaussianOrderGenerator,
-        rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
+    use crate::{
+        data_generator::{
+            event_source::PoissonSource, order_generators::GaussianOrderGenerator,
+            rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
+        },
+        simulator::latency_config::SimJitter,
     };
     use mm_core::lob_core::market_events::{ClientEvent, MarketEvent, NullFeeds, SingleEventFeed};
     use rand::SeedableRng;
@@ -126,6 +132,10 @@ mod tests {
             ),
             NullFeeds {}, // use this since nothing is draining the market events
             user_order_cons,
+            LatencyConfig {
+                latency: 0,
+                jitter: SimJitter::None,
+            },
             ChaCha8Rng::seed_from_u64(67),
             false,
         );
@@ -160,6 +170,10 @@ mod tests {
             ),
             SingleEventFeed::new(market_event_prod, client_event_prod),
             user_order_cons,
+            LatencyConfig {
+                latency: 0,
+                jitter: SimJitter::None,
+            },
             ChaCha8Rng::seed_from_u64(67),
             false,
         );
