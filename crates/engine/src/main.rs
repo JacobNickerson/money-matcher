@@ -100,6 +100,7 @@ struct Args {
     logging: bool,
 
     /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
+    ///
     /// Output is in CSV format: step_count,run_time(nanosec),sim_time(nanosec)
     #[arg(long, default_value_t = false)]
     benchmark: bool,
