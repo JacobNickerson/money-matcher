@@ -13,8 +13,8 @@ use std::{
 
 /// A multicast client that joins L3 and Trade multicast groups to receive and merge market events.
 pub struct MoldClient {
-    pub l3_rx: Mutex<HeapCons<MarketEvent>>,
-    pub trade_rx: Mutex<HeapCons<MarketEvent>>,
+    pub l3_rx: HeapCons<MarketEvent>,
+    pub trade_rx: HeapCons<MarketEvent>,
     next_l3: Option<MarketEvent>,
     next_trade: Option<MarketEvent>,
     expected_tracking_number: u16,
@@ -38,8 +38,8 @@ impl MoldClient {
         );
 
         Self {
-            l3_rx: Mutex::new(l3_rx),
-            trade_rx: Mutex::new(trade_rx),
+            l3_rx: l3_rx,
+            trade_rx: trade_rx,
             next_l3: None,
             next_trade: None,
             expected_tracking_number: 1,
@@ -86,13 +86,11 @@ impl MoldClient {
     /// Retrieves the next market event from the combined L3 and Trade feeds, sorted by tracking number to ensure correct processing order.
     pub fn next_event(&mut self) -> Option<MarketEvent> {
         if self.next_l3.is_none() {
-            let mut next = self.l3_rx.lock().unwrap();
-            self.next_l3 = next.try_pop();
+            self.next_l3 = self.l3_rx.try_pop();
         }
 
         if self.next_trade.is_none() {
-            let mut next = self.trade_rx.lock().unwrap();
-            self.next_trade = next.try_pop();
+            self.next_trade = self.trade_rx.try_pop();
         }
 
         let event = if let Some(l3) = self.next_l3 {
