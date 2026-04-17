@@ -1,6 +1,6 @@
 use bytes::buf::Limit;
 use mm_core::lob_core::{
-    OrderId, Price, Timestamp,
+    OrderId, OrderQty, Price, Timestamp,
     market_events::{
         ClientEvent, ClientEventType, EventSink, L3Event, LiquidityFlag, MarketEvent,
         MarketEventType, TradeEvent,
@@ -36,7 +36,7 @@ impl PriceLevel {
                     return Some(order_id);
                 } else {
                     self.orders.pop_front();
-                    self.total_qty -= order.qty;
+                    self.total_qty -= order.qty as u64;
                     entry.remove();
                 }
             }
@@ -59,7 +59,7 @@ impl PriceLevel {
     /// Updates cached values
     pub fn push(&mut self, order: &LimitOrder) {
         self.orders.push_back(order.order_id);
-        self.total_qty += order.qty;
+        self.total_qty += order.qty as u64;
     }
 }
 
@@ -178,10 +178,10 @@ impl<T: EventSink> OrderBook<T> {
     ) -> Option<LimitOrder> {
         let mut order = LimitOrder::new(original_order);
         if order.qty == 0 {
-            self.reject_order(original_order.order_id, time);
+            self.reject_order(original_order, time);
             return None;
         }
-        self.accept_order(original_order, time);
+        self.accept_order(original_order, time, order.qty);
         self.match_order(&mut order, time);
         if order.qty == 0 {
             return Some(order);
@@ -195,11 +195,11 @@ impl<T: EventSink> OrderBook<T> {
         let _ = self.market_event_counter.wrapping_add(1u16);
         let level = match order.side {
             OrderSide::Bid => {
-                self.total_bids += order.qty;
+                self.total_bids += order.qty as u64;
                 self.bid_orders.entry(order.price).or_default()
             }
             OrderSide::Ask => {
-                self.total_asks += order.qty;
+                self.total_asks += order.qty as u64;
                 self.ask_orders.entry(order.price).or_default()
             }
         };
@@ -221,12 +221,12 @@ impl<T: EventSink> OrderBook<T> {
         let old_order = match self.orders.get_mut(&old_id) {
             Some(old_order) => old_order,
             None => {
-                self.reject_order(order.order_id, time);
+                self.reject_order(order, time);
                 return None;
             }
         };
         if old_order.status == OrderStatus::Canceled || old_order.qty == 0 {
-            self.reject_order(order.order_id, time);
+            self.reject_order(order, time);
             return None;
         }
 
@@ -240,6 +240,7 @@ impl<T: EventSink> OrderBook<T> {
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
+            order_side: order.side,
             kind: ClientEventType::Updated,
             liquidity_flag: LiquidityFlag::Invalid,
         });
@@ -248,15 +249,15 @@ impl<T: EventSink> OrderBook<T> {
         // Cancelling the previous
         let level = match old_order.side {
             OrderSide::Ask => {
-                self.total_asks -= old_order.qty;
+                self.total_asks -= old_order.qty as u64;
                 self.ask_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
             }
             OrderSide::Bid => {
-                self.total_bids -= old_order.qty;
+                self.total_bids -= old_order.qty as u64;
                 self.bid_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
             }
         };
-        level.total_qty -= old_order.qty;
+        level.total_qty -= old_order.qty as u64;
         old_order.qty = 0;
         old_order.status = OrderStatus::Canceled;
 
@@ -268,11 +269,11 @@ impl<T: EventSink> OrderBook<T> {
         }
         let level = match order.side {
             OrderSide::Bid => {
-                self.total_bids += order.qty;
+                self.total_bids += order.qty as u64;
                 self.bid_orders.entry(order.price).or_default()
             }
             OrderSide::Ask => {
-                self.total_asks += order.qty;
+                self.total_asks += order.qty as u64;
                 self.ask_orders.entry(order.price).or_default()
             }
         };
@@ -298,12 +299,12 @@ impl<T: EventSink> OrderBook<T> {
         let old_order = match self.orders.get_mut(&old_id) {
             Some(old_order) => old_order,
             None => {
-                self.reject_order(order.order_id, time);
+                self.reject_order(order, time);
                 return None;
             }
         };
         if old_order.status == OrderStatus::Canceled || old_order.qty == 0 {
-            self.reject_order(order.order_id, time);
+            self.reject_order(order, time);
             return None;
         }
 
@@ -318,6 +319,7 @@ impl<T: EventSink> OrderBook<T> {
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
+            order_side: order.side,
             kind: ClientEventType::Canceled,
             liquidity_flag: LiquidityFlag::Invalid,
         });
@@ -325,16 +327,16 @@ impl<T: EventSink> OrderBook<T> {
 
         let level = match old_order.side {
             OrderSide::Ask => {
-                self.total_asks -= old_order.qty;
+                self.total_asks -= old_order.qty as u64;
                 self.ask_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
             }
             OrderSide::Bid => {
-                self.total_bids -= old_order.qty;
+                self.total_bids -= old_order.qty as u64;
                 self.bid_orders.get_mut(&old_order.price).unwrap() // If a valid old order is passed, then the price level should always exist
             }
         };
 
-        level.total_qty -= old_order.qty;
+        level.total_qty -= old_order.qty as u64;
         old_order.qty = 0;
         old_order.status = OrderStatus::Canceled;
 
@@ -403,7 +405,7 @@ impl<T: EventSink> OrderBook<T> {
                     level.pop_front();
                     continue;
                 }
-                let trade_volume = std::cmp::min(maker.qty, taker.qty);
+                let trade_volume: OrderQty = std::cmp::min(maker.qty, taker.qty);
                 maker.qty -= trade_volume;
                 taker.qty -= trade_volume;
 
@@ -424,6 +426,7 @@ impl<T: EventSink> OrderBook<T> {
                         id: *client_event_counter,
                         timestamp: time,
                         order_id: maker_id,
+                        order_side: maker.side,
                         kind: ClientEventType::Filled,
                         liquidity_flag: LiquidityFlag::Maker,
                     });
@@ -434,6 +437,7 @@ impl<T: EventSink> OrderBook<T> {
                         id: *client_event_counter,
                         timestamp: time,
                         order_id: maker_id,
+                        order_side: maker.side,
                         kind: ClientEventType::PartiallyFilled(maker.qty),
                         liquidity_flag: LiquidityFlag::Maker,
                     });
@@ -449,6 +453,7 @@ impl<T: EventSink> OrderBook<T> {
             id: *client_event_counter,
             timestamp: time,
             order_id: taker.order_id,
+            order_side: taker.side,
             kind: match taker.qty == 0 {
                 true => ClientEventType::Filled,
                 false => ClientEventType::PartiallyFilled(taker.qty),
@@ -459,7 +464,7 @@ impl<T: EventSink> OrderBook<T> {
     }
 
     /// Gets the total quantity at a given price level
-    fn get_qty(&self, price: u64, side: OrderSide) -> u64 {
+    fn get_qty(&self, price: Price, side: OrderSide) -> u64 {
         match side {
             OrderSide::Ask => self
                 .ask_orders
@@ -481,7 +486,7 @@ impl<T: EventSink> OrderBook<T> {
     ) -> Option<LimitOrder> {
         let mut market_order = LimitOrder::new(order);
         if market_order.qty == 0 {
-            self.reject_order(order.order_id, time);
+            self.reject_order(order, time);
             return None;
         }
         self.match_order(&mut market_order, time);
@@ -496,11 +501,12 @@ impl<T: EventSink> OrderBook<T> {
     }
 
     /// Emits a client event rejecting an order
-    fn reject_order(&mut self, order_id: OrderId, time: Timestamp) {
+    fn reject_order(&mut self, order: Order, time: Timestamp) {
         self.event_sink.push_client_event(ClientEvent {
             id: self.client_event_counter,
             timestamp: time,
-            order_id,
+            order_id: order.order_id,
+            order_side: order.side,
             kind: ClientEventType::Rejected,
             liquidity_flag: LiquidityFlag::Invalid,
         });
@@ -508,12 +514,13 @@ impl<T: EventSink> OrderBook<T> {
     }
 
     /// Emits a client event accepting an order
-    fn accept_order(&mut self, order: Order, time: Timestamp) {
+    fn accept_order(&mut self, order: Order, time: Timestamp, qty: u32) {
         self.event_sink.push_client_event(ClientEvent {
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
-            kind: ClientEventType::Accepted,
+            order_side: order.side,
+            kind: ClientEventType::Accepted(qty),
             liquidity_flag: LiquidityFlag::Invalid,
         });
         self.client_event_counter += 1;
@@ -609,7 +616,7 @@ mod tests {
                 i,
                 OrderType::Limit {
                     qty: 5,
-                    price: 100 + 5 * i,
+                    price: 100 + 5 * i as Price,
                 },
             ));
         }
@@ -683,7 +690,7 @@ mod tests {
                 i,
                 OrderType::Limit {
                     qty: 5,
-                    price: 100 + 5 * i,
+                    price: 100 + 5 * i as Price,
                 },
             ));
         }
@@ -701,7 +708,7 @@ mod tests {
                 i,
                 OrderType::Limit {
                     qty: 10,
-                    price: 100 + (i % 10),
+                    price: 100 + (i % 10) as Price,
                 },
             ));
         }
