@@ -203,6 +203,7 @@ impl ReceiverHandler {
                     return None;
                 }
 
+                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);
@@ -211,6 +212,7 @@ impl ReceiverHandler {
                 let price = u32::from_be_bytes(message_data[32..36].try_into().ok()?);
 
                 Some(MarketEvent {
+                    id,
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: order_reference_number,
@@ -233,12 +235,14 @@ impl ReceiverHandler {
                     return None;
                 }
 
+                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let maker_id = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
                 let execution_price = u32::from_be_bytes(message_data[32..36].try_into().ok()?);
 
                 Some(MarketEvent {
+                    id,
                     timestamp,
                     kind: MarketEventType::Trade(TradeEvent {
                         quantity: executed_shares.into(),
@@ -253,6 +257,7 @@ impl ReceiverHandler {
                     return None;
                 }
 
+                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let original_order_ref = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let new_order_ref = u64::from_be_bytes(message_data[19..27].try_into().ok()?);
@@ -260,6 +265,7 @@ impl ReceiverHandler {
                 let price = u32::from_be_bytes(message_data[31..35].try_into().ok()?);
 
                 Some(MarketEvent {
+                    id,
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: new_order_ref,
@@ -279,19 +285,21 @@ impl ReceiverHandler {
                     return None;
                 }
 
+                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let old_order_qty = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
 
                 Some(MarketEvent {
+                    id,
                     timestamp,
                     kind: MarketEventType::L3(L3Event {
                         order_id: order_reference_number,
                         side: OrderSide::Ask,
                         timestamp,
                         kind: OrderType::Cancel,
-                        extra: L3EventExtra::Cancel(old_order_qty as u64), // TODO: Need to update all byte sizes to be consistent between modules
+                        extra: L3EventExtra::Cancel(old_order_qty),
                     }),
                 })
             }

@@ -1,4 +1,6 @@
 use clap::Parser;
+use mm_core::fix_core::messages::execution_report::ExecutionReport;
+use mm_core::fix_core::messages::{FIXEvent, FIXPayload, ReportMessage};
 use mm_core::lob_core::market_events::{ClientEvent, EventSink, MarketEventType, SingleEventFeed};
 use mm_core::lob_core::{market_events::MarketEvent, market_orders::Order};
 use rand::{Rng, SeedableRng};
@@ -94,6 +96,8 @@ struct Args {
     real_time: bool,
 }
 
+const BUFFER_SIZE: usize = 1 << 24;
+
 fn main() {
     let args = Args::parse();
 
@@ -112,11 +116,11 @@ fn main() {
     })
     .unwrap();
 
-    let (mut user_order_prod, mut user_order_cons) = HeapRb::<Order>::new(1 << 24).split();
-    let (mut market_event_prod, mut market_event_cons) =
-        HeapRb::<MarketEvent>::new(1 << 24).split();
-    let (mut client_event_prod, mut client_event_cons) =
-        HeapRb::<ClientEvent>::new(1 << 24).split();
+    let (mut user_order_prod, user_order_cons) = HeapRb::<Order>::new(BUFFER_SIZE).split();
+    let (market_event_prod, mut market_event_cons) =
+        HeapRb::<MarketEvent>::new(BUFFER_SIZE).split();
+    let (client_event_prod, mut client_event_cons) =
+        HeapRb::<ClientEvent>::new(BUFFER_SIZE).split();
     println!("Initialized order queues");
 
     let mut sim = Simulator::new(
@@ -158,6 +162,14 @@ fn main() {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
                 while user_order_prod.try_push(order).is_err() {}
+            }
+            if let Some(client_event) = client_event_cons.try_pop() {
+                let exec_report = ExecutionReport::from(client_event);
+                let msg = FIXEvent {
+                    comp_id: "".into(),
+                    payload: FIXPayload::Report(ReportMessage::ExecutionReport(exec_report)),
+                };
+                handler.send_message(msg);
             }
         }
     });

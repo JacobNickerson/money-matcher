@@ -414,12 +414,12 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
 
         let order = Order {
-            order_id: 1 as u64,
+            order_id: 1,
             side: OrderSide::Bid,
-            timestamp: 5 as u64,
+            timestamp: 5,
             kind: OrderType::Limit {
-                qty: 10 as u64,
-                price: 666 as u64,
+                qty: 10,
+                price: 666,
             },
         };
 

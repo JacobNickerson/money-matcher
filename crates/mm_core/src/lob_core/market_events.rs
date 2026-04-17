@@ -1,7 +1,7 @@
 use crate::{
     fix_core::messages::execution_report,
     lob_core::{
-        OrderId, Price, Timestamp,
+        OrderId, OrderQty, Price, Timestamp,
         market_orders::{LimitOrder, Order, OrderSide, OrderType},
     },
 };
@@ -45,7 +45,7 @@ impl L3Event {
     pub fn new_update(order: Order) -> Self {
         Self::new(order, L3EventExtra::None)
     }
-    pub fn new_cancel(order: Order, old_qty: u64) -> Self {
+    pub fn new_cancel(order: Order, old_qty: OrderQty) -> Self {
         Self::new(order, L3EventExtra::Cancel(old_qty))
     }
 }
@@ -53,7 +53,7 @@ impl L3Event {
 /// Stores quantity for canceled events
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum L3EventExtra {
-    Cancel(u64),
+    Cancel(OrderQty),
     None,
 }
 
@@ -62,7 +62,7 @@ pub enum L3EventExtra {
 #[derive(Copy, Clone, Debug)]
 pub struct TradeEvent {
     pub price: Price,
-    pub quantity: u64,
+    pub quantity: OrderQty,
     pub aggressor_side: OrderSide,
     pub maker_id: OrderId,
 }
@@ -71,12 +71,12 @@ pub struct TradeEvent {
 /// For example, after a trade, these will be sent to the two clients that executed the trade
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ClientEventType {
-    Accepted,
+    Accepted(OrderQty),
     Rejected,
     Updated,
     Canceled,
     // Contains the unfilled quantity
-    PartiallyFilled(u64),
+    PartiallyFilled(OrderQty),
     Filled,
 }
 
@@ -93,8 +93,10 @@ pub enum LiquidityFlag {
 /// For example, if a trade is made then the owner of the filled order will be sent a ClientEvent
 #[derive(Copy, Clone, Debug)]
 pub struct ClientEvent {
+    pub id: u64,
     pub timestamp: Timestamp,
     pub order_id: OrderId,
+    pub order_side: OrderSide,
     pub kind: ClientEventType,
     pub liquidity_flag: LiquidityFlag,
 }
@@ -102,27 +104,35 @@ pub struct ClientEvent {
 /// Generic market event struct, encompasses all types of market events
 #[derive(Copy, Clone, Debug)]
 pub struct MarketEvent {
+    pub id: u16,
     pub timestamp: Timestamp,
     pub kind: MarketEventType,
 }
 impl MarketEvent {
-    pub fn new(timestamp: Timestamp, kind: MarketEventType) -> Self {
-        Self { timestamp, kind }
-    }
-    pub fn new_limit(timestamp: Timestamp, order: LimitOrder) -> Self {
+    pub fn new(id: u16, timestamp: Timestamp, kind: MarketEventType) -> Self {
         Self {
+            id,
+            timestamp,
+            kind,
+        }
+    }
+    pub fn new_limit(id: u16, timestamp: Timestamp, order: LimitOrder) -> Self {
+        Self {
+            id,
             timestamp,
             kind: MarketEventType::L3(L3Event::new_limit(order, timestamp)),
         }
     }
-    pub fn new_update(timestamp: Timestamp, order: Order) -> Self {
+    pub fn new_update(id: u16, timestamp: Timestamp, order: Order) -> Self {
         Self {
+            id,
             timestamp,
             kind: MarketEventType::L3(L3Event::new_update(order)),
         }
     }
-    pub fn new_cancel(timestamp: Timestamp, order: Order, old_qty: u64) -> Self {
+    pub fn new_cancel(id: u16, timestamp: Timestamp, order: Order, old_qty: OrderQty) -> Self {
         Self {
+            id,
             timestamp,
             kind: MarketEventType::L3(L3Event::new_cancel(order, old_qty)),
         }

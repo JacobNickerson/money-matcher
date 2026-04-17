@@ -1,7 +1,7 @@
 use circular_buffer::CircularBuffer;
 use fastrand;
 use mm_core::lob_core::{
-    OrderId, Price,
+    OrderId, OrderQty, Price,
     market_orders::{Order, OrderSide, OrderType},
 };
 use rand::Rng;
@@ -18,7 +18,7 @@ pub trait OrderGenerator {
     ) -> Order;
 }
 
-const QUANTITIES: [u64; 5] = [1, 2, 5, 10, 20];
+const QUANTITIES: [OrderQty; 5] = [1, 2, 5, 10, 20];
 
 pub struct GaussianOrderGenerator {
     dist: Normal<f64>,
@@ -141,10 +141,10 @@ mod tests {
     #[test]
     fn test_price_mean() {
         let orders = generate_limit_orders(1000000);
-        let mut total_price: Price = 0;
+        let mut total_price: u64 = 0;
         for order in &orders {
             if let OrderType::Limit { qty: _, price } = order.kind {
-                total_price += price;
+                total_price += price as u64;
             }
         }
         let avg_price = total_price as f64 / 1000000.0;

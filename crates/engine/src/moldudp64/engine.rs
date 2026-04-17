@@ -233,6 +233,7 @@ mod tests {
             i = i + 1;
 
             let limit_event = MarketEvent {
+                id: 0,
                 timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
@@ -255,6 +256,7 @@ mod tests {
             i = i + 1;
 
             let cancel_event = MarketEvent {
+                id: 0,
                 timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
@@ -273,6 +275,7 @@ mod tests {
             i = i + 1;
 
             let update_event = MarketEvent {
+                id: 0,
                 timestamp: i,
                 kind: MarketEventType::L3(L3Event {
                     order_id: i,
@@ -280,8 +283,8 @@ mod tests {
                     side: OrderSide::Ask,
                     kind: OrderType::Update {
                         old_id: i - 1,
-                        qty: i,
-                        price: i,
+                        qty: i as u32,
+                        price: i as u32,
                     },
                     extra: L3EventExtra::None,
                 }),
@@ -295,9 +298,10 @@ mod tests {
             i = i + 1;
 
             let trade_event = MarketEvent {
+                id: 0,
                 kind: MarketEventType::Trade(TradeEvent {
-                    price: i,
-                    quantity: i,
+                    price: i as u32,
+                    quantity: i as u32,
                     aggressor_side: OrderSide::Ask,
                     maker_id: i,
                 }),

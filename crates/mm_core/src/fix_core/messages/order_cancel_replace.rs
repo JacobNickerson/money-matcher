@@ -10,7 +10,10 @@ use crate::{
             types::{CustomerOrFirm, OpenClose, OrdType, PutOrCall, Side},
         },
     },
-    lob_core::market_orders::{Order, OrderSide, OrderType},
+    lob_core::{
+        OrderQty, Price,
+        market_orders::{Order, OrderSide, OrderType},
+    },
 };
 use pyo3::pyclass;
 use pyo3_stub_gen::derive::gen_stub_pyclass;
@@ -60,7 +63,7 @@ impl FIXBusinessMessage for OrderCancelReplace {
             kind: OrderType::Update {
                 old_id: self.orig_cl_ord_id,
                 qty: self.qty.into(),
-                price: 0_u64,
+                price: 0 as Price,
             },
         }
     }
@@ -70,7 +73,7 @@ impl FIXBusinessMessage for OrderCancelReplace {
         Self: Sized,
     {
         let (old_id, qty) = match order.kind {
-            OrderType::Update { old_id, qty, .. } => (old_id, qty as u32),
+            OrderType::Update { old_id, qty, .. } => (old_id, qty as OrderQty),
             _ => return Err("Unsupported order kind"),
         };
 
