@@ -1,12 +1,20 @@
-use crate::fix_core::{
-    helpers::get_timestamp,
-    iterator::FixIterator,
-    messages::{
-        FIXMessage, TAG_CL_ORD_ID, TAG_CUM_QTY, TAG_CUSTOMER_OR_FIRM, TAG_EXEC_ID,
-        TAG_EXEC_TRANS_TYPE, TAG_EXEC_TYPE, TAG_LEAVES_QTY, TAG_MATURITY_DATE, TAG_OPEN_CLOSE,
-        TAG_ORD_STATUS, TAG_ORDER_ID, TAG_ORDER_QTY, TAG_PUT_OR_CALL, TAG_SECURITY_ID,
-        TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL, TAG_TRANSACT_TIME,
-        types::{CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side},
+use crate::{
+    fix_core::{
+        helpers::get_timestamp,
+        iterator::FixIterator,
+        messages::{
+            FIXMessage, TAG_CL_ORD_ID, TAG_CUM_QTY, TAG_CUSTOMER_OR_FIRM, TAG_EXEC_ID,
+            TAG_EXEC_TRANS_TYPE, TAG_EXEC_TYPE, TAG_LEAVES_QTY, TAG_MATURITY_DATE, TAG_OPEN_CLOSE,
+            TAG_ORD_STATUS, TAG_ORDER_ID, TAG_ORDER_QTY, TAG_PUT_OR_CALL, TAG_SECURITY_ID,
+            TAG_SECURITY_TYPE, TAG_SIDE, TAG_STRIKE_PRICE, TAG_SYMBOL, TAG_TRANSACT_TIME,
+            types::{
+                CustomerOrFirm, ExecTransType, ExecType, OpenClose, OrdStatus, PutOrCall, Side,
+            },
+        },
+    },
+    lob_core::{
+        market_events::{ClientEvent, ClientEventType},
+        market_orders::OrderSide,
     },
 };
 use pyo3::pyclass;
@@ -45,6 +53,87 @@ pub struct ExecutionReport {
     pub strike_price: u32,
     pub customer_or_firm: CustomerOrFirm,
     pub maturity_date: String,
+}
+
+impl From<ClientEvent> for ExecutionReport {
+    fn from(event: ClientEvent) -> ExecutionReport {
+        if event.kind == ClientEventType::Rejected {
+            return ExecutionReport {
+                cl_ord_id: 0,
+                cum_qty: 0,
+                exec_id: "".to_string(),
+                exec_trans_type: ExecTransType::Status,
+                order_id: "".to_string(),
+                order_qty: 0,
+                ord_status: OrdStatus::Rejected,
+                security_id: "".to_string(),
+                side: Side::Buy,
+                symbol: "".to_string(), // PLACEHOLDER
+                open_close: OpenClose::Close,
+                exec_type: ExecType::Rejected,
+                leaves_qty: 0,
+                security_type: "".to_string(),
+                put_or_call: PutOrCall::Call,
+                strike_price: 0,
+                customer_or_firm: CustomerOrFirm::Customer, // PLACEHOLDER
+                maturity_date: "".to_string(),
+            };
+        }
+        ExecutionReport {
+            cl_ord_id: 0, // TODO: PLACEHOLDER
+            cum_qty: match event.kind {
+                ClientEventType::Accepted(qty) => qty,
+                ClientEventType::PartiallyFilled(qty) => qty,
+                _ => 0,
+            },
+            exec_id: event.id.to_string(),
+            exec_trans_type: match event.kind {
+                ClientEventType::Accepted(_) => ExecTransType::New,
+                ClientEventType::Rejected => ExecTransType::New,
+                ClientEventType::Updated => ExecTransType::New,
+                ClientEventType::Canceled => ExecTransType::New,
+                ClientEventType::PartiallyFilled(_) => ExecTransType::New,
+                ClientEventType::Filled => ExecTransType::New,
+            },
+            order_id: event.order_id.to_string(),
+            order_qty: match event.kind {
+                ClientEventType::Accepted(qty) => qty,
+                _ => 0,
+            },
+            ord_status: match event.kind {
+                ClientEventType::Accepted(_) => OrdStatus::New,
+                ClientEventType::Canceled => OrdStatus::Canceled,
+                ClientEventType::Filled => OrdStatus::Filled,
+                ClientEventType::PartiallyFilled(_) => OrdStatus::PartiallyFilled,
+                ClientEventType::Updated => OrdStatus::Replaced,
+                ClientEventType::Rejected => OrdStatus::Rejected,
+            },
+            security_id: "".to_string(), // PLACEHOLDER, NOTE: We only support one instrument type
+            side: match event.order_side {
+                OrderSide::Bid => Side::Buy,
+                OrderSide::Ask => Side::Sell,
+            },
+            symbol: "".to_string(),
+            open_close: OpenClose::Open, // TODO: Placeholder
+            exec_type: match event.kind {
+                ClientEventType::Accepted(_) => ExecType::New,
+                ClientEventType::Canceled => ExecType::Canceled,
+                ClientEventType::Filled => ExecType::Filled,
+                ClientEventType::PartiallyFilled(_) => ExecType::PartiallyFilled,
+                ClientEventType::Updated => ExecType::Replace,
+                ClientEventType::Rejected => ExecType::Rejected,
+            },
+            leaves_qty: match event.kind {
+                ClientEventType::PartiallyFilled(qty) => qty,
+                _ => 0,
+            },
+            security_type: "Stock".to_string(), // PLACEHOLDER, NOTE: We only support one instrument type
+            put_or_call: PutOrCall::Call, // PLACEHOLDER, NOTE: Only relevant for options, which are not currently supported
+            strike_price: 0, // PLACEHOLDER, NOTE: Only relevant for options, which are not currently supported
+            customer_or_firm: CustomerOrFirm::Customer,
+            maturity_date: "01/01/9999".to_string(), // PLACEHOLDER
+        }
+    }
 }
 
 impl FIXMessage for ExecutionReport {
