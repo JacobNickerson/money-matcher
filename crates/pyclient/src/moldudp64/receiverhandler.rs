@@ -203,7 +203,7 @@ impl ReceiverHandler {
                     return None;
                 }
 
-                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
+                let id = u16::from_be_bytes(message_data[3..5].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);
@@ -235,7 +235,7 @@ impl ReceiverHandler {
                     return None;
                 }
 
-                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
+                let id = u16::from_be_bytes(message_data[3..5].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let maker_id = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let executed_shares = u32::from_be_bytes(message_data[19..23].try_into().ok()?);
@@ -257,7 +257,7 @@ impl ReceiverHandler {
                     return None;
                 }
 
-                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
+                let id = u16::from_be_bytes(message_data[3..5].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let original_order_ref = u64::from_be_bytes(message_data[11..19].try_into().ok()?);
                 let new_order_ref = u64::from_be_bytes(message_data[19..27].try_into().ok()?);
@@ -285,7 +285,7 @@ impl ReceiverHandler {
                     return None;
                 }
 
-                let id = u16::from_be_bytes(message_data[1..3].try_into().ok()?);
+                let id = u16::from_be_bytes(message_data[3..5].try_into().ok()?);
                 let timestamp = decode_u48(message_data[5..11].try_into().ok()?);
                 let order_reference_number =
                     u64::from_be_bytes(message_data[11..19].try_into().ok()?);

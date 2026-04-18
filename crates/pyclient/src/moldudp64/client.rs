@@ -13,10 +13,11 @@ use std::{
 
 /// A multicast client that joins L3 and Trade multicast groups to receive and merge market events.
 pub struct MoldClient {
-    pub l3_rx: Mutex<HeapCons<MarketEvent>>,
-    pub trade_rx: Mutex<HeapCons<MarketEvent>>,
+    pub l3_rx: HeapCons<MarketEvent>,
+    pub trade_rx: HeapCons<MarketEvent>,
     next_l3: Option<MarketEvent>,
     next_trade: Option<MarketEvent>,
+    expected_tracking_number: u16,
 }
 
 impl MoldClient {
@@ -37,10 +38,11 @@ impl MoldClient {
         );
 
         Self {
-            l3_rx: Mutex::new(l3_rx),
-            trade_rx: Mutex::new(trade_rx),
+            l3_rx: l3_rx,
+            trade_rx: trade_rx,
             next_l3: None,
             next_trade: None,
+            expected_tracking_number: 1,
         }
     }
 
@@ -81,29 +83,45 @@ impl MoldClient {
         });
     }
 
-    /// Retrieves the next market event from the combined L3 and Trade feeds, sorted by timestamp to ensure chronological order.
+    /// Retrieves the next market event from the combined L3 and Trade feeds, sorted by tracking number to ensure correct processing order.
     pub fn next_event(&mut self) -> Option<MarketEvent> {
         if self.next_l3.is_none() {
-            let mut next = self.l3_rx.lock().unwrap();
-            self.next_l3 = next.try_pop();
+            self.next_l3 = self.l3_rx.try_pop();
         }
 
         if self.next_trade.is_none() {
-            let mut next = self.trade_rx.lock().unwrap();
-            self.next_trade = next.try_pop();
+            self.next_trade = self.trade_rx.try_pop();
         }
 
-        match (&self.next_l3, &self.next_trade) {
-            (Some(l3), Some(trade)) => {
-                if l3.timestamp <= trade.timestamp {
-                    self.next_l3.take()
-                } else {
-                    self.next_trade.take()
-                }
+        let event = if let Some(l3) = self.next_l3 {
+            if l3.id == self.expected_tracking_number {
+                self.next_l3.take()
+            } else {
+                None
             }
-            (Some(_), None) => self.next_l3.take(),
-            (None, Some(_)) => self.next_trade.take(),
-            (None, None) => None,
+        } else {
+            None
+        };
+
+        let event = if event.is_none() {
+            if let Some(trade) = self.next_trade {
+                if trade.id == self.expected_tracking_number {
+                    self.next_trade.take()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            event
+        };
+
+        if let Some(ev) = event {
+            self.expected_tracking_number = self.expected_tracking_number.wrapping_add(1);
+            Some(ev)
+        } else {
+            None
         }
     }
 }

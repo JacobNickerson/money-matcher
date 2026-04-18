@@ -6,14 +6,11 @@ mod moldudp64;
 
 #[pymodule]
 mod pyclient {
-    use std::net::SocketAddr;
-
     use crate::{
         fix::client::{FixClient, FixClientHandler},
         lob::limit_order_book::OrderBook,
         moldudp64::client::MoldClient,
     };
-    use mio::event;
     use mm_core::{
         fix_core::messages::{FIXEvent, types::EncryptMethod},
         lob_core::{
@@ -24,6 +21,8 @@ mod pyclient {
     };
     use pyo3::prelude::*;
     use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
+    use std::net::SocketAddr;
+    use std::sync::Mutex;
 
     #[gen_stub_pyclass_enum]
     #[pyclass]
@@ -367,7 +366,7 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     struct PyMoldClient {
-        inner: MoldClient,
+        inner: Mutex<MoldClient>,
     }
 
     #[gen_stub_pymethods]
@@ -376,12 +375,16 @@ mod pyclient {
         #[staticmethod]
         pub fn start() -> Self {
             Self {
-                inner: MoldClient::start(),
+                inner: Mutex::new(MoldClient::start()),
             }
         }
 
         pub fn next_event(&mut self) -> Option<PyMarketEvent> {
-            self.inner.next_event().map(PyMarketEvent::from)
+            self.inner
+                .lock()
+                .expect("err")
+                .next_event()
+                .map(PyMarketEvent::from)
         }
     }
 
