@@ -1,18 +1,21 @@
 use circular_buffer::CircularBuffer;
 use fastrand;
 use mm_core::lob_core::{
-    OrderId, OrderQty, Price,
+    ClientId, OrderId, OrderQty, Price, Timestamp,
     market_orders::{Order, OrderSide, OrderType},
 };
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
+
+use crate::simulator::simulator::SimTime;
 
 /// Generates the next event, also handles selection of price level, memory of orders for cancellation
 pub trait OrderGenerator {
     /// Accepts an order type and randomly samples some distribution to generate an Order
     fn generate(
         &mut self,
-        time_stamp: u64,
+        client_id: ClientId,
+        time_stamp: Timestamp,
         order_variant: (OrderSide, OrderType),
         rng: &mut impl Rng,
     ) -> Order;
@@ -22,43 +25,30 @@ const QUANTITIES: [OrderQty; 5] = [1, 2, 5, 10, 20];
 
 pub struct GaussianOrderGenerator {
     dist: Normal<f64>,
+    current_time: SimTime,
     order_counter: u64,
-    current_time: u64,
-    active_bids: Box<CircularBuffer<{ Self::ACTIVE_ORDER_BUFFER_SIZE }, OrderId>>,
-    active_asks: Box<CircularBuffer<{ Self::ACTIVE_ORDER_BUFFER_SIZE }, OrderId>>,
 }
 impl GaussianOrderGenerator {
     const ACTIVE_ORDER_BUFFER_SIZE: usize = 1_000_000;
     pub fn new(mean: f64, deviation: f64) -> Self {
-        let mut this = Self {
+        Self {
             dist: Normal::new(mean, deviation).unwrap(),
-            order_counter: 0,
             current_time: 0,
-            active_bids: CircularBuffer::boxed(),
-            active_asks: CircularBuffer::boxed(),
-        };
-        // zero memory to prevent panics if a cancel is made before this is fully saturated
-        for _ in 0..Self::ACTIVE_ORDER_BUFFER_SIZE {
-            this.active_asks.push_back(0);
-            this.active_bids.push_back(0);
+            order_counter: 0,
         }
-        this
     }
     fn compute_price(&mut self, rng: &mut impl Rng) -> Price {
         (self.dist.sample(rng).abs() * 100.0) as Price
     }
     fn get_active_order(&self, side: OrderSide) -> OrderId {
-        let ind = fastrand::usize(0..Self::ACTIVE_ORDER_BUFFER_SIZE);
-        match side {
-            OrderSide::Ask => self.active_asks[ind],
-            OrderSide::Bid => self.active_bids[ind],
-        }
+        fastrand::u64(0..self.order_counter)
     }
 }
 impl OrderGenerator for GaussianOrderGenerator {
     fn generate(
         &mut self,
-        time_stamp: u64,
+        client_id: ClientId,
+        time_stamp: Timestamp,
         order_variant: (OrderSide, OrderType),
         rng: &mut impl Rng,
     ) -> Order {
@@ -69,39 +59,36 @@ impl OrderGenerator for GaussianOrderGenerator {
         self.current_time += time_stamp;
         match kind {
             OrderType::Limit { qty: _, price: _ } => {
-                match side {
-                    OrderSide::Ask => self.active_asks.push_back(self.order_counter),
-                    OrderSide::Bid => self.active_bids.push_back(self.order_counter),
-                };
+                self.order_counter += 1;
                 Order::new(
-                    self.order_counter,
+                    client_id,
+                    0, // NOTE: Use a junk value, simulator sets this on receipt
                     side,
                     self.current_time,
                     OrderType::Limit { qty, price },
                 )
             }
             OrderType::Market { qty: _ } => Order::new(
-                self.order_counter,
+                client_id,
+                0, // NOTE: Use a junk value, simulator sets this on receipt
                 side,
                 self.current_time,
                 OrderType::Market { qty },
             ),
-            // NOTE: Ignore old_id, it's a junk value since the resolution of active orders should be handled by
-            //       the OrderGenerator
             OrderType::Cancel => Order::new(
+                client_id,
                 self.get_active_order(side),
                 side,
                 self.current_time,
                 OrderType::Cancel,
             ),
-            // NOTE: Ignore old_id, qty, and price, they are junk values since their determination should be handled by
-            //       the OrderGenerator
             OrderType::Update {
                 old_id: _,
                 qty: _,
                 price: _,
             } => Order::new(
-                self.order_counter,
+                client_id,
+                0, // NOTE: Use a junk value, simulator sets this on receipt
                 side,
                 self.current_time,
                 OrderType::Update {
@@ -130,6 +117,7 @@ mod tests {
         let mut seeded_rng = ChaCha8Rng::seed_from_u64(0);
         for i in 0..count {
             orders.push(order_gen.generate(
+                0,
                 i,
                 (OrderSide::Bid, OrderType::Limit { qty: 0, price: 0 }),
                 &mut seeded_rng,
@@ -177,21 +165,25 @@ mod tests {
         let mut seeded_rng = ChaCha8Rng::seed_from_u64(0);
         for i in 0..1_000_000 {
             order_gen.generate(
+                0,
                 4 * i + 0,
                 (OrderSide::Bid, OrderType::Limit { qty: 0, price: 0 }),
                 &mut seeded_rng,
             );
             order_gen.generate(
+                0,
                 4 * i + 1,
                 (OrderSide::Ask, OrderType::Market { qty: 0 }),
                 &mut seeded_rng,
             );
             order_gen.generate(
+                0,
                 4 * i + 2,
                 (OrderSide::Bid, OrderType::Cancel),
                 &mut seeded_rng,
             );
             order_gen.generate(
+                0,
                 4 * i + 3,
                 (
                     OrderSide::Ask,

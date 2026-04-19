@@ -54,7 +54,8 @@ pub struct OrderCancelReplace {
 impl FIXBusinessMessage for OrderCancelReplace {
     fn to_order(self) -> Order {
         Order {
-            order_id: self.cl_ord_id,
+            client_id: self.cl_ord_id,
+            order_id: 0, // NOTE: This is set by simulator so the value doesn't matter
             side: match self.side {
                 Side::Buy => OrderSide::Bid,
                 Side::Sell => OrderSide::Ask,

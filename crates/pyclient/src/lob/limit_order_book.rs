@@ -49,6 +49,7 @@ impl OrderBook {
         self.user_orders.insert(
             e.order_id,
             LimitOrder {
+                client_id: 0, // TODO: PLACEHOLDER, these aren't sent by MOLD, so maybe a stripped down struct should be used that doesn't have this
                 order_id: e.order_id,
                 side: e.side,
                 status: mm_core::lob_core::market_orders::OrderStatus::Active,
@@ -117,6 +118,7 @@ impl OrderBook {
         self.user_orders.insert(
             e.order_id,
             LimitOrder {
+                client_id: 0, // TODO: PLACEHOLDER, these aren't sent by MOLD, so maybe a stripped down struct should be used that doesn't have this
                 order_id: e.order_id,
                 side: e.side,
                 status: mm_core::lob_core::market_orders::OrderStatus::Active,

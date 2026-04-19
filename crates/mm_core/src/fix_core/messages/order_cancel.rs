@@ -31,7 +31,8 @@ pub struct OrderCancel {
 impl FIXBusinessMessage for OrderCancel {
     fn to_order(self) -> Order {
         Order {
-            order_id: self.orig_cl_ord_id,
+            client_id: self.orig_cl_ord_id,
+            order_id: 0, // NOTE: This is set by simulator so the value doesn't matter
             side: OrderSide::Bid,
             timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
             kind: OrderType::Cancel,

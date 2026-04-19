@@ -237,6 +237,7 @@ impl<T: EventSink> OrderBook<T> {
         ));
         let _ = self.market_event_counter.wrapping_add(1u16);
         self.event_sink.push_client_event(ClientEvent {
+            client_id: order.client_id,
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
@@ -316,6 +317,7 @@ impl<T: EventSink> OrderBook<T> {
         ));
         let _ = self.market_event_counter.wrapping_add(1u16);
         self.event_sink.push_client_event(ClientEvent {
+            client_id: order.client_id,
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
@@ -423,6 +425,7 @@ impl<T: EventSink> OrderBook<T> {
 
                 if maker.qty == 0 {
                     event_sink.push_client_event(ClientEvent {
+                        client_id: maker.client_id,
                         id: *client_event_counter,
                         timestamp: time,
                         order_id: maker_id,
@@ -434,6 +437,7 @@ impl<T: EventSink> OrderBook<T> {
                     level.pop_front();
                 } else {
                     event_sink.push_client_event(ClientEvent {
+                        client_id: maker.client_id,
                         id: *client_event_counter,
                         timestamp: time,
                         order_id: maker_id,
@@ -450,6 +454,7 @@ impl<T: EventSink> OrderBook<T> {
             return;
         }
         event_sink.push_client_event(ClientEvent {
+            client_id: taker.client_id,
             id: *client_event_counter,
             timestamp: time,
             order_id: taker.order_id,
@@ -503,6 +508,7 @@ impl<T: EventSink> OrderBook<T> {
     /// Emits a client event rejecting an order
     fn reject_order(&mut self, order: Order, time: Timestamp) {
         self.event_sink.push_client_event(ClientEvent {
+            client_id: order.client_id,
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
@@ -516,6 +522,7 @@ impl<T: EventSink> OrderBook<T> {
     /// Emits a client event accepting an order
     fn accept_order(&mut self, order: Order, time: Timestamp, qty: u32) {
         self.event_sink.push_client_event(ClientEvent {
+            client_id: order.client_id,
             id: self.client_event_counter,
             timestamp: time,
             order_id: order.order_id,
@@ -559,7 +566,13 @@ mod tests {
         side: OrderSide,
         timestamp: Timestamp,
     ) -> Option<LimitOrder> {
-        book.process_order(Order::new(old_order_id, side, timestamp, OrderType::Cancel))
+        book.process_order(Order::new(
+            0,
+            old_order_id,
+            side,
+            timestamp,
+            OrderType::Cancel,
+        ))
     }
 
     #[test]
@@ -574,11 +587,13 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             1,
             OrderType::Limit { qty: 1, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             0,
             OrderSide::Ask,
             1,
@@ -594,12 +609,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             1,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         assert!(
-            book.process_order(Order::new(0, OrderSide::Bid, 1, OrderType::Cancel))
+            book.process_order(Order::new(0, 0, OrderSide::Bid, 1, OrderType::Cancel))
                 .is_some()
         );
         assert!(book.best_bid().is_none());
@@ -611,6 +627,7 @@ mod tests {
 
         for i in 0..=2 {
             book.process_order(Order::new(
+                0,
                 i,
                 OrderSide::Bid,
                 i,
@@ -638,12 +655,14 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             1,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         assert_eq!(book.best_bid(), Some(100));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Bid,
             1,
@@ -661,12 +680,14 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             1,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         assert_eq!(book.best_bid(), Some(100));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Bid,
             1,
@@ -685,6 +706,7 @@ mod tests {
 
         for i in 0..=2 {
             book.process_order(Order::new(
+                0,
                 i,
                 OrderSide::Bid,
                 i,
@@ -703,6 +725,7 @@ mod tests {
 
         for i in 0..1_000_000 {
             book.process_order(Order::new(
+                0,
                 i,
                 OrderSide::Bid,
                 i,
@@ -724,6 +747,7 @@ mod tests {
 
         for i in 0..2 {
             book.process_order(Order::new(
+                0,
                 i,
                 OrderSide::Ask,
                 i,
@@ -732,6 +756,7 @@ mod tests {
         }
 
         book.process_order(Order::new(
+            0,
             2,
             OrderSide::Bid,
             2,
@@ -752,11 +777,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
@@ -780,11 +807,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
@@ -819,17 +848,20 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Ask,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
             OrderType::Limit { qty: 5, price: 105 },
         ));
         book.process_order(Order::new(
+            0,
             2,
             OrderSide::Bid,
             2,
@@ -877,11 +909,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Ask,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Bid,
             1,
@@ -914,11 +948,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Ask,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
@@ -926,6 +962,7 @@ mod tests {
         ));
         assert_eq!(book.best_ask(), Some(100));
         book.process_order(Order::new(
+            0,
             2,
             OrderSide::Bid,
             2,
@@ -972,11 +1009,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Ask,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
@@ -984,6 +1023,7 @@ mod tests {
         ));
         assert_eq!(book.best_ask(), Some(100));
         book.process_order(Order::new(
+            0,
             2,
             OrderSide::Bid,
             2,
@@ -1031,6 +1071,7 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Bid,
             0,
             OrderType::Market { qty: 15 },
@@ -1051,11 +1092,13 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Ask,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
@@ -1063,6 +1106,7 @@ mod tests {
         ));
         assert_eq!(book.best_ask(), Some(100));
         book.process_order(Order::new(
+            0,
             2,
             OrderSide::Bid,
             2,
@@ -1097,17 +1141,20 @@ mod tests {
 
         book.process_order(Order::new(
             0,
+            0,
             OrderSide::Ask,
             0,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         book.process_order(Order::new(
+            0,
             1,
             OrderSide::Ask,
             1,
             OrderType::Limit { qty: 5, price: 150 },
         ));
         book.process_order(Order::new(
+            0,
             2,
             OrderSide::Bid,
             2,

@@ -1,4 +1,4 @@
-use crate::lob_core::{OrderId, OrderQty, Price, Timestamp};
+use crate::lob_core::{ClientId, OrderId, OrderQty, Price, Timestamp};
 use std::cmp::Ordering;
 
 #[repr(u8)]
@@ -28,6 +28,7 @@ pub enum OrderStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Order {
+    pub client_id: ClientId,
     pub order_id: OrderId,
     pub side: OrderSide,
     pub timestamp: Timestamp,
@@ -36,8 +37,15 @@ pub struct Order {
 
 impl Order {
     #[inline(always)]
-    pub fn new(order_id: OrderId, side: OrderSide, timestamp: Timestamp, kind: OrderType) -> Self {
+    pub fn new(
+        client_id: ClientId,
+        order_id: OrderId,
+        side: OrderSide,
+        timestamp: Timestamp,
+        kind: OrderType,
+    ) -> Self {
         Self {
+            client_id,
             order_id,
             side,
             timestamp,
@@ -61,6 +69,7 @@ impl Ord for Order {
 impl Default for Order {
     fn default() -> Order {
         Order {
+            client_id: 0,
             order_id: 0,
             side: OrderSide::Ask,
             timestamp: 0,
@@ -88,6 +97,7 @@ pub enum OrderType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrder {
+    pub client_id: ClientId,
     pub order_id: OrderId,
     pub side: OrderSide,
     pub status: OrderStatus,
@@ -101,6 +111,7 @@ impl LimitOrder {
     pub fn new(order: Order) -> Self {
         match order.kind {
             OrderType::Limit { qty, price } => Self {
+                client_id: order.client_id,
                 order_id: order.order_id,
                 side: order.side,
                 status: Self::DEFAULT_STATUS,
@@ -108,6 +119,7 @@ impl LimitOrder {
                 price,
             },
             OrderType::Market { qty } => Self {
+                client_id: order.client_id,
                 order_id: order.order_id,
                 side: order.side,
                 status: Self::DEFAULT_STATUS,
@@ -122,6 +134,7 @@ impl LimitOrder {
                 old_id: _,
                 price,
             } => Self {
+                client_id: order.client_id,
                 order_id: order.order_id,
                 side: order.side,
                 status: Self::DEFAULT_STATUS,
