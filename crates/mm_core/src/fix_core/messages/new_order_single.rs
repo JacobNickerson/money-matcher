@@ -66,12 +66,12 @@ impl FIXBusinessMessage for NewOrderSingle {
         Self: Sized,
     {
         let (qty, price) = match order.kind {
-            OrderType::Limit { qty, price } => (qty as u32, price as u32),
+            OrderType::Limit { qty, price } => (qty, price),
             _ => return Err("Unsupported order.kind"),
         };
 
         Ok(Self {
-            cl_ord_id: order.order_id,
+            cl_ord_id: order.client_id,
             handl_inst: 0,
             qty,
             ord_type: OrdType::Limit,
