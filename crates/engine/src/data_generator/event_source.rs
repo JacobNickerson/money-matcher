@@ -31,7 +31,8 @@ impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> EventSource
     fn next_event(&mut self) -> Order {
         let dt = self.rate_controller.next_dt(&mut self.rng);
         let kind = self.type_selector.sample(&mut self.rng);
-        self.order_generator.generate(dt, kind, &mut self.rng)
+        // TODO: Right now client_id is hard-coded as 0, but maybe it should be configurable
+        self.order_generator.generate(0, dt, kind, &mut self.rng)
     }
 }
 

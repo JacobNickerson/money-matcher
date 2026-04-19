@@ -14,7 +14,7 @@ mod pyclient {
     use mm_core::{
         fix_core::messages::{FIXEvent, types::EncryptMethod},
         lob_core::{
-            OrderId, OrderQty, Price,
+            ClientId, OrderId, OrderQty, Price, Timestamp,
             market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
             market_orders::{LimitOrder, Order, OrderSide, OrderType},
         },
@@ -96,9 +96,16 @@ mod pyclient {
     #[pymethods]
     impl PyOrder {
         #[new]
-        fn new(order_id: u64, side: PyOrderSide, timestamp: u64, kind: PyOrderType) -> Self {
+        fn new(
+            client_id: u64,
+            order_id: u64,
+            side: PyOrderSide,
+            timestamp: u64,
+            kind: PyOrderType,
+        ) -> Self {
             Self {
                 inner: Order {
+                    client_id,
                     order_id,
                     side: OrderSide::from(side),
                     timestamp,
@@ -423,9 +430,10 @@ mod pyclient {
 
         pub fn send_generic_message(&mut self) {
             let order = Order {
-                order_id: 1_u64,
+                client_id: 0 as ClientId,
+                order_id: 1 as OrderId,
                 side: OrderSide::Bid,
-                timestamp: 5_u64,
+                timestamp: 5 as Timestamp,
                 kind: OrderType::Limit {
                     qty: 10 as OrderQty,
                     price: 666 as Price,

@@ -56,7 +56,9 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         // TODO: Evaluate this is correct and doesn't cause issues
         let synth_order = self.generate_single_order();
         self.orders.push(synth_order);
-        let event = self.orders.pop().unwrap();
+        let mut event = self.orders.pop().unwrap();
+        event.order_id = self.id_counter;
+        self.id_counter += 1;
         if self.is_real_time {
             self.pace(event.timestamp);
         }
@@ -71,8 +73,6 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             order.timestamp = self.time
                 + self.latency_settings.latency
                 + self.latency_settings.jitter.sample(&mut self.rng);
-            order.order_id = self.id_counter;
-            self.id_counter += 1;
             self.orders.push(order)
         }
     }
