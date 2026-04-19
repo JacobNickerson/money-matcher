@@ -552,10 +552,13 @@ class OrderEntry(QWidget):
                 qty = int(Decimal(self.amount_input.text()) * Decimal("1e4"))
 
             order_type = pyclient.PyOrderType.limit(qty, price) if self.limit_btn.isChecked() else pyclient.PyOrderType.market(qty)
-            order = pyclient.PyOrder(order_id=self.orderid_gen.next(), side=side, timestamp=int(time.time() * 1000), kind=order_type)
-            
+            order_id = self.orderid_gen.next()
+            order = pyclient.PyOrder(client_id=10, order_id=order_id, side=side, timestamp=int(time.time() * 1000), kind=order_type)
+
             if self.fix_client:
                 self.fix_client.send_message(order)
+
+            return order_id
         except Exception as e:
             print(f"Error sending order: {e}")
 

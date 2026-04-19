@@ -1,5 +1,7 @@
 import sys
 import os
+import sqlite3
+from pathlib import Path
 import time
 from PyQt5.QtWidgets import ( 
     QApplication, QWidget, QGridLayout, QHBoxLayout,
@@ -9,6 +11,7 @@ from PyQt5.QtCore import (
     Qt, QTimer
 )
 from controllers.strategy_runner import StrategyRunner
+from controllers.performance_tracker import PerformanceTracker
 from widgets.sidebar import SideBar
 from windows.dashboard import (
     MarketEvents, OrderBook, TradeHistory, OrderEntry, Strategies
@@ -31,7 +34,7 @@ if pyclient_dir not in sys.path:
 import pyclient
 
 class Dashboard(QWidget):
-    def __init__(self, fix_client=None):
+    def __init__(self, fix_client=None, performance_tracker=None):
         super().__init__()
         self.setStyleSheet("background-color: #080808;")
         self.strategy_runners = {}
@@ -43,12 +46,14 @@ class Dashboard(QWidget):
         layout.setHorizontalSpacing(20)
         layout.setVerticalSpacing(20)
 
+        self.fix_client = fix_client
         self.rust_book = pyclient.PyOrderBook()
         self.mold_client = pyclient.PyMoldClient.start()
+        self.performance_tracker = performance_tracker
 
         self.market_events = MarketEvents()
         self.order_book = OrderBook()
-        self.order_entry = OrderEntry(fix_client=fix_client)
+        self.order_entry = OrderEntry(fix_client=self.fix_client)
         self.trade_history = TradeHistory()
         self.strategies = Strategies()
 
@@ -68,7 +73,7 @@ class Dashboard(QWidget):
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_from_market_data)
-        self.update_timer.start(500)
+        self.update_timer.start(1000)
 
         self.strategy_timer = QTimer(self)
         self.strategy_timer.timeout.connect(self.on_strategy_timer)
@@ -87,7 +92,8 @@ class Dashboard(QWidget):
                 runner = StrategyRunner(
                     bot_config["strategy_file_path"],
                     bot_config,
-                    order_entry=self.order_entry
+                    order_entry=self.order_entry,
+                    performance_tracker=self.performance_tracker,
                 )
                 runner.strategy_log.connect(
                     lambda msg, bot_id=bot_id: self.log_strategy_message(bot_id, msg)
@@ -117,51 +123,13 @@ class Dashboard(QWidget):
             self.strategies.set_active_strategies(self.strategy_sessions)
             self.refresh_strategy_panel()
 
-    def start_bot(self, bot_config):
-        bot_id = bot_config["id"]
-
-        if bot_id in self.strategy_runners:
-            return
-
-        try:
-            runner = StrategyRunner(
-                bot_config["strategy_file_path"],
-                bot_config,
-                order_entry=self.order_entry
-            )
-            runner.strategy_log.connect(
-                lambda msg, bot_id=bot_id: self.log_strategy_message(bot_id, msg)
-            )
-            runner.load_strategy()
-            runner.start()
-            self.strategy_runners[bot_id] = runner
-
-        except Exception as e:
-            print(f"Error starting bot {bot_id}: {e}")
-
-    def stop_bot(self, bot_id):
-        runner = self.strategy_runners.get(bot_id)
-        if runner is None:
-            return
-        
-        try:
-            runner.stop()
-        except Exception as e:
-            print(f"Error stopping bot {bot_id}: {e}")
-        finally:
-            del self.strategy_runners[bot_id]
-
     def update_from_market_data(self):
         processed_event = False
-        event_count = 0
-        max_events_per_tick = 1000
 
-        while event_count < max_events_per_tick:
+        while True:
             event = self.mold_client.next_event()
             if event is None:
                 break
-
-            event_count += 1
 
             try:
                 self.rust_book.process_event(event)
@@ -175,13 +143,30 @@ class Dashboard(QWidget):
                 print(f"Error processing event {event}: {e}")
                 break
 
+        while True:
+            report = self.fix_client.next_report()
+            if report is None:
+                break
+
+            try:
+                print(f"Execution report: {report}")
+
+            except Exception as e:
+                print(f"Error processing execution report {report}: {e}")
+                break
+
         if processed_event:
             self.order_book.refresh_order_book_display(self.rust_book)
             self.market_events.refresh_chart()
 
         now = time.time()
         for runner in self.strategy_runners.values():
-            runner.on_timer(now)
+            due_orders = runner.get_due_fills(now)
+            for order in due_orders:
+                try:
+                    runner.on_fill(runner.build_fill(order))
+                except Exception as e:
+                    print(f"Error simulating fill for order {order}: {e}")
 
         self.refresh_strategy_panel()
 
@@ -264,7 +249,7 @@ class Strats(QWidget):
         layout.addWidget(self.editor, 1)
 
 class Performance(QWidget):
-    def __init__(self):
+    def __init__(self, performance_tracker):
         super().__init__()
         self.setStyleSheet("background-color: #080808;")
 
@@ -272,10 +257,8 @@ class Performance(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(0)
 
-        self.header = PerfHeader()
-        self.main = PerfMain()
+        self.main = PerfMain(performance_tracker=performance_tracker)
 
-        layout.addWidget(self.header)
         layout.addWidget(self.main, 1)
 
 class EngineWindow(QWidget):
@@ -284,6 +267,8 @@ class EngineWindow(QWidget):
         self.setWindowTitle("Money Matcher")
         self.resize(720, 512)
         self.fix_client = self.init_fix_client()
+        self.account_balance = self.initAccountDatabase(default_balance=10000.0)
+        self.performance_tracker = PerformanceTracker(starting_balance=self.account_balance)
         self.initUI()
 
     def init_fix_client(self):
@@ -310,10 +295,10 @@ class EngineWindow(QWidget):
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background-color: #080808;")
 
-        self.dashboard_page = Dashboard(fix_client=self.fix_client)
+        self.dashboard_page = Dashboard(fix_client=self.fix_client, performance_tracker=self.performance_tracker)
         self.bots_page = Bots()
         self.strat_page = Strats()
-        self.perf_page = Performance()
+        self.perf_page = Performance(performance_tracker=self.performance_tracker)
 
         bot_list = self.bots_page.table
         bot_list.bot_started.connect(self.dashboard_page.start_bot)
@@ -342,6 +327,43 @@ class EngineWindow(QWidget):
             lambda: self.stack.setCurrentIndex(3)
         )
 
+    def getDatabasePath(self):
+        root_dir = Path(__file__).resolve().parents[1]
+        data_dir = root_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "matchmakers.db"
+
+    def initAccountDatabase(self, default_balance=10000.0):
+        conn = sqlite3.connect(self.getDatabasePath())
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS account (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                initial_balance REAL NOT NULL,
+                cash_balance REAL NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+
+        cursor.execute("SELECT cash_balance FROM account WHERE id = 1")
+        row = cursor.fetchone()
+
+        if row is None:
+            now = time.time()
+
+            cursor.execute("""
+                INSERT INTO account (id, initial_balance, cash_balance, created_at, updated_at)
+                VALUES (1, ?, ?, ?, ?)
+            """, (default_balance, default_balance, now, now))
+
+            conn.commit()
+            balance = default_balance
+        else:
+            balance = float(row[0])
+
+        conn.close()
+        return balance
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

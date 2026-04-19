@@ -83,6 +83,7 @@ class BotStats:
     bot_id: int
     bot_name: str
     symbol: str
+    strategy_name: str = "Unknown"
     allocated_balance: float = 0.0
 
     orders_submitted: int = 0
@@ -119,15 +120,19 @@ class PerformanceTracker(QObject):
     trade_opened = pyqtSignal(dict)
     trade_closed = pyqtSignal(dict)
 
-    def __init__(self, initial_account_balance: float):
+    def __init__(self, starting_balance: float):
         super().__init__()
 
-        self.initial_account_balance = float(initial_account_balance)
-        self.account_cash_balance = float(initial_account_balance)
-        self.account_equity = float(initial_account_balance)
+        self.start_time = time.time()
 
-        self.account_peak_equity = float(initial_account_balance)
-        self.account_peak_cash = float(initial_account_balance)
+        self.starting_balance = float(starting_balance)
+        self.net_deposits = 0.0
+
+        self.account_cash_balance = float(starting_balance)
+        self.account_equity = float(starting_balance)
+
+        self.account_peak_equity = float(starting_balance)
+        self.account_peak_cash = float(starting_balance)
 
         self.account_max_drawdown_pct = 0.0
         self.account_current_drawdown_pct = 0.0
@@ -135,13 +140,17 @@ class PerformanceTracker(QObject):
         self.account_realized_pnl = 0.0
         self.account_unrealized_pnl = 0.0
 
-        self.account_balance_history: List[Tuple[float, float]] = [(time.time(), self.account_cash_balance)]
-        self.account_equity_history: List[Tuple[float, float]] = [(time.time(), self.account_equity)]
+        self.account_balance_history: List[Tuple[float, float]] = [
+            (self.start_time, self.account_cash_balance)
+        ]
+        self.account_equity_history: List[Tuple[float, float]] = [
+            (self.start_time, self.account_equity)
+        ]
 
         self.bots: Dict[int, BotStats] = {}
         self.order_to_bot: Dict[int, int] = {}
 
-    def register_bot(self, bot_id: int, bot_name: str, symbol: str, allocated_balance: float = 0.0) -> None:
+    def register_bot(self, bot_id: int, bot_name: str, symbol: str, allocated_balance: float = 0.0, strategy_name="Unknown") -> None:
         if bot_id in self.bots:
             return
 
@@ -149,6 +158,7 @@ class PerformanceTracker(QObject):
             bot_id=bot_id,
             bot_name=bot_name,
             symbol=symbol,
+            strategy_name=strategy_name,
             allocated_balance=float(allocated_balance),
         )
 
@@ -269,7 +279,7 @@ class PerformanceTracker(QObject):
         bot.total_realized_pnl += realized_piece
         self.account_realized_pnl += realized_piece
 
-        self.account_cash_balance = self.initial_account_balance + self.account_realized_pnl
+        self.account_cash_balance = self.account_capital_base() + self.account_realized_pnl
         self.account_balance_history.append((float(exit_time), self.account_cash_balance))
 
         bot_balance = bot.allocated_balance + bot.total_realized_pnl
@@ -383,15 +393,18 @@ class PerformanceTracker(QObject):
             total_cancelled += bot.orders_cancelled
             total_volume += bot.total_volume
 
+        capital_base = self.account_capital_base()
         return {
             "scope": "account",
-            "initial_balance": self.initial_account_balance,
+            "starting_balance": self.starting_balance,
+            "net_deposits": self.net_deposits,
+            "capital_base": capital_base,
             "cash_balance": self.account_cash_balance,
             "equity": self.account_equity,
             "realized_pnl": self.account_realized_pnl,
             "unrealized_pnl": self.account_unrealized_pnl,
-            "pnl_pct": self._safe_pct(self.account_realized_pnl, self.initial_account_balance),
-            "equity_pct": self._safe_pct(self.account_equity - self.initial_account_balance, self.initial_account_balance),
+            "pnl_pct": self._safe_pct(self.account_realized_pnl, capital_base),
+            "equity_pct": self._safe_pct(self.account_equity - capital_base, capital_base),
             "orders_submitted": total_submitted,
             "orders_filled": total_filled,
             "orders_cancelled": total_cancelled,
@@ -411,6 +424,7 @@ class PerformanceTracker(QObject):
             "current_drawdown_pct": self.account_current_drawdown_pct,
             "sharpe_ratio": self._sharpe_ratio(self.account_equity_history),
             "sortino_ratio": self._sortino_ratio(self.account_equity_history),
+            "time_run_seconds": max(0.0, time.time() - self.start_time),
             "balance_history": self.account_balance_history[:],
             "equity_history": self.account_equity_history[:],
             "trades": [self._trade_to_dict(t) for t in all_closed],
@@ -430,6 +444,7 @@ class PerformanceTracker(QObject):
             "bot_id": bot.bot_id,
             "bot_name": bot.bot_name,
             "symbol": bot.symbol,
+            "strategy_name": bot.strategy_name,
             "allocated_balance": bot.allocated_balance,
             "cash_balance": bot_balance,
             "equity": bot_equity,
@@ -470,6 +485,32 @@ class PerformanceTracker(QObject):
 
     def bot_names(self) -> List[str]:
         return [bot.bot_name for bot in self.bots.values()]
+    
+    def account_capital_base(self) -> float:
+        return self.starting_balance + self.net_deposits
+    
+    def add_account_balance(self, amount: float, timestamp: Optional[float] = None) -> None:
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError("amount must be > 0")
+
+        if timestamp is None:
+            timestamp = time.time()
+
+        self.net_deposits += amount
+        self.account_cash_balance += amount
+        self.account_equity = self.account_cash_balance + self.account_unrealized_pnl
+
+        self.account_balance_history.append((float(timestamp), self.account_cash_balance))
+        self.account_equity_history.append((float(timestamp), self.account_equity))
+
+        if self.account_cash_balance > self.account_peak_cash:
+            self.account_peak_cash = self.account_cash_balance
+        if self.account_equity > self.account_peak_equity:
+            self.account_peak_equity = self.account_equity
+
+        self._update_account_drawdown()
+        self._emit_global_update()
 
     def _emit_global_update(self) -> None:
         self.performance_updated.emit(self.get_account_summary())
@@ -483,9 +524,11 @@ class PerformanceTracker(QObject):
         return self.bots[bot_id]
 
     def _trade_to_dict(self, trade: Trade) -> dict:
+        bot = self.bots.get(trade.bot_id)
         return {
             "bot_id": trade.bot_id,
             "bot_name": trade.bot_name,
+            "strategy_name": bot.strategy_name if bot is not None else "Unknown",
             "symbol": trade.symbol,
             "order_id": trade.order_id,
             "side": trade.side,
