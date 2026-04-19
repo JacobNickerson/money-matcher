@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "crates/engine",
+  "crates/engine", "crates/l2_interpolator",
   "crates/mm_core",
   "crates/pyclient",
 ]
