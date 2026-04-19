@@ -1,7 +1,7 @@
 use crate::{
     fix_core::messages::execution_report,
     lob_core::{
-        OrderId, OrderQty, Price, Timestamp,
+        ClientId, OrderId, OrderQty, Price, Timestamp,
         market_orders::{LimitOrder, Order, OrderSide, OrderType},
     },
 };
@@ -32,6 +32,7 @@ impl L3Event {
     /// Constructors for different order types for ease of use
     pub fn new_limit(order: LimitOrder, timestamp: Timestamp) -> Self {
         let order = Order::new(
+            0, // NOTE: These don't get sent by moldudp64, so use a junk value that gets discarded
             order.order_id,
             order.side,
             timestamp,
@@ -95,6 +96,7 @@ pub enum LiquidityFlag {
 pub struct ClientEvent {
     pub id: u64,
     pub timestamp: Timestamp,
+    pub client_id: ClientId,
     pub order_id: OrderId,
     pub order_side: OrderSide,
     pub kind: ClientEventType,

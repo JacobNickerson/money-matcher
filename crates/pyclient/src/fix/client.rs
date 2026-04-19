@@ -414,6 +414,7 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
 
         let order = Order {
+            client_id: 0,
             order_id: 1,
             side: OrderSide::Bid,
             timestamp: 5,
