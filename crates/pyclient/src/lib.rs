@@ -154,6 +154,31 @@ mod pyclient {
 
     #[gen_stub_pyclass]
     #[pyclass]
+    #[derive(Debug)]
+    /// A helper for creating PyOrders of various types, maintains an internal counter
+    /// for client IDs
+    struct PyOrderGenerator {
+        client_id_counter: ClientId,
+    }
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl PyOrderGenerator {
+        /// Creates a new limit order and increments the client ID counter
+        pub fn new_limit(&mut self, side: PyOrderSide, qty: OrderQty, price: Price) -> PyOrder {
+            let order = PyOrder::new(
+                self.client_id_counter,
+                0, // NOTE: Set by the engine, use a garbage value
+                side,
+                9, // NOTE: Set by the engine, use a garbage value
+                PyOrderType::limit(qty, price),
+            );
+            self.client_id_counter += 1;
+            order
+        }
+    }
+
+    #[gen_stub_pyclass]
+    #[pyclass]
     #[derive(Debug, Clone, Copy)]
     struct PyL3EventExtra {
         inner: L3EventExtra,
