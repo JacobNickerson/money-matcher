@@ -610,6 +610,7 @@ mod tests {
     fn cancel_removes_order() {
         let mut book = OrderBook::new(NullFeeds {});
 
+        // TODO: Update depending on which id should be used to cancel orders
         book.process_order(Order::new(
             5,
             0,
@@ -623,7 +624,7 @@ mod tests {
                 0,
                 OrderSide::Bid,
                 1,
-                OrderType::Cancel { old_id: 5 }
+                OrderType::Cancel { old_id: 0 }
             ))
             .is_some()
         );
