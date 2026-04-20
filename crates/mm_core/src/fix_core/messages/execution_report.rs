@@ -80,7 +80,7 @@ impl From<ClientEvent> for ExecutionReport {
             };
         }
         ExecutionReport {
-            cl_ord_id: 0, // TODO: PLACEHOLDER
+            cl_ord_id: event.client_id,
             cum_qty: match event.kind {
                 ClientEventType::Accepted(qty) => qty,
                 ClientEventType::PartiallyFilled(qty) => qty,
