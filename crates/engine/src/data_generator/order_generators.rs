@@ -80,11 +80,11 @@ impl OrderGenerator for GaussianOrderGenerator {
                 0,
                 side,
                 self.current_time,
-                OrderType::Cancel { old_id: self.get_active_order(side) },
+                OrderType::Cancel {
+                    old_id: self.get_active_order(side),
+                },
             ),
-            OrderType::Update {
-                ..
-            } => Order::new(
+            OrderType::Update { .. } => Order::new(
                 client_id,
                 0, // NOTE: Use a junk value, simulator sets this on receipt
                 side,

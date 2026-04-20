@@ -107,7 +107,7 @@ impl<T: EventSink> OrderBook<T> {
         let order: Option<LimitOrder> = match order.kind {
             OrderType::Limit { .. } => self.add_order_and_emit_events(order, time),
             OrderType::Market { .. } => self.execute_market_order_and_emit_events(order, time),
-            OrderType::Cancel { old_id }=> self.cancel_order_and_emit_events(old_id, order, time),
+            OrderType::Cancel { old_id } => self.cancel_order_and_emit_events(old_id, order, time),
             OrderType::Update {
                 old_id,
                 qty: _,
@@ -572,7 +572,9 @@ mod tests {
             0,
             side,
             timestamp,
-            OrderType::Cancel { old_id: old_order_id },
+            OrderType::Cancel {
+                old_id: old_order_id,
+            },
         ))
     }
 
@@ -616,8 +618,14 @@ mod tests {
             OrderType::Limit { qty: 5, price: 100 },
         ));
         assert!(
-            book.process_order(Order::new(0, 0, OrderSide::Bid, 1, OrderType::Cancel { old_id: 5 }))
-                .is_some()
+            book.process_order(Order::new(
+                0,
+                0,
+                OrderSide::Bid,
+                1,
+                OrderType::Cancel { old_id: 5 }
+            ))
+            .is_some()
         );
         assert!(book.best_bid().is_none());
     }

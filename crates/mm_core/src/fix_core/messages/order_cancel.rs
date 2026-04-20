@@ -35,7 +35,9 @@ impl FIXBusinessMessage for OrderCancel {
             order_id: 0, // NOTE: This is set by simulator so the value doesn't matter
             side: OrderSide::Bid,
             timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
-            kind: OrderType::Cancel { old_id: self.orig_cl_ord_id },
+            kind: OrderType::Cancel {
+                old_id: self.orig_cl_ord_id,
+            },
         }
     }
 

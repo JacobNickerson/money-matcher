@@ -159,12 +159,7 @@ mod tests {
                 (_, OrderType::Cancel { .. }) => {
                     cancel_count += 1;
                 }
-                (
-                    _,
-                    OrderType::Update {
-                        ..
-                    },
-                ) => {
+                (_, OrderType::Update { .. }) => {
                     update_count += 1;
                 }
             }
