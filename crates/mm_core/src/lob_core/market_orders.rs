@@ -73,7 +73,7 @@ impl Default for Order {
             order_id: 0,
             side: OrderSide::Ask,
             timestamp: 0,
-            kind: OrderType::Cancel,
+            kind: OrderType::Cancel { old_id: 0 },
         }
     }
 }
@@ -92,7 +92,9 @@ pub enum OrderType {
         qty: OrderQty,
         price: Price,
     },
-    Cancel,
+    Cancel {
+        old_id: OrderId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,7 +143,7 @@ impl LimitOrder {
                 qty,
                 price,
             },
-            OrderType::Cancel => {
+            OrderType::Cancel { .. } => {
                 panic!("LimitOrder cannot be constructed from an Order representing a cancel");
             }
         }

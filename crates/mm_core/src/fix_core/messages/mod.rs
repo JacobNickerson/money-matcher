@@ -206,7 +206,7 @@ impl FIXBusinessMessage for BusinessMessage {
             OrderType::Limit { .. } => Ok(BusinessMessage::NewOrderSingle(
                 NewOrderSingle::from_order(order)?,
             )),
-            OrderType::Cancel => Ok(BusinessMessage::OrderCancel(OrderCancel::from_order(
+            OrderType::Cancel { .. } => Ok(BusinessMessage::OrderCancel(OrderCancel::from_order(
                 order,
             )?)),
             OrderType::Update { .. } => Ok(BusinessMessage::OrderCancelReplace(
