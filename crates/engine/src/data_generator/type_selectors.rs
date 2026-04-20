@@ -54,7 +54,7 @@ impl TypeSelector for UniformTypeSelector {
         } else if sample < self.new_market_cutoff {
             (order_side, OrderType::Market { qty: 0 })
         } else if sample < self.cancel_cutoff {
-            (order_side, OrderType::Cancel)
+            (order_side, OrderType::Cancel { old_id: 0 })
         } else {
             (
                 order_side,
@@ -150,21 +150,19 @@ mod tests {
         let sample_count = 1000000;
         for _ in 0..sample_count {
             match type_selector.sample(&mut seeded_rng) {
-                (_, OrderType::Limit { qty: _, price: _ }) => {
+                (_, OrderType::Limit { .. }) => {
                     limit_count += 1;
                 }
-                (_, OrderType::Market { qty: _ }) => {
+                (_, OrderType::Market { .. }) => {
                     market_count += 1;
                 }
-                (_, OrderType::Cancel) => {
+                (_, OrderType::Cancel { .. }) => {
                     cancel_count += 1;
                 }
                 (
                     _,
                     OrderType::Update {
-                        old_id: _,
-                        qty: _,
-                        price: _,
+                        ..
                     },
                 ) => {
                     update_count += 1;

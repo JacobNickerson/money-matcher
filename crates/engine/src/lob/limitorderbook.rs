@@ -105,9 +105,9 @@ impl<T: EventSink> OrderBook<T> {
         // TODO: Update return type to be more informative
         let time = order.timestamp;
         let order: Option<LimitOrder> = match order.kind {
-            OrderType::Limit { qty: _, price: _ } => self.add_order_and_emit_events(order, time),
-            OrderType::Market { qty: _ } => self.execute_market_order_and_emit_events(order, time),
-            OrderType::Cancel => self.cancel_order_and_emit_events(order, time),
+            OrderType::Limit { .. } => self.add_order_and_emit_events(order, time),
+            OrderType::Market { .. } => self.execute_market_order_and_emit_events(order, time),
+            OrderType::Cancel { old_id }=> self.cancel_order_and_emit_events(old_id, order, time),
             OrderType::Update {
                 old_id,
                 qty: _,
@@ -293,10 +293,11 @@ impl<T: EventSink> OrderBook<T> {
     /// a cancel market and client event
     fn cancel_order_and_emit_events(
         &mut self,
+        old_id: OrderId,
         order: Order,
         time: Timestamp,
     ) -> Option<LimitOrder> {
-        let old_id = order.order_id;
+        // TODO: old_id is a CLIENT order ID, need to resolve to engine order_id
         let old_order = match self.orders.get_mut(&old_id) {
             Some(old_order) => old_order,
             None => {
@@ -568,10 +569,10 @@ mod tests {
     ) -> Option<LimitOrder> {
         book.process_order(Order::new(
             0,
-            old_order_id,
+            0,
             side,
             timestamp,
-            OrderType::Cancel,
+            OrderType::Cancel { old_id: old_order_id },
         ))
     }
 
@@ -608,14 +609,14 @@ mod tests {
         let mut book = OrderBook::new(NullFeeds {});
 
         book.process_order(Order::new(
-            0,
+            5,
             0,
             OrderSide::Bid,
             1,
             OrderType::Limit { qty: 5, price: 100 },
         ));
         assert!(
-            book.process_order(Order::new(0, 0, OrderSide::Bid, 1, OrderType::Cancel))
+            book.process_order(Order::new(0, 0, OrderSide::Bid, 1, OrderType::Cancel { old_id: 5 }))
                 .is_some()
         );
         assert!(book.best_bid().is_none());

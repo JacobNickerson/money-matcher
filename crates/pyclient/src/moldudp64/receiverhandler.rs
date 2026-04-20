@@ -298,7 +298,7 @@ impl ReceiverHandler {
                         order_id: order_reference_number,
                         side: OrderSide::Ask,
                         timestamp,
-                        kind: OrderType::Cancel,
+                        kind: OrderType::Cancel { old_id: 0 },  // NOTE: Old_ID isn't needed and is set to a garbage value
                         extra: L3EventExtra::Cancel(old_order_qty),
                     }),
                 })

@@ -146,7 +146,7 @@ impl MoldEngine {
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
                     Self::push_event(&mut self.l3_tx, &buf);
                 }
-                OrderType::Cancel => {
+                OrderType::Cancel { .. } => {
                     let mut buf = [0u8; 23];
 
                     let L3EventExtra::Cancel(cancel_qty) = e.extra else {
@@ -161,7 +161,7 @@ impl MoldEngine {
                         self.current_tracking_number,
                         event.timestamp,
                         e.order_id,
-                        cancel_qty.try_into().unwrap(), // TODO: Need to update various struct members to be the same byte size
+                        cancel_qty.try_into().unwrap(),
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -262,7 +262,7 @@ mod tests {
                     order_id: i,
                     timestamp: i,
                     side: OrderSide::Ask,
-                    kind: OrderType::Cancel,
+                    kind: OrderType::Cancel { old_id: 0},
                     extra: L3EventExtra::Cancel(100),
                 }),
             };

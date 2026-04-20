@@ -29,7 +29,7 @@ impl OrderBook {
                     OrderType::Update { old_id, qty, price } => {
                         self.handle_update(e, old_id, qty, price)
                     }
-                    OrderType::Cancel => self.handle_cancel(e),
+                    OrderType::Cancel { .. }=> self.handle_cancel(e),
                     OrderType::Market { .. } => {
                         // Ignore market orders, the actual result of their execution is covered by the trade event
                     }

@@ -58,7 +58,7 @@ impl OrderGenerator for GaussianOrderGenerator {
         self.order_counter += 1;
         self.current_time += time_stamp;
         match kind {
-            OrderType::Limit { qty: _, price: _ } => {
+            OrderType::Limit { .. } => {
                 self.order_counter += 1;
                 Order::new(
                     client_id,
@@ -68,24 +68,22 @@ impl OrderGenerator for GaussianOrderGenerator {
                     OrderType::Limit { qty, price },
                 )
             }
-            OrderType::Market { qty: _ } => Order::new(
+            OrderType::Market { .. } => Order::new(
                 client_id,
                 0, // NOTE: Use a junk value, simulator sets this on receipt
                 side,
                 self.current_time,
                 OrderType::Market { qty },
             ),
-            OrderType::Cancel => Order::new(
+            OrderType::Cancel { .. } => Order::new(
                 client_id,
-                self.get_active_order(side),
+                0,
                 side,
                 self.current_time,
-                OrderType::Cancel,
+                OrderType::Cancel { old_id: self.get_active_order(side) },
             ),
             OrderType::Update {
-                old_id: _,
-                qty: _,
-                price: _,
+                ..
             } => Order::new(
                 client_id,
                 0, // NOTE: Use a junk value, simulator sets this on receipt
@@ -179,7 +177,7 @@ mod tests {
             order_gen.generate(
                 0,
                 4 * i + 2,
-                (OrderSide::Bid, OrderType::Cancel),
+                (OrderSide::Bid, OrderType::Cancel { old_id: 0 }),
                 &mut seeded_rng,
             );
             order_gen.generate(
