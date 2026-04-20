@@ -486,9 +486,9 @@ class BalanceCard(QFrame):
 
         grad = QLinearGradient(0, 1, 0, 0)
         grad.setCoordinateMode(QLinearGradient.ObjectBoundingMode)
-        c_top = QColor("#00C277")
+        c_top = QColor(delta_color)
         c_top.setAlpha(80)
-        c_bot = QColor("#00C277")
+        c_bot = QColor(delta_color)
         c_bot.setAlpha(0)
         grad.setColorAt(0.0, c_top)
         grad.setColorAt(1.0, c_bot)
@@ -499,7 +499,7 @@ class BalanceCard(QFrame):
 
         self.pw.addItem(fill)
         self.pw.addItem(curve)
-        curve.setPen(pg.mkPen(color="#00C277", width=2))
+        curve.setPen(pg.mkPen(color=delta_color, width=2))
 
         ymin = float(np.min(y_data))
         ymax = float(np.max(y_data))
@@ -673,13 +673,13 @@ class Header(QWidget):
         self.strategy_list.setMinimumWidth(400)
         layout.addWidget(self.strategy_list)
 
-        self.date_list = QComboBox()
-        self.date_list.setFont(QFont("Inter", 10, QFont.Medium))
-        self.date_list.setStyleSheet(combo_style)
-        self.date_list.setCursor(Qt.PointingHandCursor)
-        self.date_list.addItems(["1 Day", "1 Week", "1 Month", "1 Year"])
-        self.date_list.setMinimumWidth(200)
-        layout.addWidget(self.date_list)
+        # self.date_list = QComboBox()
+        # self.date_list.setFont(QFont("Inter", 10, QFont.Medium))
+        # self.date_list.setStyleSheet(combo_style)
+        # self.date_list.setCursor(Qt.PointingHandCursor)
+        # self.date_list.addItems(["1 Day", "1 Week", "1 Month", "1 Year"])
+        # self.date_list.setMinimumWidth(200)
+        # layout.addWidget(self.date_list)
 
         self.refreshStrategyDropdown()
 
@@ -943,7 +943,7 @@ class Main(QWidget):
     def apply_summary(self, summary):
         realized = float(summary.get("realized_pnl", 0.0))
         equity = float(summary.get("equity", 0.0))
-        base_balance = float(summary.get("initial_balance", summary.get("allocated_balance", 0.0)))
+        base_balance = float(summary.get( "capital_base", summary.get("allocated_balance", summary.get("initial_balance", 0.0))))
         total_volume = float(summary.get("total_volume", 0.0))
         fill_rate = float(summary.get("fill_rate", 0.0))
 

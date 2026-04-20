@@ -4,11 +4,11 @@ import sqlite3
 from pathlib import Path
 import time
 from PyQt5.QtWidgets import ( 
-    QApplication, QWidget, QGridLayout, QHBoxLayout,
-    QSizePolicy, QStackedWidget, QVBoxLayout
+    QApplication, QWidget, QGridLayout, QHBoxLayout, QPushButton,
+    QSizePolicy, QStackedWidget, QVBoxLayout, QDialog, QMessageBox
 )
 from PyQt5.QtCore import (
-    Qt, QTimer
+    Qt, QTimer, pyqtSignal
 )
 from controllers.strategy_runner import StrategyRunner
 from controllers.performance_tracker import PerformanceTracker
@@ -54,7 +54,10 @@ class Dashboard(QWidget):
         self.market_events = MarketEvents()
         self.order_book = OrderBook()
         self.order_entry = OrderEntry(fix_client=self.fix_client)
-        self.trade_history = TradeHistory()
+        self.trade_history = TradeHistory(
+            performance_tracker=self.performance_tracker, 
+            strategy_sessions=self.strategy_sessions,
+            order_entry=self.order_entry)
         self.strategies = Strategies()
 
         layout.addWidget(self.market_events, 0, 0)
@@ -73,11 +76,15 @@ class Dashboard(QWidget):
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_from_market_data)
-        self.update_timer.start(1000)
+        self.update_timer.start(0)
 
         self.strategy_timer = QTimer(self)
         self.strategy_timer.timeout.connect(self.on_strategy_timer)
         self.strategy_timer.start(1000)
+
+    def set_fix_client(self, fix_client):
+        self.fix_client = fix_client
+        self.order_entry.fix_client = fix_client
 
     def start_bot(self, bot_config):
         bot_id = bot_config["id"]
@@ -104,6 +111,7 @@ class Dashboard(QWidget):
             runner.start()
             self.strategy_runners[bot_id] = runner
             self.strategies.set_active_strategies(self.strategy_sessions)
+            self.trade_history.set_strategy_sessions(self.strategy_sessions)
             self.refresh_strategy_panel()
 
         except Exception as e:
@@ -121,6 +129,7 @@ class Dashboard(QWidget):
         finally:
             del self.strategy_runners[bot_id]
             self.strategies.set_active_strategies(self.strategy_sessions)
+            self.trade_history.set_strategy_sessions(self.strategy_sessions)
             self.refresh_strategy_panel()
 
     def update_from_market_data(self):
@@ -143,21 +152,23 @@ class Dashboard(QWidget):
                 print(f"Error processing event {event}: {e}")
                 break
 
-        while True:
-            report = self.fix_client.next_report()
-            if report is None:
-                break
+        if self.fix_client:
+            while True:
+                report = self.fix_client.next_report()
+                if report is None:
+                    break
 
-            try:
-                print(f"Execution report: {report}")
+                try:
+                    print(f"Execution report: {report}")
 
-            except Exception as e:
-                print(f"Error processing execution report {report}: {e}")
-                break
+                except Exception as e:
+                    print(f"Error processing execution report {report}: {e}")
+                    break
 
         if processed_event:
             self.order_book.refresh_order_book_display(self.rust_book)
             self.market_events.refresh_chart()
+            self.trade_history.refresh_data()
 
         now = time.time()
         for runner in self.strategy_runners.values():
@@ -261,27 +272,70 @@ class Performance(QWidget):
 
         layout.addWidget(self.main, 1)
 
+class FixInitModal(QDialog):
+    fix_initialized = pyqtSignal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.fix_client = None
+
+        self.setModal(True)
+        self.setFixedSize(320, 160)
+        self.setWindowTitle("Connect")
+
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #101010;
+                border: 1px solid #363636;
+                border-radius: 12px;
+            }
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #080808;
+                border-radius: 8px;
+                padding: 10px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #D9D9D9;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        self.connect_btn = QPushButton("Connect")
+        self.connect_btn.setMinimumHeight(40)
+        self.connect_btn.clicked.connect(self.handle_connect)
+
+        layout.addStretch()
+        layout.addWidget(self.connect_btn)
+        layout.addStretch()
+
+    def handle_connect(self):
+        try:
+            self.fix_client = pyclient.PyFixClient.start(
+                "127.0.0.1:34254",
+                "CLIENT01",
+                "ENGINE01"
+            )
+            self.fix_initialized.emit(self.fix_client)
+            self.accept()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", str(e))
+
 class EngineWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Money Matcher")
         self.resize(720, 512)
-        self.fix_client = self.init_fix_client()
+        self.fix_client = None
         self.account_balance = self.initAccountDatabase(default_balance=10000.0)
         self.performance_tracker = PerformanceTracker(starting_balance=self.account_balance)
         self.initUI()
-
-    def init_fix_client(self):
-        try:
-            fix_client = pyclient.PyFixClient.start(
-                "127.0.0.1:34254",
-                "CLIENT01",
-                "ENGINE01"
-            )
-            return fix_client
-        except Exception as e:
-            print(f"Error initializing FIX Client: {e}")
-            return None
+        #self.show_fix_modal()
+        QTimer.singleShot(0, self.show_fix_modal)
 
     def initUI(self):
         main_layout = QHBoxLayout()
@@ -326,6 +380,15 @@ class EngineWindow(QWidget):
         self.sidebar.chart_btn.clicked.connect(
             lambda: self.stack.setCurrentIndex(3)
         )
+
+    def show_fix_modal(self):
+        modal = FixInitModal(self)
+        modal.fix_initialized.connect(self.on_fix_connected)
+        modal.exec()
+
+    def on_fix_connected(self, fix_client):
+        self.fix_client = fix_client
+        self.dashboard_page.set_fix_client(fix_client)
 
     def getDatabasePath(self):
         root_dir = Path(__file__).resolve().parents[1]

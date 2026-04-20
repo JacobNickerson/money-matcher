@@ -8,13 +8,13 @@ from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QSizePolicy, QTableView, QStyledItemDelegate, QTabBar, QHeaderView,
-    QFrame, QGridLayout, QComboBox, QScrollArea
+    QFrame, QGridLayout, QComboBox, QScrollArea, QMessageBox
 )
 from PyQt5.QtGui import (
     QFont, QColor, QPainter
 )
 from PyQt5.QtCore import (
-    Qt, QRect, QTime
+    Qt, QRect, QTime, pyqtSignal, QEvent
 )
 
 import models.order_book_model as order_book_model
@@ -156,7 +156,7 @@ class OrderBook(QWidget):
 
         tabbar = QTabBar()
         tabbar.addTab("Order Book")
-        tabbar.addTab("Trades")
+        #tabbar.addTab("Trades")
         tabbar.setFont(QFont("Inter", 10, QFont.Medium))
         tabbar.setStyleSheet("""
             QTabBar::tab {
@@ -228,6 +228,9 @@ class OrderEntry(QWidget):
         self.setMinimumWidth(320)
         self.fix_client = fix_client
         self.orderid_gen = OrderIdGenerator()
+        self.manual_open_orders = {}
+        self.all_open_orders = {}
+        self.default_symbol = "SOL/USD"
 
         self.setStyleSheet("""
             OrderEntry {
@@ -245,7 +248,7 @@ class OrderEntry(QWidget):
 
         tabbar = QTabBar()
         tabbar.addTab("Spot")
-        tabbar.addTab("Bots")
+        #tabbar.addTab("Bots")
         tabbar.setFont(QFont("Inter", 10, QFont.Medium))
         tabbar.setStyleSheet("""
             QTabBar::tab {
@@ -365,8 +368,6 @@ class OrderEntry(QWidget):
         layout.addWidget(amount_widget)
         layout.addWidget(total_widget)
 
-        layout.addWidget(self.table())
-
         self.submit_btn = QPushButton()
         self.submit_btn.setMinimumHeight(32)
         self.submit_btn.setMaximumHeight(44)
@@ -422,80 +423,6 @@ class OrderEntry(QWidget):
         layout.addLayout(field_layout)
 
         return container, field
-
-    def table(self, available_val="0.000", max_buy_val="0.000"):
-        container = QWidget()
-        container.setAttribute(Qt.WA_StyledBackground, True)
-        container.setStyleSheet("""
-            QWidget {
-                background-color: #101010;
-                border: 1px solid #2A2A2A;
-                border-radius: 10px;
-            }
-            QLabel {
-                font-family: Inter;
-            }
-        """)
-
-        grid = QGridLayout(container)
-        grid.setContentsMargins(2, 2, 2, 2)
-        grid.setHorizontalSpacing(0)
-        grid.setVerticalSpacing(0)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 0)
-        grid.setColumnStretch(2, 1)
-
-        available_title = QLabel("Available")
-        available_title.setStyleSheet("""
-            color: white; 
-            font-size: 10pt;
-            border: none;
-            padding: 8px;
-        """)
-
-        max_buy_title = QLabel("Max Buy")
-        max_buy_title.setStyleSheet("""
-            color: white; 
-            font-size: 10pt;
-            border: none;
-            padding: 8px;
-        """)
-
-        available_value = QLabel(available_val)
-        available_value.setStyleSheet("""
-            color: #707070; 
-            font-size: 9pt;
-            padding: 8px;
-            border: none;
-        """)
-
-        max_buy_value = QLabel(max_buy_val)
-        max_buy_value.setStyleSheet("""
-            color: #707070; 
-            font-size: 9pt;
-            padding: 8px;
-            border: none;
-        """)
-
-        grid.addWidget(available_title, 0, 0)
-        grid.addWidget(max_buy_title, 0, 2)
-
-        grid.addWidget(available_value, 2, 0)
-        grid.addWidget(max_buy_value, 2, 2)
-
-        h_divider = QFrame()
-        h_divider.setFixedHeight(1)
-        h_divider.setFrameShape(QFrame.HLine)
-        h_divider.setStyleSheet("color: #1D1D1D;")
-        grid.addWidget(h_divider, 1, 0, 1, 3)
-
-        v_divider = QFrame()
-        v_divider.setFixedWidth(1)
-        v_divider.setFrameShape(QFrame.VLine)
-        v_divider.setStyleSheet("color: #1D1D1D;")
-        grid.addWidget(v_divider, 0, 1, 3, 1)
-
-        return container
     
     def update_total(self):
         try:
@@ -542,47 +469,143 @@ class OrderEntry(QWidget):
     
     def submit_order(self, bot_order=False, _side=None, _price=None, _qty=None):
         try:
-            if bot_order:
-                side = pyclient.PyOrderSide.Bid if _side.upper() == "BUY" else pyclient.PyOrderSide.Ask
-                price = int(Decimal(_price) * Decimal("1e4"))
-                qty = int(Decimal(_qty) * Decimal("1e4"))
-            else:
-                side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
-                price = int(Decimal(self.price_input.text()) * Decimal("1e4"))
-                qty = int(Decimal(self.amount_input.text()) * Decimal("1e4"))
+            timestamp = int(time.time() * 1000)
 
-            order_type = pyclient.PyOrderType.limit(qty, price) if self.limit_btn.isChecked() else pyclient.PyOrderType.market(qty)
+            if bot_order:
+                side_text = _side.upper()
+                side = pyclient.PyOrderSide.Bid if side_text == "BUY" else pyclient.PyOrderSide.Ask
+                price_decimal = Decimal(str(_price))
+                qty_decimal = Decimal(str(_qty))
+                symbol = self.default_symbol
+                order_type_name = "Limit" if self.limit_btn.isChecked() else "Market"
+            else:
+                side_text = "BUY" if self.buy_btn.isChecked() else "SELL"
+                side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
+                price_decimal = Decimal(self.price_input.text())
+                qty_decimal = Decimal(self.amount_input.text())
+                symbol = self.default_symbol
+                order_type_name = "Limit" if self.limit_btn.isChecked() else "Market"
+
+            price = int(price_decimal * Decimal("1e4"))
+            qty = int(qty_decimal * Decimal("1e4"))
+
+            order_type = (
+                pyclient.PyOrderType.limit(qty, price)
+                if (bot_order or self.limit_btn.isChecked())
+                else pyclient.PyOrderType.market(qty)
+            )
+
             order_id = self.orderid_gen.next()
-            order = pyclient.PyOrder(client_id=10, order_id=order_id, side=side, timestamp=int(time.time() * 1000), kind=order_type)
+            order = pyclient.PyOrder(
+                client_id=10,
+                order_id=order_id,
+                side=side,
+                timestamp=timestamp,
+                kind=order_type
+            )
 
             if self.fix_client:
                 self.fix_client.send_message(order)
 
+            # store manual orders for dashboard
+            price_float = float(price_decimal)
+            qty_float = float(qty_decimal)
+
+            order_record = {
+                "order_id": order_id,
+                "symbol": symbol,
+                "side": side_text,
+                "price": price_float,
+                "qty": qty_float,
+                "submitted_at": timestamp / 1000.0,
+                "status": "Open",
+                "filled_pct": 0.0,
+                "order_type": order_type_name,
+                "source": "bot" if bot_order else "manual",
+            }
+
+            self.all_open_orders[order_id] = dict(order_record)
+
+            if not bot_order:
+                self.manual_open_orders[order_id] = dict(order_record)
+
             return order_id
+
         except Exception as e:
             print(f"Error sending order: {e}")
 
+    def cancel_order(self, order_id):
+        self.mark_order_cancelled(order_id)
+
+    def get_open_manual_orders(self):
+        return list(self.manual_open_orders.values())
+
+    def get_all_open_orders(self):
+        return list(self.all_open_orders.values())
+
+    def remove_open_order(self, order_id):
+        self.manual_open_orders.pop(order_id, None)
+        self.all_open_orders.pop(order_id, None)
+
+    def mark_order_filled(self, order_id, filled_pct=100.0, status="Filled"):
+        order = self.all_open_orders.get(order_id)
+        if order is None:
+            return
+
+        order["filled_pct"] = float(filled_pct)
+        order["status"] = status
+
+        if filled_pct >= 100.0 or status.lower() == "filled":
+            self.manual_open_orders.pop(order_id, None)
+            self.all_open_orders.pop(order_id, None)
+
+    def mark_order_cancelled(self, order_id):
+        self.manual_open_orders.pop(order_id, None)
+        self.all_open_orders.pop(order_id, None)
+
 class CancelButtonDelegate(QStyledItemDelegate):
+    cancelClicked = pyqtSignal(int)
+
     def paint(self, painter, option, index):
         painter.save()
 
         rect = option.rect.adjusted(6, 6, -6, -6)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         painter.setBrush(QColor("#261719"))
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(rect, 6, 6)
 
         painter.setPen(QColor("#FF5D61"))
-        painter.drawText(rect, Qt.AlignCenter, "Cancel")
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "Cancel")
 
         painter.restore()
 
+    def editorEvent(self, event, model, option, index):
+        if event.type() == QEvent.MouseMove:
+            rect = option.rect.adjusted(6, 6, -6, -6)
+            if rect.contains(event.pos()):
+                option.widget.setCursor(Qt.PointingHandCursor)
+            else:
+                option.widget.setCursor(Qt.ArrowCursor)
+
+        if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+            rect = option.rect.adjusted(6, 6, -6, -6)
+            if rect.contains(event.pos()):
+                self.cancelClicked.emit(index.row())
+                return True
+
+        return False
+
 class TradeHistory(QWidget):
-    def __init__(self):
+    def __init__(self, performance_tracker=None, strategy_sessions=None, order_entry=None):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.performance_tracker = performance_tracker
+        self.strategy_sessions = strategy_sessions if strategy_sessions is not None else {}
+        self.order_entry = order_entry
+        self.current_view = "open_orders"
 
         self.setStyleSheet("""
             TradeHistory {
@@ -651,6 +674,7 @@ class TradeHistory(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setFocusPolicy(Qt.NoFocus)
+        self.table.setMouseTracking(True)
 
         scroll_bar_style = """
             QScrollBar:vertical {
@@ -672,11 +696,207 @@ class TradeHistory(QWidget):
             }
         """
         self.table.verticalScrollBar().setStyleSheet(scroll_bar_style)
-        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         layout.addWidget(self.table)
 
-        #self.load_test_data()
+        self.model = trade_history_model.TradeHistoryModel([])
+        self.table.setModel(self.model)
+
+        self.open_orders_btn.clicked.connect(lambda: self.set_view("open_orders"))
+        self.open_positions_btn.clicked.connect(lambda: self.set_view("open_positions"))
+        self.order_history_btn.clicked.connect(lambda: self.set_view("order_history"))
+
+        self.set_view("open_orders")
+
+    def set_strategy_sessions(self, strategy_sessions):
+        self.strategy_sessions = strategy_sessions if strategy_sessions is not None else {}
+        self.refresh_data()
+
+    def set_view(self, view_name):
+        self.current_view = view_name
+        self.refresh_data()
+
+    def refresh_data(self):
+        if self.current_view == "open_orders":
+            self.refresh_open_orders()
+        elif self.current_view == "open_positions":
+            self.refresh_open_positions()
+        elif self.current_view == "order_history":
+            self.refresh_order_history()
+
+    def refresh_open_orders(self):
+        rows = []
+
+        # Bot pending orders
+        for bot_id, runner in self.strategy_sessions.items():
+            bot_name = getattr(runner, "bot_name", f"bot_{bot_id}")
+            symbol = getattr(runner, "symbol", "")
+
+            for order_id, order in getattr(runner, "pending_orders", {}).items():
+                submitted_at = order.get("submitted_at", 0)
+                side = str(order.get("side", "")).title()
+                price = float(order.get("price", 0.0))
+                qty = float(order.get("qty", 0.0))
+                total = price * qty
+
+                rows.append({
+                    "Source": "Bot",
+                    "Owner": bot_name,
+                    "Symbol": symbol,
+                    "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(submitted_at)) if submitted_at else "",
+                    "Type": "Limit",
+                    "Side": side,
+                    "Price": f"${price:,.2f}",
+                    "Amount": f"{qty:,.4f}",
+                    "Filled": "0%",
+                    "Total": f"${total:,.2f}",
+                    "Status": "Open",
+                    "Action": "Cancel",
+                    "_order_id": order_id,
+                })
+
+        # User pending orders
+        if self.order_entry is not None and hasattr(self.order_entry, "get_open_manual_orders"):
+            for order in self.order_entry.get_open_manual_orders():
+                submitted_at = float(order.get("submitted_at", 0))
+                side = str(order.get("side", "")).title()
+                price = float(order.get("price", 0.0))
+                qty = float(order.get("qty", 0.0))
+                total = price * qty
+
+                rows.append({
+                    "Source": "Manual",
+                    "Owner": "User",
+                    "Symbol": order.get("symbol", ""),
+                    "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(submitted_at)) if submitted_at else "",
+                    "Type": order.get("order_type", "Limit"),
+                    "Side": side,
+                    "Price": f"${price:,.2f}",
+                    "Amount": f"{qty:,.4f}",
+                    "Filled": f'{float(order.get("filled_pct", 0.0)):.0f}%',
+                    "Total": f"${total:,.2f}",
+                    "Status": order.get("status", "Open"),
+                    "Action": "Cancel",
+                    "_order_id": order.get("order_id"),
+                })
+
+        rows.sort(key=lambda r: r["Date"], reverse=True)
+
+        self.model = trade_history_model.TradeHistoryModel(rows)
+        self.table.setModel(self.model)
+
+        action_col = self.find_column("Action")
+        if action_col >= 0:
+            self.cancel_delegate = CancelButtonDelegate(self.table)
+            self.cancel_delegate.cancelClicked.connect(self.handle_cancel_clicked)
+            self.table.setItemDelegateForColumn(action_col, self.cancel_delegate)
+
+    def refresh_open_positions(self):
+        rows = []
+
+        if self.performance_tracker is not None:
+            for summary in self.performance_tracker.get_all_bot_summaries():
+                bot_name = summary.get("bot_name", "")
+                symbol = summary.get("symbol", "")
+                mark_price = float(summary.get("mark_price", 0.0))
+
+                for trade in summary.get("open_trade_details", []):
+                    entry_time = float(trade.get("entry_time", 0.0))
+                    side = trade.get("side", "").title()
+                    entry_price = float(trade.get("entry_price", 0.0))
+                    remaining_qty = float(trade.get("remaining_qty", 0.0))
+                    unrealized = 0.0
+
+                    if remaining_qty > 0 and mark_price > 0:
+                        if trade.get("side", "").upper() == "BUY":
+                            unrealized = (mark_price - entry_price) * remaining_qty
+                        else:
+                            unrealized = (entry_price - mark_price) * remaining_qty
+
+                    rows.append({
+                        "Symbol": symbol,
+                        "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(entry_time)) if entry_time else "",
+                        "Type": "Position",
+                        "Side": side,
+                        "Price": f"${entry_price:,.2f}",
+                        "Amount": f"{remaining_qty:,.4f}",
+                        "Filled": "100%",
+                        "Total": f"${entry_price * remaining_qty:,.2f}",
+                        "Status": f"{unrealized:+.2f}",
+                        "Action": "",
+                        "Bot": bot_name,
+                    })
+
+        self.model = trade_history_model.TradeHistoryModel(rows)
+        self.table.setModel(self.model)
+
+    def refresh_order_history(self):
+        rows = []
+
+        if self.performance_tracker is not None:
+            summary = self.performance_tracker.get_account_summary()
+
+            for trade in summary.get("trades", []):
+                exit_time = float(trade.get("exit_time", 0.0) or trade.get("entry_time", 0.0))
+                side = trade.get("side", "").title()
+                entry_price = float(trade.get("entry_price", 0.0))
+                exit_price = float(trade.get("exit_price", 0.0))
+                entry_qty = float(trade.get("entry_qty", 0.0))
+                pnl = float(trade.get("pnl", 0.0))
+
+                rows.append({
+                    "Symbol": trade.get("symbol", ""),
+                    "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(exit_time)) if exit_time else "",
+                    "Type": "Filled",
+                    "Side": side,
+                    "Price": f"${exit_price:,.2f}",
+                    "Amount": f"{entry_qty:,.4f}",
+                    "Filled": "100%",
+                    "Total": f"${exit_price * entry_qty:,.2f}",
+                    "Status": f"{pnl:+.2f}",
+                    "Action": "",
+                    "Bot": trade.get("bot_name", ""),
+                })
+
+        self.model = trade_history_model.TradeHistoryModel(rows)
+        self.table.setModel(self.model)
+
+    def find_column(self, column_name):
+        model = self.table.model()
+        if model is None:
+            return -1
+
+        for col in range(model.columnCount()):
+            header = model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
+            if header == column_name:
+                return col
+
+        return -1
+    
+    def handle_cancel_clicked(self, row):
+        row_data = self.model.rows[row]
+        order_id = row_data.get("_order_id")
+        source = row_data.get("Source")
+
+        if order_id is None:
+            return
+
+        try:
+            if source == "Manual":
+                if self.order_entry is not None and hasattr(self.order_entry, "cancel_order"):
+                    self.order_entry.cancel_order(order_id)
+
+            elif source == "Bot":
+                for runner in self.strategy_sessions.values():
+                    if order_id in getattr(runner, "pending_orders", {}):
+                        runner.cancel_order(order_id)
+                        break
+
+            self.refresh_data()
+
+        except Exception as e:
+            QMessageBox.warning("Cancel Order", f"Failed to cancel order:\n{e}")
 
     def load_test_data(self):
         rows = []

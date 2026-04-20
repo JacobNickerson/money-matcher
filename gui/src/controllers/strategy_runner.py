@@ -285,6 +285,15 @@ class StrategyRunner(QObject):
         except Exception as e:
             self.log(f"Order submit error: {e}")
 
+    def cancel_order(self, order_id):
+        if order_id in self.pending_orders:
+            self.pending_orders.pop(order_id, None)
+
+        if self.order_entry is not None and hasattr(self.order_entry, "cancel_order"):
+            self.order_entry.cancel_order(order_id)
+
+        self.log(f"Cancelled order {order_id}")
+
     def buy(self, qty=None, price=None):
         qty = self.order_size if qty is None else qty
         if price is None and self.book_state is not None:
