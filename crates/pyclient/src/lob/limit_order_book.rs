@@ -1,6 +1,6 @@
 use mm_core::lob_core::{
     OrderId, OrderQty, Price,
-    market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType, TradeEvent},
+    market_events::{L3Event, MarketEvent, MarketEventType, TradeEvent},
     market_orders::{LimitOrder, OrderSide, OrderType},
 };
 use std::collections::{BTreeMap, HashMap};

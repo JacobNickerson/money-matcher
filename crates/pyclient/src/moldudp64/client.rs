@@ -7,7 +7,6 @@ use ringbuf::{
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    sync::Mutex,
     thread,
 };
 
@@ -38,8 +37,8 @@ impl MoldClient {
         );
 
         Self {
-            l3_rx: l3_rx,
-            trade_rx: trade_rx,
+            l3_rx,
+            trade_rx,
             next_l3: None,
             next_trade: None,
             expected_tracking_number: 1,

@@ -9,7 +9,7 @@ pub fn write_fix_message(
     outbound_sequence_number: &u32,
     sender_comp_id: &str,
     target_comp_id: &str,
-    body: &Vec<u8>,
+    body: &[u8],
 ) -> Vec<u8> {
     let mut itoa_buf = itoa::Buffer::new();
 
@@ -85,7 +85,7 @@ pub fn calculate_checksum(message: &[u8]) -> u32 {
 
 /// Prints a raw FIX message byte slice to standard output, substituting the
 /// SOH delimiter (`\x01`) with a pipe (`|`) for readability.
-pub fn print_message(message: &Vec<u8>) {
+pub fn print_message(message: &[u8]) {
     let mut output = Vec::with_capacity(message.len());
 
     for &byte in message.iter() {

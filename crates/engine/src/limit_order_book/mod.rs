@@ -1,4 +1,3 @@
-use bytes::buf::Limit;
 use mm_core::lob_core::{
     OrderId, OrderQty, Price, Timestamp,
     market_events::{
@@ -7,7 +6,6 @@ use mm_core::lob_core::{
     },
     market_orders::{LimitOrder, Order, OrderSide, OrderStatus, OrderType},
 };
-use rand_distr::num_traits::WrappingAdd;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 #[derive(Debug, Default)]
@@ -114,7 +112,7 @@ impl<T: EventSink> OrderBook<T> {
                 price: _,
             } => self.update_order_and_emit_events(old_id, order, time),
         };
-        self.update_snapshot(time);
+        self.update_aggregates();
         order
     }
 
@@ -385,7 +383,6 @@ impl<T: EventSink> OrderBook<T> {
         market_event_counter: &mut u16,
         client_event_counter: &mut u64,
     ) {
-        let initial_qty = taker.qty;
         for (price, level) in iter {
             match taker.side {
                 OrderSide::Ask => {
@@ -497,9 +494,8 @@ impl<T: EventSink> OrderBook<T> {
         Some(market_order)
     }
 
-    /// Checks the current state of the lob and generates L1/L2 events if applicable
-    /// Updates cached value for best_ask and best_bid
-    fn update_snapshot(&mut self, time: Timestamp) {
+    // Checks the current state of the lob and updates cached value for best_ask and best_bid
+    fn update_aggregates(&mut self) {
         self.best_ask = self.best_ask().unwrap_or(0);
         self.best_bid = self.best_bid().unwrap_or(0);
     }

@@ -1,12 +1,8 @@
-use crate::{
-    fix_core::messages::execution_report,
-    lob_core::{
-        ClientId, OrderId, OrderQty, Price, Timestamp,
-        market_orders::{LimitOrder, Order, OrderSide, OrderType},
-    },
+use crate::lob_core::{
+    ClientId, OrderId, OrderQty, Price, Timestamp,
+    market_orders::{LimitOrder, Order, OrderSide, OrderType},
 };
 use ringbuf::{HeapProd, traits::Producer};
-use time::Time;
 
 /// Event type representing a single L3 data point, ie an individual order
 /// Emitted on every order received by the limit order book

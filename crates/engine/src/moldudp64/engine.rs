@@ -6,7 +6,7 @@ use mm_core::{
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
     },
     lob_core::{
-        market_events::{EventSink, L3EventExtra, MarketEvent, MarketEventType},
+        market_events::{L3EventExtra, MarketEvent, MarketEventType},
         market_orders::OrderType,
     },
     moldudp64_core::types::Event,
@@ -119,9 +119,9 @@ impl MoldEngine {
                         event.timestamp,
                         e.order_id,
                         e.side as u8,
-                        qty.try_into().unwrap(),
+                        qty,
                         *b"  stock ", // PLACEHOLDER
-                        price as u32,
+                        price,
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -138,7 +138,7 @@ impl MoldEngine {
                         event.timestamp,
                         e.order_id,
                         e.side as u8,
-                        qty.try_into().unwrap(),
+                        qty,
                         *b"  stock ", // PLACEHOLDER
                         0u32,
                     );
@@ -161,7 +161,7 @@ impl MoldEngine {
                         self.current_tracking_number,
                         event.timestamp,
                         e.order_id,
-                        cancel_qty.try_into().unwrap(),
+                        cancel_qty,
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -177,14 +177,13 @@ impl MoldEngine {
                         event.timestamp,
                         old_id,
                         e.order_id,
-                        qty.try_into().unwrap(),
-                        price as u32,
+                        qty,
+                        price,
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
                     Self::push_event(&mut self.l3_tx, &buf);
                 }
-                _ => {}
             },
             MarketEventType::Trade(e) => {
                 let mut buf = [0u8; 36];
@@ -195,17 +194,16 @@ impl MoldEngine {
                     self.current_tracking_number,
                     event.timestamp,
                     e.maker_id,
-                    e.quantity as u32,
+                    e.quantity,
                     0,    // PLACEHOLDER
                     b'Y', // PLACEHOLDER
-                    e.price as u32,
+                    e.price,
                 );
 
                 self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
 
                 Self::push_event(&mut self.trade_tx, &buf);
             }
-            _ => {}
         }
     }
 }

@@ -63,7 +63,7 @@ impl FIXBusinessMessage for OrderCancelReplace {
             timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
             kind: OrderType::Update {
                 old_id: self.orig_cl_ord_id,
-                qty: self.qty.into(),
+                qty: self.qty,
                 price: 0 as Price,
             },
         }

@@ -55,8 +55,8 @@ impl FIXBusinessMessage for NewOrderSingle {
             },
             timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
             kind: OrderType::Limit {
-                qty: self.qty.into(),
-                price: self.price.into(),
+                qty: self.qty,
+                price: self.price,
             },
         }
     }
@@ -66,7 +66,7 @@ impl FIXBusinessMessage for NewOrderSingle {
         Self: Sized,
     {
         let (qty, price) = match order.kind {
-            OrderType::Limit { qty, price } => (qty as u32, price as u32),
+            OrderType::Limit { qty, price } => (qty, price),
             _ => return Err("Unsupported order.kind"),
         };
 
