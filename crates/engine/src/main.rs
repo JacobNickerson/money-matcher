@@ -170,7 +170,10 @@ fn main() {
     let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
     let gateway_running = Arc::clone(&running);
     let order_gateway_thread = thread::spawn(move || {
-        let (_, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
+        let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
+        let engine_thread = thread::spawn(move || {
+            engine.run();
+        });
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
