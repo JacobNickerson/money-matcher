@@ -23,14 +23,14 @@ impl BinaryLogger {
         })
     }
     pub fn log_order(&mut self, order: Order) {
-        let bytes: AlignedVec =
-            to_bytes::<RancorError>(&order).expect("binarylogger: failed to serialize order");
-        self.buffer.extend_from_slice(bytes.as_ref());
-        self.batches_queued += 1;
-        if self.batches_queued == self.batch_size {
-            self.buf_write
-                .write_all(&self.buffer)
-                .expect("binarylogger: bufwriter failed to write");
-        }
+        // let bytes: AlignedVec =
+        //     to_bytes::<RancorError>(&order).expect("binarylogger: failed to serialize order");
+        // self.buffer.extend_from_slice(bytes.as_ref());
+        // self.batches_queued += 1;
+        // if self.batches_queued == self.batch_size {
+        //     self.buf_write
+        //         .write_all(&self.buffer)
+        //         .expect("binarylogger: bufwriter failed to write");
+        // }
     }
 }
