@@ -7,7 +7,6 @@ use ringbuf::{
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    sync::Mutex,
     thread,
 };
 

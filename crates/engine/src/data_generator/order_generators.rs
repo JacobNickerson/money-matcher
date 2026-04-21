@@ -80,7 +80,7 @@ impl OrderGenerator for GaussianOrderGenerator {
                 side,
                 self.current_time,
                 OrderType::Cancel {
-                    old_id: self.get_active_order(side),
+                    old_id: self.get_active_order(),
                 },
             ),
             OrderType::Update { .. } => Order::new(
@@ -89,7 +89,7 @@ impl OrderGenerator for GaussianOrderGenerator {
                 side,
                 self.current_time,
                 OrderType::Update {
-                    old_id: self.get_active_order(side),
+                    old_id: self.get_active_order(),
                     qty,
                     price,
                 },
