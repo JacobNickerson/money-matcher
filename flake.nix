@@ -29,10 +29,7 @@
               rust-analyzer
 
               # Python
-              python
-              pyPkgs.pip
-              pyPkgs.setuptools
-              pyPkgs.wheel
+              uv
               pkgs.maturin # maturin builds the PyO3 extension and installs into the env
 
               pkg-config
