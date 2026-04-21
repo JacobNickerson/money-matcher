@@ -385,7 +385,6 @@ impl<T: EventSink> OrderBook<T> {
         market_event_counter: &mut u16,
         client_event_counter: &mut u64,
     ) {
-        let initial_qty = taker.qty;
         for (price, level) in iter {
             match taker.side {
                 OrderSide::Ask => {
