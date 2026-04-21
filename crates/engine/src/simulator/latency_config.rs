@@ -35,7 +35,15 @@ impl JitterCfg {
     pub fn validate(&self) -> Result<(), String> {
         match self {
             JitterCfg::None => Ok(()),
-            JitterCfg::Normal { mean, std_dev } => Ok(()),
+            JitterCfg::Normal { mean, std_dev } => {
+              if *mean < 0.0 {
+                return Err("Mean must be a positive value".into());
+              }
+              if *std_dev < 0.0 {
+                return Err("Variance must be a positive value".into());
+              }
+              Ok(())  
+            },
             JitterCfg::Uniform { low, high } => {
                 if low > high {
                     return Err("uniform jitter: `low` must be <= `high`".into());
@@ -57,7 +65,7 @@ impl SimJitter {
         match self {
             SimJitter::None => 0,
             SimJitter::Uniform(dist) => dist.sample(rng),
-            SimJitter::Normal(dist) => dist.sample(rng).round() as u64,
+            SimJitter::Normal(dist) => dist.sample(rng).floor().round() as u64,
         }
     }
 }
