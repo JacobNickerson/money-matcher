@@ -56,10 +56,10 @@ fn main() {
     let running = Arc::new(AtomicBool::new(true));
     let running_handler = Arc::clone(&running);
     ctrlc::set_handler(move || {
-        running_handler.store(false, Ordering::Relaxed);
         if args.logging {
             println!("Simulation terminated, stopping...");
         }
+        running_handler.store(false, Ordering::Relaxed);
     })
     .unwrap();
 
@@ -148,8 +148,9 @@ fn main() {
     let gateway_running = Arc::clone(&running);
     let order_gateway_thread = thread::spawn(move || {
         let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
+        let engine_running = Arc::clone(&gateway_running);
         let engine_thread = thread::spawn(move || {
-            engine.run();
+            engine.run(Arc::clone(&engine_running));
         });
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
@@ -171,6 +172,10 @@ fn main() {
                 handler.send_message(msg);
             }
         }
+        if args.logging {
+            println!("FixEngine shutting down...");
+        } 
+        let _ = engine_thread.join();
     });
     if args.logging {
         println!("FixEngine started");
