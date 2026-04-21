@@ -77,6 +77,7 @@ fn main() {
 
     let source = match args.event_source {
         EventSourceType::Poisson {
+            count,
             order_rate,
             bid_rate,
             new_limit_rate,
@@ -97,6 +98,7 @@ fn main() {
                 ),
                 GaussianOrderGenerator::new(avg_price, price_dev),
                 rng.clone(),
+                count,
             );
             SourceFunction::new(Box::new(move || source.next_event()))
         }
@@ -175,34 +177,16 @@ fn main() {
 
     let mut sim_step_count: u128 = 0;
     let time = Instant::now();
-    match args.count {
-        Some(range) => {
-            for _ in 0..range {
-                #[allow(dead_code)]
-                if let Err(msg) = sim.step() {
-                    if args.logging {
-                        println!("{}", msg);
-                    }
-                    break;
-                }
-                sim_step_count += 1;
-                if !running.load(Ordering::Relaxed) {
-                    break;
-                }
+
+    while running.load(Ordering::Relaxed) {
+        #[allow(dead_code)]
+        if let Err(msg) = sim.step() {
+            if args.logging {
+                println!("{}", msg);
             }
+            break;
         }
-        None => {
-            while running.load(Ordering::Relaxed) {
-                #[allow(dead_code)]
-                if let Err(msg) = sim.step() {
-                    if args.logging {
-                        println!("{}", msg);
-                    }
-                    break;
-                }
-                sim_step_count += 1;
-            }
-        }
+        sim_step_count += 1;
     }
     let elapsed = time.elapsed();
     running.store(false, Ordering::Relaxed);

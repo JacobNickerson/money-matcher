@@ -49,12 +49,6 @@ pub struct Args {
     #[arg(long, required_if_eq("sim_jitter_type","normal"), value_parser = positive_float_parser)]
     pub std_dev: Option<f64>,
 
-    /// Number of orders to generate before terminating, if unused the simulation runs indefinitely
-    /// 
-    /// Simulation can terminate early if using file-based event source
-    #[arg(long)]
-    pub count: Option<u64>,
-
     /// RNG seed for randomly sampled values, if unspecified a random one is picked
     #[arg(long)]
     pub seed: Option<u64>,
@@ -78,6 +72,10 @@ pub struct Args {
 pub enum EventSourceType {
     /// Generate synthetic orders by randomly sampling inter-arrival times from an exponential distribution
     Poisson {
+        /// Number of orders to generate before terminating, if unused the simulation runs indefinitely
+        #[arg(long)]
+        count: Option<u64>,
+
         /// Rate of production of synthetic orders in orders per second
         #[arg(long, default_value_t = 100_000.0, value_parser = positive_float_parser)]
         order_rate: f64,
