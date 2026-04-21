@@ -174,7 +174,7 @@ fn main() {
         }
         if args.logging {
             println!("FixEngine shutting down...");
-        } 
+        }
         let _ = engine_thread.join();
     });
     if args.logging {

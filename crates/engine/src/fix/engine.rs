@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     io,
     net::SocketAddr,
-    sync::{Arc,atomic::AtomicBool,atomic::Ordering},
+    sync::{Arc, atomic::AtomicBool, atomic::Ordering},
     time::{Duration, Instant},
 };
 

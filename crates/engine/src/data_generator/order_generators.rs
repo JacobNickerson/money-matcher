@@ -42,7 +42,7 @@ impl GaussianOrderGenerator {
         (self.dist.sample(rng).abs() * 100.0) as Price
     }
     fn get_active_order(&self, rng: &mut impl Rng) -> OrderId {
-        let dist = Uniform::new(0,self.order_counter).unwrap();
+        let dist = Uniform::new(0, self.order_counter).unwrap();
         dist.sample(rng)
     }
 }
