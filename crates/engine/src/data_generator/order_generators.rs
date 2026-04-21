@@ -1,4 +1,3 @@
-use circular_buffer::CircularBuffer;
 use fastrand;
 use mm_core::lob_core::{
     ClientId, OrderId, OrderQty, Price, Timestamp,

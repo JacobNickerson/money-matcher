@@ -4,7 +4,7 @@ use crate::simulator::latency_config::LatencyConfig;
 use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 use std::time::{Duration, Instant};
 
 const USER_ORDER_INGRESS: usize = 1024;

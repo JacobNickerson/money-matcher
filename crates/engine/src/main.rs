@@ -171,7 +171,7 @@ fn main() {
     let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
     let gateway_running = Arc::clone(&running);
     let order_gateway_thread = thread::spawn(move || {
-        let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
+        let (engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
@@ -234,7 +234,7 @@ fn main() {
             elapsed.as_nanos() as f64 / 1_000_000_000.0,
             elapsed.as_nanos()
         );
-    } else if (args.benchmark) {
+    } else if args.benchmark {
         println!("{},{},{}", sim_step_count, elapsed.as_nanos(), sim.time());
     }
 

@@ -121,7 +121,7 @@ impl MoldEngine {
                         e.side as u8,
                         qty.try_into().unwrap(),
                         *b"  stock ", // PLACEHOLDER
-                        price as u32,
+                        price,
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -178,7 +178,7 @@ impl MoldEngine {
                         old_id,
                         e.order_id,
                         qty.try_into().unwrap(),
-                        price as u32,
+                        price,
                     );
 
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
@@ -195,10 +195,10 @@ impl MoldEngine {
                     self.current_tracking_number,
                     event.timestamp,
                     e.maker_id,
-                    e.quantity as u32,
+                    e.quantity,
                     0,    // PLACEHOLDER
                     b'Y', // PLACEHOLDER
-                    e.price as u32,
+                    e.price,
                 );
 
                 self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
