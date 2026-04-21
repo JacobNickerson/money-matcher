@@ -37,8 +37,8 @@ impl MoldClient {
         );
 
         Self {
-            l3_rx: l3_rx,
-            trade_rx: trade_rx,
+            l3_rx,
+            trade_rx,
             next_l3: None,
             next_trade: None,
             expected_tracking_number: 1,

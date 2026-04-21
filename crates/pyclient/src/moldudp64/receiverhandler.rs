@@ -220,11 +220,11 @@ impl ReceiverHandler {
                         timestamp,
                         kind: if price > 0 {
                             OrderType::Limit {
-                                qty: shares.into(),
-                                price: price.into(),
+                                qty: shares,
+                                price,
                             }
                         } else {
-                            OrderType::Market { qty: shares.into() }
+                            OrderType::Market { qty: shares }
                         },
                         extra: L3EventExtra::None,
                     }),
@@ -245,8 +245,8 @@ impl ReceiverHandler {
                     id,
                     timestamp,
                     kind: MarketEventType::Trade(TradeEvent {
-                        quantity: executed_shares.into(),
-                        price: execution_price.into(),
+                        quantity: executed_shares,
+                        price: execution_price,
                         aggressor_side: OrderSide::Ask,
                         maker_id,
                     }),
@@ -273,8 +273,8 @@ impl ReceiverHandler {
                         timestamp,
                         kind: OrderType::Update {
                             old_id: original_order_ref,
-                            qty: shares.into(),
-                            price: price.into(),
+                            qty: shares,
+                            price,
                         },
                         extra: L3EventExtra::None,
                     }),
