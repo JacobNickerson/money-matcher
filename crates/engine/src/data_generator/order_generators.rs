@@ -3,8 +3,11 @@ use mm_core::lob_core::{
     ClientId, OrderId, OrderQty, Price, Timestamp,
     market_orders::{Order, OrderSide, OrderType},
 };
-use rand::Rng;
-use rand_distr::{Distribution, Normal};
+use rand::{Rng, RngExt};
+use rand_distr::{
+    Distribution, Normal, Uniform,
+    uniform::{UniformSampler, UniformUsize},
+};
 
 use crate::simulator::SimTime;
 
@@ -20,12 +23,11 @@ pub trait OrderGenerator {
     ) -> Order;
 }
 
-const QUANTITIES: [OrderQty; 5] = [1, 2, 5, 10, 20];
-
 pub struct GaussianOrderGenerator {
     dist: Normal<f64>,
     current_time: SimTime,
     order_counter: u64,
+    qty_dist: Uniform<OrderQty>,
 }
 impl GaussianOrderGenerator {
     pub fn new(mean: f64, deviation: f64) -> Self {
@@ -33,6 +35,7 @@ impl GaussianOrderGenerator {
             dist: Normal::new(mean, deviation).unwrap(),
             current_time: 0,
             order_counter: 0,
+            qty_dist: Uniform::new_inclusive(0, 20).unwrap(), // TODO: Make this configurable
         }
     }
     fn compute_price(&mut self, rng: &mut impl Rng) -> Price {
@@ -52,7 +55,7 @@ impl OrderGenerator for GaussianOrderGenerator {
     ) -> Order {
         let (side, kind) = order_variant;
         let price = self.compute_price(rng);
-        let qty = QUANTITIES[fastrand::usize(0..QUANTITIES.len())];
+        let qty = self.qty_dist.sample(rng);
         self.order_counter += 1;
         self.current_time += time_stamp;
         match kind {
