@@ -53,7 +53,7 @@ mod pyclient {
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     /// Enum determining the type of an order, can have values limit, market, update, and cancel
-    struct PyOrderType {
+    pub struct PyOrderType {
         inner: OrderType,
     }
     #[gen_stub_pymethods]
@@ -92,7 +92,7 @@ mod pyclient {
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     /// Struct representing an order
-    struct PyOrder {
+    pub struct PyOrder {
         inner: Order,
     }
     #[gen_stub_pymethods]
@@ -162,7 +162,7 @@ mod pyclient {
     #[derive(Debug)]
     /// A helper for creating PyOrders of various types, maintains an internal counter
     /// for client IDs
-    struct PyOrderGenerator {
+    pub struct PyOrderGenerator {
         client_id_counter: ClientId,
     }
     #[gen_stub_pymethods]
@@ -238,7 +238,7 @@ mod pyclient {
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
     /// Enum that contains extra information depending on the type of L3 event, such as qty for canceled orders
-    struct PyL3EventExtra {
+    pub struct PyL3EventExtra {
         inner: L3EventExtra,
     }
     #[gen_stub_pymethods]
@@ -273,7 +273,7 @@ mod pyclient {
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
     /// Enum determining the type of a MarketEvent, it can have values Trade and L3
-    struct PyMarketEventType {
+    pub struct PyMarketEventType {
         inner: MarketEventType,
     }
     #[gen_stub_pymethods]
@@ -342,7 +342,7 @@ mod pyclient {
     #[derive(Copy, Clone, Debug)]
     /// Struct representing a MarketEvent, it contains information pertaining to all events, like timestamp, as well
     /// as unique information which is stored in the type
-    struct PyMarketEvent {
+    pub struct PyMarketEvent {
         pub id: u16,
         pub timestamp: u64,
         pub kind: PyMarketEventType,
@@ -397,7 +397,7 @@ mod pyclient {
     #[pyclass]
     /// A stripped down version of the OrderBook. Directly manages its state
     /// via MarketEvents instead of handling matching logic, trade execution, etc.
-    struct PyOrderBook {
+    pub struct PyOrderBook {
         inner: OrderBook,
     }
     #[gen_stub_pymethods]
@@ -458,7 +458,7 @@ mod pyclient {
 
     #[gen_stub_pyclass]
     #[pyclass]
-    struct PyMoldClient {
+    pub struct PyMoldClient {
         inner: Mutex<MoldClient>,
     }
 
