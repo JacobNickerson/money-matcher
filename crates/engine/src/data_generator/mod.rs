@@ -1,4 +1,3 @@
-pub mod event_logger;
 pub mod event_source;
 pub mod order_generators;
 pub mod rate_controllers;

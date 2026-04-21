@@ -22,13 +22,15 @@ use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
 use crate::fix::engine::FixEngine;
 use crate::moldudp64::engine::MoldEngine;
-use crate::simulator::latency_config::{LatencyConfig, SimJitter};
 use crate::simulator::DynamicSimulator;
+use crate::simulator::latency_config::{LatencyConfig, SimJitter};
 
 use crate::cli_args::{Args, EventSourceType, validate};
+use crate::event_logger::BinaryLogger;
 
 mod cli_args;
 mod data_generator;
+mod event_logger;
 mod fix;
 mod moldudp64;
 mod simulator;

@@ -99,7 +99,6 @@ impl FileReplaySource {
         let file = File::open(path)?;
         let file_size = file.metadata()?.len() as usize;
 
-        
         Ok(Self {
             mmap: unsafe { Mmap::map(&file)? },
             file_size,
