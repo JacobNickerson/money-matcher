@@ -180,13 +180,18 @@ fn main() {
     let mut sim_step_count: u128 = 0;
     let time = Instant::now();
 
+    let mut logger = BinaryLogger::new("test.bin", 4).expect("Failed to create logger");
+
     while running.load(Ordering::Relaxed) {
         #[allow(dead_code)]
-        if let Err(msg) = sim.step() {
+        let res = sim.step();
+        if let Err(msg) = res {
             if args.logging {
                 println!("{}", msg);
             }
             break;
+        } else if let Ok(event) = res {
+            logger.log_order(event);
         }
         sim_step_count += 1;
     }

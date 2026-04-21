@@ -52,7 +52,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             is_real_time,
         }
     }
-    pub fn step(&mut self) -> Result<(), String> {
+    pub fn step(&mut self) -> Result<Order, String> {
         self.drain_user_orders();
         if let Some(synth_order) = self.generate_single_order() {
             self.orders.push(synth_order);
@@ -63,7 +63,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
                 self.pace(event.timestamp);
             }
             self.process_event(event);
-            Ok(())
+            Ok(event)
         } else {
             Err("Reached end of event stream".to_string())
         }
