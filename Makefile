@@ -20,6 +20,6 @@ build-py-client-dev:
 
 build-py-client-release: setup-deps
 	cd crates/pyclient && maturin build --release
-	python3 -m pip install $(TARGET_DIR)/wheels/pyclient-*.whl
+	python3 -m pip install --force-reinstall $(TARGET_DIR)/wheels/pyclient-*.whl
 	mkdir -p $(STUB_DIR)
 	pyo3-stubgen pyclient $(STUB_DIR)
