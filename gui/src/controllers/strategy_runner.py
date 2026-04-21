@@ -20,15 +20,6 @@ class BookState:
     spread: float
     mid_price: float
 
-@dataclass
-class Fill:
-    order_id: int
-    symbol: str
-    side: str
-    qty: float
-    price: float
-    timestamp: float
-
 class StrategyRunner(QObject):
     strategy_log = pyqtSignal(str)
 
@@ -68,6 +59,7 @@ class StrategyRunner(QObject):
         self.next_synthetic_order_id = 1
         self.open_long_order_ids = deque()   # BUY fills still open
         self.open_short_order_ids = deque()  # SELL fills still open
+        self.orders_with_any_fill = set()
 
         if self.performance_tracker is not None:
             self.performance_tracker.register_bot(
@@ -211,7 +203,7 @@ class StrategyRunner(QObject):
         try:
             best_bid = book.best_bid()
             best_ask = book.best_ask()
-            spread = book.spread()
+            spread = book.best_ask() - book.best_bid()
             mid_price = book.mid_price()
 
             self.book_state = BookState(
@@ -237,6 +229,7 @@ class StrategyRunner(QObject):
             if side == "BUY":
                 if self.position + qty > self.max_position:
                     self.log("BUY blocked: max position exceeded")
+                    return
 
                 required_cost = float(price) * float(qty)
                 account_summary = self.performance_tracker.get_account_summary()
@@ -266,18 +259,20 @@ class StrategyRunner(QObject):
 
                 if order_id is not None:
                     now = time.time()
-                    base_delay = max(0.5, self.latency_ms / 1000.0)
-                    jitter = max(0.25, self.jitter_ms / 1000.0)
-                    simulated_delay = base_delay + random.uniform(0.0, jitter)
-
                     self.pending_orders[order_id] = {
                         "order_id": order_id,
                         "symbol": self.symbol,
                         "side": side,
-                        "price": float(price),
-                        "qty": float(qty),
+                        "price": price,
+                        "qty": qty,
+                        "remaining_qty": qty,
                         "submitted_at": now,
-                        "fill_at": now + simulated_delay,
+                        "order_type": "Limit",
+                        "source": "bot",
+                        "owner_id": self.bot_id,
+                        "status": "Open",
+                        "filled_pct": 0.0,
+                        "next_fill_check": now + 0.5,
                     }
 
                 self.log(f"Submitted {side} order: qty={qty}, price={price}")
@@ -285,12 +280,12 @@ class StrategyRunner(QObject):
         except Exception as e:
             self.log(f"Order submit error: {e}")
 
-    def cancel_order(self, order_id):
+    def cancel_order(self, side, order_id):
         if order_id in self.pending_orders:
             self.pending_orders.pop(order_id, None)
 
         if self.order_entry is not None and hasattr(self.order_entry, "cancel_order"):
-            self.order_entry.cancel_order(order_id)
+            self.order_entry.cancel_order(side, order_id)
 
         self.log(f"Cancelled order {order_id}")
 
@@ -314,8 +309,8 @@ class StrategyRunner(QObject):
 
         try:
             side = str(getattr(fill, "side", "")).upper()
-            qty = float(getattr(fill, "qty", 0))
-            price = float(getattr(fill, "price", 0))
+            qty = float(getattr(fill, "qty", 0.0))
+            price = float(getattr(fill, "price", 0.0))
             timestamp = float(getattr(fill, "timestamp", time.time()))
             order_id = getattr(fill, "order_id", None)
 
@@ -324,13 +319,19 @@ class StrategyRunner(QObject):
                 return
 
             if self.performance_tracker is not None:
-                self.performance_tracker.record_order_fill(
+                # always count executed notional volume for every fill
+                self.performance_tracker.record_fill_volume(
                     bot_id=self.bot_id,
                     price=price,
                     qty=qty
                 )
 
-            # Update local runner position first
+                # only count the order once toward fill-rate metrics
+                if order_id is not None and order_id not in self.orders_with_any_fill:
+                    self.performance_tracker.record_order_fill(self.bot_id)
+                    self.orders_with_any_fill.add(order_id)
+
+            # Update local runner state first
             if side == "BUY":
                 self.position += qty
                 self.reserved_cash -= price * qty
@@ -338,8 +339,8 @@ class StrategyRunner(QObject):
             elif side == "SELL":
                 self.position -= qty
 
-            # Match fill into tracker trades
-            self.apply_fill_to_tracker(
+            # Match this fill directly into tracker trade state
+            match_result = self.apply_fill_to_tracker(
                 side=side,
                 price=price,
                 qty=qty,
@@ -347,7 +348,42 @@ class StrategyRunner(QObject):
                 order_id=order_id
             )
 
-            # Let strategy react after tracker state is updated
+            realized_pnl = 0.0
+            realized_qty = 0.0
+            realized_pct = 0.0
+
+            if isinstance(match_result, dict):
+                realized_pnl = float(match_result.get("realized_pnl", 0.0))
+                realized_qty = float(match_result.get("realized_qty", 0.0))
+
+            if realized_qty > 0 and price > 0:
+                realized_pct = (realized_pnl / (price * realized_qty)) * 100.0
+
+            if (
+                self.performance_tracker is not None
+                and order_id is not None
+                and order_id in self.pending_orders
+            ):
+                order = self.pending_orders[order_id]
+                remaining_qty = float(order.get("remaining_qty", 0.0))
+
+                if remaining_qty <= 1e-9:
+                    self.performance_tracker.record_order_history(
+                        source=order.get("source", "Bot"),
+                        owner=self.bot_name,
+                        symbol=order.get("symbol", self.symbol),
+                        side=order.get("side", side),
+                        order_type=order.get("order_type", "Limit"),
+                        price=price,
+                        qty=float(order.get("qty", qty)),
+                        filled_pct=float(order.get("filled_pct", 100.0)),
+                        status=order.get("status", "Filled"),
+                        timestamp=timestamp,
+                        bot_name=self.bot_name,
+                        pnl=realized_pnl,
+                        pnl_pct=realized_pct,
+                    )
+
             self.strategy.on_fill(fill)
             self.log(f"Fill received: {side} {qty}, new position={self.position}")
 
@@ -356,9 +392,11 @@ class StrategyRunner(QObject):
 
     def apply_fill_to_tracker(self, side, price, qty, timestamp, order_id=None):
         if self.performance_tracker is None:
-            return
+            return {"realized_pnl": 0.0, "realized_qty": 0.0}
 
         remaining_qty = float(qty)
+        realized_pnl_total = 0.0
+        realized_qty_total = 0.0
 
         if side == "BUY":
             # Close shorts first
@@ -378,13 +416,15 @@ class StrategyRunner(QObject):
 
                 close_qty = min(remaining_qty, float(trade_info["remaining_qty"]))
 
-                self.performance_tracker.close_trade(
+                _trade, realized_piece = self.performance_tracker.close_trade(
                     order_id=open_order_id,
                     exit_price=price,
                     exit_qty=close_qty,
                     exit_time=timestamp
                 )
 
+                realized_pnl_total += float(realized_piece)
+                realized_qty_total += float(close_qty)
                 remaining_qty -= close_qty
 
                 updated_summary = self.performance_tracker.get_bot_summary(self.bot_id)
@@ -397,19 +437,18 @@ class StrategyRunner(QObject):
                 if still_open is None or float(still_open["remaining_qty"]) <= 0:
                     self.open_short_order_ids.popleft()
 
-            # Open new longs with leftover qty
+            # Open new long trade for leftover qty
             if remaining_qty > 0:
-                if order_id is None:
-                    order_id = self._next_order_id()
+                trade_id = self._next_order_id()
                 self.performance_tracker.open_trade(
                     bot_id=self.bot_id,
-                    order_id=order_id,
+                    order_id=trade_id,
                     side="BUY",
                     entry_price=price,
                     entry_qty=remaining_qty,
                     entry_time=timestamp
                 )
-                self.open_long_order_ids.append(order_id)
+                self.open_long_order_ids.append(trade_id)
 
         elif side == "SELL":
             # Close longs first
@@ -429,13 +468,15 @@ class StrategyRunner(QObject):
 
                 close_qty = min(remaining_qty, float(trade_info["remaining_qty"]))
 
-                self.performance_tracker.close_trade(
+                _trade, realized_piece = self.performance_tracker.close_trade(
                     order_id=open_order_id,
                     exit_price=price,
                     exit_qty=close_qty,
                     exit_time=timestamp
                 )
 
+                realized_pnl_total += float(realized_piece)
+                realized_qty_total += float(close_qty)
                 remaining_qty -= close_qty
 
                 updated_summary = self.performance_tracker.get_bot_summary(self.bot_id)
@@ -448,18 +489,23 @@ class StrategyRunner(QObject):
                 if still_open is None or float(still_open["remaining_qty"]) <= 0:
                     self.open_long_order_ids.popleft()
 
-            # Open new shorts with leftover qty
+            # Open new short trade for leftover qty
             if remaining_qty > 0:
-                order_id = self._next_order_id()
+                trade_id = self._next_order_id()
                 self.performance_tracker.open_trade(
                     bot_id=self.bot_id,
-                    order_id=order_id,
+                    order_id=trade_id,
                     side="SELL",
                     entry_price=price,
                     entry_qty=remaining_qty,
                     entry_time=timestamp
                 )
-                self.open_short_order_ids.append(order_id)
+                self.open_short_order_ids.append(trade_id)
+
+        return {
+            "realized_pnl": realized_pnl_total,
+            "realized_qty": realized_qty_total,
+        }
 
     def on_trade(self, trade):
         if self.status != "Active" or self.strategy is None or trade is None:
@@ -491,8 +537,13 @@ class StrategyRunner(QObject):
         except Exception as e:
             self.log(f"Error handling timer: {e}")
 
+    def _next_order_id(self):
+        oid = self.next_synthetic_order_id
+        self.next_synthetic_order_id += 1
+        return oid
+
     def get_stats(self):
-        return {
+        stats = {
             "bot_id": self.bot_id,
             "bot_name": self.bot_name,
             "symbol": self.symbol,
@@ -506,41 +557,49 @@ class StrategyRunner(QObject):
             "last_trade_price": getattr(self.last_trade, "price", None) if self.last_trade else None,
             "best_bid": self.book_state.best_bid if self.book_state else None,
             "best_ask": self.book_state.best_ask if self.book_state else None,
+            "spread": self.book_state.spread if self.book_state else None,
+            "mid_price": self.book_state.mid_price if self.book_state else None,
+            "pending_orders": len(self.pending_orders),
         }
+
+        if self.performance_tracker is not None:
+            try:
+                summary = self.performance_tracker.get_bot_summary(self.bot_id)
+
+                realized = float(summary.get("realized_pnl", 0.0))
+                unrealized = float(summary.get("unrealized_pnl", 0.0))
+                allocated = float(summary.get("allocated_balance", 0.0))
+                total_pnl = realized + unrealized
+                total_pnl_pct = (total_pnl / allocated * 100.0) if allocated else 0.0
+
+                stats.update({
+                    "cash_balance": summary.get("cash_balance", 0.0),
+                    "equity": summary.get("equity", 0.0),
+                    "realized_pnl": realized,
+                    "unrealized_pnl": unrealized,
+                    "total_pnl": total_pnl,
+                    "pnl_pct": total_pnl_pct,
+                    "equity_pct": summary.get("equity_pct", 0.0),
+                    "orders_submitted": summary.get("orders_submitted", 0),
+                    "orders_filled": summary.get("orders_filled", 0),
+                    "orders_cancelled": summary.get("orders_cancelled", 0),
+                    "fill_rate": summary.get("fill_rate", 0.0),
+                    "total_volume": summary.get("total_volume", 0.0),
+                    "position": summary.get("current_position", self.position),
+                    "runner_position": self.position,
+                    "mark_price": summary.get("mark_price", 0.0),
+                    "closed_trades": summary.get("closed_trades", 0),
+                    "winning_trades": summary.get("winning_trades", 0),
+                    "losing_trades": summary.get("losing_trades", 0),
+                    "avg_trade": summary.get("avg_trade", 0.0),
+                    "profit_factor": summary.get("profit_factor", 0.0),
+                    "max_drawdown_pct": summary.get("max_drawdown_pct", 0.0),
+                })
+            except Exception as e:
+                self.log(f"Error getting tracker summary: {e}")
+
+        return stats
 
     def log(self, message):
         self.strategy_log.emit(f"[{self.bot_name}] {message}")
 
-    def get_due_fills(self, now=None):
-        if now is None:
-            now = time.time()
-
-        due = []
-        still_pending = {}
-
-        for order_id, order in self.pending_orders.items():
-            if now >= order["fill_at"]:
-                due.append(order)
-            else:
-                still_pending[order_id] = order
-
-        self.pending_orders = still_pending
-        return due
-
-    def build_fill(self, order):
-        fill_price = float(order["price"])
-
-        if self.book_state is not None:
-            if order["side"] == "BUY" and self.book_state.best_ask is not None:
-                fill_price = float(self.book_state.best_ask)
-            elif order["side"] == "SELL" and self.book_state.best_bid is not None:
-                fill_price = float(self.book_state.best_bid)
-
-        return Fill(
-            order_id=order["order_id"],
-            symbol=order["symbol"],
-            side=order["side"],
-            qty=float(order["qty"]),
-            price=fill_price,
-            timestamp=time.time(),
-        )

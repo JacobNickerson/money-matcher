@@ -12,6 +12,7 @@ from PyQt5.QtCore import (
 )
 from controllers.strategy_runner import StrategyRunner
 from controllers.performance_tracker import PerformanceTracker
+from controllers.simulated_execution_engine import SimulatedExecutionEngine
 from widgets.sidebar import SideBar
 from windows.dashboard import (
     MarketEvents, OrderBook, TradeHistory, OrderEntry, Strategies
@@ -49,6 +50,7 @@ class Dashboard(QWidget):
         self.fix_client = fix_client
         self.rust_book = pyclient.PyOrderBook()
         self.mold_client = pyclient.PyMoldClient.start()
+        self.execution_engine = SimulatedExecutionEngine()
         self.performance_tracker = performance_tracker
 
         self.market_events = MarketEvents()
@@ -58,7 +60,10 @@ class Dashboard(QWidget):
             performance_tracker=self.performance_tracker, 
             strategy_sessions=self.strategy_sessions,
             order_entry=self.order_entry)
-        self.strategies = Strategies()
+        self.strategies = Strategies(performance_tracker=self.performance_tracker)
+
+        self.performance_tracker.performance_updated.connect(self.on_performance_update)
+        self.on_performance_update(self.performance_tracker.get_account_summary())
 
         layout.addWidget(self.market_events, 0, 0)
         layout.addWidget(self.order_book, 0, 1)
@@ -76,7 +81,7 @@ class Dashboard(QWidget):
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_from_market_data)
-        self.update_timer.start(0)
+        self.update_timer.start(250)
 
         self.strategy_timer = QTimer(self)
         self.strategy_timer.timeout.connect(self.on_strategy_timer)
@@ -152,19 +157,6 @@ class Dashboard(QWidget):
                 print(f"Error processing event {event}: {e}")
                 break
 
-        if self.fix_client:
-            while True:
-                report = self.fix_client.next_report()
-                if report is None:
-                    break
-
-                try:
-                    print(f"Execution report: {report}")
-
-                except Exception as e:
-                    print(f"Error processing execution report {report}: {e}")
-                    break
-
         if processed_event:
             self.order_book.refresh_order_book_display(self.rust_book)
             self.market_events.refresh_chart()
@@ -172,14 +164,28 @@ class Dashboard(QWidget):
 
         now = time.time()
         for runner in self.strategy_runners.values():
-            due_orders = runner.get_due_fills(now)
-            for order in due_orders:
-                try:
-                    runner.on_fill(runner.build_fill(order))
-                except Exception as e:
-                    print(f"Error simulating fill for order {order}: {e}")
+            try:
+                self.execution_engine.process_runner(runner, now)
+            except Exception as e:
+                print(f"Error processing runner fills: {e}")
 
-        self.refresh_strategy_panel()
+        try:
+            self.execution_engine.process_manual_orders(
+                self.order_entry,
+                self.rust_book,
+                now,
+                on_fill=self.on_manual_fill
+            )
+        except Exception as e:
+            print(f"Error processing manual fills: {e}")
+
+    def on_manual_fill(self, fill):
+        print(f"Manual fill: {fill.side} {fill.qty} @ {fill.price}")
+
+    def on_performance_update(self, summary):
+        quote_balance = float(summary.get("cash_balance", 0.0))
+        base_balance = float(summary.get("base_balance", 0.0))
+        self.order_entry.set_balances(quote_balance, base_balance)
 
     def on_strategy_timer(self):
         now = time.time()
@@ -202,11 +208,6 @@ class Dashboard(QWidget):
         self.strategies.set_active_strategies(self.strategy_sessions)
 
         bot_id = self.strategies.current_bot_id
-        if bot_id is None:
-            self.strategies.clear_stats()
-            self.strategies.clear_logs()
-            return
-
         runner = self.strategy_sessions.get(bot_id)
         if runner is None:
             self.strategies.clear_stats()

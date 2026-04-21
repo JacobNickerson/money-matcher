@@ -202,30 +202,36 @@ class MetricCard(QFrame):
 
         x = np.arange(len(y_data))
 
-        grad = QLinearGradient(0, 1, 0, 0)
-        grad.setCoordinateMode(QLinearGradient.ObjectBoundingMode)
-        c_top = QColor(delta_color)
-        c_top.setAlpha(80)
-        c_bot = QColor(delta_color)
-        c_bot.setAlpha(0)
-        grad.setColorAt(0.0, c_top)
-        grad.setColorAt(1.0, c_bot)
-
-        curve = pg.PlotDataItem(x, y_data)
-        baseline = pg.PlotDataItem(x, np.zeros_like(y_data))
-        fill = pg.FillBetweenItem(curve, baseline, brush=QBrush(grad))
-
-        self.pw.addItem(fill)
-        self.pw.addItem(curve)
-        curve.setPen(pg.mkPen(color=delta_color, width=2))
-
         ymin = float(np.min(y_data))
         ymax = float(np.max(y_data))
         if ymin == ymax:
             ymin -= 1
             ymax += 1
 
-        self.pw.setRange(xRange=(0, len(y_data) - 1), yRange=(ymin, ymax), padding=0)
+        grad = QLinearGradient(0, 1, 0, 0)
+        grad.setCoordinateMode(QLinearGradient.ObjectBoundingMode)
+
+        c_top = QColor(delta_color)
+        c_top.setAlpha(80)
+        c_bot = QColor(delta_color)
+        c_bot.setAlpha(0)
+
+        grad.setColorAt(0.0, c_bot)
+        grad.setColorAt(1.0, c_top)
+
+        curve = pg.PlotDataItem(x, y_data)
+        baseline = pg.PlotDataItem(x, np.full_like(y_data, ymin))
+        fill = pg.FillBetweenItem(curve, baseline, brush=QBrush(grad))
+
+        self.pw.addItem(fill)
+        self.pw.addItem(curve)
+        curve.setPen(pg.mkPen(color=delta_color, width=2))
+
+        self.pw.setRange(
+            xRange=(0, len(y_data) - 1 if len(y_data) > 1 else 1),
+            yRange=(ymin, ymax),
+            padding=0
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -614,6 +620,7 @@ class StatsPanel(QFrame):
         return f"{m}m"
 
 class Header(QWidget):
+    strategyChanged = pyqtSignal(object)
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -671,6 +678,7 @@ class Header(QWidget):
         self.strategy_list.setStyleSheet(combo_style)
         self.strategy_list.setCursor(Qt.PointingHandCursor)
         self.strategy_list.setMinimumWidth(400)
+        self.strategy_list.currentIndexChanged.connect(self.emit_strategy_changed)
         layout.addWidget(self.strategy_list)
 
         # self.date_list = QComboBox()
@@ -682,6 +690,9 @@ class Header(QWidget):
         # layout.addWidget(self.date_list)
 
         self.refreshStrategyDropdown()
+
+    def emit_strategy_changed(self):
+        self.strategyChanged.emit(self.strategy_list.currentData())
 
     def getDatabasePath(self):
         root_dir = Path(__file__).resolve().parents[2]
@@ -802,21 +813,27 @@ class OrderHistory(QWidget):
 
         # self.load_test_data()
 
-    def update_trades(self, trades):
+    def update_orders(self, orders):
         rows = []
-        for t in trades:
-            entry_time = t.get("entry_time", 0)
-            exit_time = t.get("exit_time", 0)
+
+        for o in orders:
+            ts = float(o.get("timestamp", 0.0))
+            side = str(o.get("side", "")).upper()
+            price = float(o.get("price", 0.0))
+            qty = float(o.get("qty", 0.0))
+
+            pnl = float(o.get("pnl", 0.0))
+            pnl_pct = float(o.get("pnl_pct", 0.0))
 
             rows.append({
-                "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(exit_time or entry_time)),
-                "Strategy": t.get("bot_name", ""),
-                "Symbol": t.get("symbol", ""),
-                "Type": t.get("side", ""),
-                "Profit/Loss": f'{t.get("pnl", 0.0):+.2f}',
-                "% Gain/Loss": f'{t.get("pnl_pct", 0.0):+.2f}%',
-                "Entry Price": f'{t.get("entry_price", 0.0):.2f}',
-                "Exit Price": f'{t.get("exit_price", 0.0):.2f}',
+                "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(ts)) if ts else "",
+                "Strategy": o.get("owner", o.get("bot_name", "")),
+                "Symbol": o.get("symbol", ""),
+                "Type": o.get("order_type", ""),
+                "Profit/Loss": f"{pnl:+.2f}",
+                "% Gain/Loss": f"{pnl_pct:+.2f}%",
+                "Entry Price": f"{price:.2f}",
+                "Exit Price": f"{price:.2f}",
             })
 
         self.model = performance_model.PerformanceModel(rows)
@@ -893,7 +910,7 @@ class Main(QWidget):
         self.order_panel = OrderHistory()
         grid.addWidget(self.order_panel, 3, 0, 1, 3)
 
-        self.header.strategy_list.currentIndexChanged.connect(self.refresh_view)
+        self.header.strategyChanged.connect(self.on_strategy_changed)
 
         self.performance_tracker.performance_updated.connect(self.on_account_update)
         self.performance_tracker.bot_updated.connect(self.on_bot_update)
@@ -942,12 +959,16 @@ class Main(QWidget):
 
     def apply_summary(self, summary):
         realized = float(summary.get("realized_pnl", 0.0))
+        unrealized = float(summary.get("unrealized_pnl", 0.0))
+        total_pnl = realized + unrealized
+
         equity = float(summary.get("equity", 0.0))
-        base_balance = float(summary.get( "capital_base", summary.get("allocated_balance", summary.get("initial_balance", 0.0))))
+        base_balance = float(summary.get("capital_base", summary.get("allocated_balance", summary.get("initial_balance", 0.0))))
+
         total_volume = float(summary.get("total_volume", 0.0))
         fill_rate = float(summary.get("fill_rate", 0.0))
 
-        pnl_pct = float(summary.get("pnl_pct", 0.0))
+        pnl_pct = ((total_pnl / base_balance) * 100.0) if base_balance else 0.0
         equity_pct = float(summary.get("equity_pct", 0.0))
 
         equity_history = summary.get("equity_history", [])
@@ -958,9 +979,9 @@ class Main(QWidget):
         volume_series = self.volume_series(total_volume, size=max(2, len(balance_series)))
 
         self.profit_card.update_data(
-            value=f"${realized:,.2f}",
+            value=f"${total_pnl:,.2f}",
             delta_text=f"{pnl_pct:+.2f}%",
-            positive=(realized >= 0),
+            positive=(total_pnl >= 0),
             y_data=profit_series,
         )
 
@@ -985,7 +1006,7 @@ class Main(QWidget):
         )
 
         self.stats_card.update_data(summary)
-        self.order_panel.update_trades(summary.get("trades", []))
+        self.order_panel.update_orders(summary.get("order_history", []))
 
     def series_from_history(self, history, baseline=None):
         if not history:
@@ -1085,12 +1106,23 @@ class Main(QWidget):
         else:
             profit_factor = gross_profit / gross_loss
 
-        balance_history = self._merge_histories(
-            [s.get("balance_history", []) for s in summaries]
-        )
-        equity_history = self._merge_histories(
-            [s.get("equity_history", []) for s in summaries]
-        )
+        if len(summaries) == 1:
+            balance_history = summaries[0].get("balance_history", [])
+            equity_history = summaries[0].get("equity_history", [])
+        else:
+            balance_history = self.merge_histories(
+                [s.get("balance_history", []) for s in summaries]
+            )
+            equity_history = self.merge_histories(
+                [s.get("equity_history", []) for s in summaries]
+            )
+            
+        all_order_history = []
+        for s in summaries:
+            for rec in s.get("order_history", []):
+                all_order_history.append(dict(rec))
+
+        all_order_history.sort(key=lambda r: float(r.get("timestamp", 0.0)), reverse=True)
 
         fill_rate = (orders_filled / orders_submitted) if orders_submitted else 0.0
         pnl_pct = (realized_pnl / allocated_balance * 100.0) if allocated_balance else 0.0
@@ -1128,6 +1160,7 @@ class Main(QWidget):
             "balance_history": balance_history,
             "equity_history": equity_history,
             "trades": all_trades,
+            "order_history": all_order_history
         }
     
     def merge_histories(self, histories):
@@ -1174,3 +1207,6 @@ class Main(QWidget):
 
         conn.commit()
         conn.close()
+
+    def on_strategy_changed(self, _strategy_meta):
+        self.refresh_view()

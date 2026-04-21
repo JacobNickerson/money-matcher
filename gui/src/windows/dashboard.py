@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 import pandas as pd
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from lightweight_charts.widgets import QtChart
 from PyQt5.QtWidgets import ( 
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
@@ -199,7 +199,7 @@ class OrderBook(QWidget):
             raw_bids = rust_book.get_top_levels(pyclient.PyOrderSide.Bid, 7)
             asks = [(price, qty, price * qty) for price, qty in raw_asks]
             bids = [(price, qty, price * qty) for price, qty in raw_bids]
-            spread = rust_book.spread()
+            spread = rust_book.best_ask() - rust_book.best_bid()
             mid_price = rust_book.mid_price()
             model = order_book_model.OrderBookModel(asks, bids, spread, mid_price)
             self.table.setModel(model)
@@ -230,7 +230,10 @@ class OrderEntry(QWidget):
         self.orderid_gen = OrderIdGenerator()
         self.manual_open_orders = {}
         self.all_open_orders = {}
+        self.manual_order_history = []
         self.default_symbol = "SOL/USD"
+        self.available_quote_balance = Decimal("0")
+        self.available_base_balance = Decimal("0")
 
         self.setStyleSheet("""
             OrderEntry {
@@ -367,6 +370,7 @@ class OrderEntry(QWidget):
         layout.addWidget(price_widget)
         layout.addWidget(amount_widget)
         layout.addWidget(total_widget)
+        layout.addWidget(self.table())
 
         self.submit_btn = QPushButton()
         self.submit_btn.setMinimumHeight(32)
@@ -379,8 +383,12 @@ class OrderEntry(QWidget):
         self.buy_btn.toggled.connect(self.update_submit_button)
         self.sell_btn.toggled.connect(self.update_submit_button)
         self.submit_btn.clicked.connect(self.submit_order)
+        self.buy_btn.toggled.connect(self.update_balance_display)
+        self.sell_btn.toggled.connect(self.update_balance_display)
+        self.price_input.textChanged.connect(self.update_balance_display)
 
         layout.addWidget(self.submit_btn)
+        self.update_balance_display()
 
     def input_field(self, label_text, placeholder):
         container = QWidget()
@@ -424,15 +432,126 @@ class OrderEntry(QWidget):
 
         return container, field
     
-    def update_total(self):
-        try:
-            price = float(self.price_input.text())
-            amount = float(self.amount_input.text())
-            total = price * amount
+    def set_balances(self, quote_balance, base_balance):
+        self.available_quote_balance = Decimal(str(quote_balance))
+        self.available_base_balance = Decimal(str(base_balance))
+        self.update_balance_display()
+    
+    def table(self, available_val="0.000", max_buy_val="0.000"):
+        container = QWidget()
+        container.setAttribute(Qt.WA_StyledBackground, True)
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #101010;
+                border: 1px solid #2A2A2A;
+                border-radius: 10px;
+            }
+            QLabel {
+                font-family: Inter;
+            }
+        """)
 
-            self.total_input.setText(f"{total:.5f}")
-        except ValueError:
+        grid = QGridLayout(container)
+        grid.setContentsMargins(2, 2, 2, 2)
+        grid.setHorizontalSpacing(0)
+        grid.setVerticalSpacing(0)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 0)
+        grid.setColumnStretch(2, 1)
+
+        self.available_title = QLabel("Available")
+        self.available_title.setStyleSheet("""
+            color: white; 
+            font-size: 10pt;
+            border: none;
+            padding: 8px;
+        """)
+
+        self.max_title = QLabel("Max Buy")
+        self.max_title.setStyleSheet("""
+            color: white; 
+            font-size: 10pt;
+            border: none;
+            padding: 8px;
+        """)
+
+        self.available_value = QLabel(available_val)
+        self.available_value.setStyleSheet("""
+            color: #707070; 
+            font-size: 9pt;
+            padding: 8px;
+            border: none;
+        """)
+
+        self.max_value = QLabel(max_buy_val)
+        self.max_value.setStyleSheet("""
+            color: #707070; 
+            font-size: 9pt;
+            padding: 8px;
+            border: none;
+        """)
+
+        grid.addWidget(self.available_title, 0, 0)
+        grid.addWidget(self.max_title, 0, 2)
+
+        grid.addWidget(self.available_value, 2, 0)
+        grid.addWidget(self.max_value, 2, 2)
+
+        h_divider = QFrame()
+        h_divider.setFixedHeight(1)
+        h_divider.setFrameShape(QFrame.HLine)
+        h_divider.setStyleSheet("color: #1D1D1D;")
+        grid.addWidget(h_divider, 1, 0, 1, 3)
+
+        v_divider = QFrame()
+        v_divider.setFixedWidth(1)
+        v_divider.setFrameShape(QFrame.VLine)
+        v_divider.setStyleSheet("color: #1D1D1D;")
+        grid.addWidget(v_divider, 0, 1, 3, 1)
+
+        return container
+    
+    def update_balance_display(self):
+        price = self.safe_decimal(self.price_input.text())
+
+        if self.buy_btn.isChecked():
+            self.available_title.setText("Available")
+            self.max_title.setText("Max Buy")
+
+            self.available_value.setText(f"{self.available_quote_balance:.4f}")
+
+            if price is not None and price > 0:
+                max_buy = self.available_quote_balance / price
+                self.max_value.setText(f"{max_buy:.4f}")
+            else:
+                self.max_value.setText(f"0.0000")
+
+        else:
+            self.available_title.setText("Available")
+            self.max_title.setText("Max Sell")
+
+            self.available_value.setText(f"{self.available_base_balance:.4f}")
+            self.max_value.setText(f"{self.available_base_balance:.4f}")
+
+    def safe_decimal(self, value):
+        try:
+            value = value.strip()
+            if not value:
+                return None
+            return Decimal(value)
+        except (AttributeError, InvalidOperation, ValueError):
+            return None
+    
+    def update_total(self):
+        price = self.safe_decimal(self.price_input.text())
+        amount = self.safe_decimal(self.amount_input.text())
+
+        if price is None or amount is None:
             self.total_input.setText("")
+            return
+
+        total = price * amount
+        self.total_input.setText(f"{total:.5f}")
 
     def update_submit_button(self):
         if self.buy_btn.isChecked():
@@ -473,17 +592,21 @@ class OrderEntry(QWidget):
 
             if bot_order:
                 side_text = _side.upper()
-                side = pyclient.PyOrderSide.Bid if side_text == "BUY" else pyclient.PyOrderSide.Ask
                 price_decimal = Decimal(str(_price))
                 qty_decimal = Decimal(str(_qty))
-                symbol = self.default_symbol
-                order_type_name = "Limit" if self.limit_btn.isChecked() else "Market"
+                side = pyclient.PyOrderSide.Bid if side_text == "BUY" else pyclient.PyOrderSide.Ask
+                order_type_name = "Limit"
             else:
                 side_text = "BUY" if self.buy_btn.isChecked() else "SELL"
-                side = pyclient.PyOrderSide.Bid if self.buy_btn.isChecked() else pyclient.PyOrderSide.Ask
-                price_decimal = Decimal(self.price_input.text())
-                qty_decimal = Decimal(self.amount_input.text())
-                symbol = self.default_symbol
+                price_decimal = self.safe_decimal(self.price_input.text())
+                qty_decimal = self.safe_decimal(self.amount_input.text())
+
+                ok, message = self.validate_order(side_text, price_decimal, qty_decimal)
+                if not ok:
+                    QMessageBox.warning(self, "Order Rejected", message)
+                    return None
+
+                side = pyclient.PyOrderSide.Bid if side_text == "BUY" else pyclient.PyOrderSide.Ask
                 order_type_name = "Limit" if self.limit_btn.isChecked() else "Market"
 
             price = int(price_decimal * Decimal("1e4"))
@@ -513,15 +636,17 @@ class OrderEntry(QWidget):
 
             order_record = {
                 "order_id": order_id,
-                "symbol": symbol,
+                "symbol": self.default_symbol,
                 "side": side_text,
                 "price": price_float,
                 "qty": qty_float,
-                "submitted_at": timestamp / 1000.0,
+                "remaining_qty": qty_float,
+                "submitted_at": time.time(),
                 "status": "Open",
                 "filled_pct": 0.0,
                 "order_type": order_type_name,
                 "source": "bot" if bot_order else "manual",
+                "next_fill_check": time.time() + 0.5,
             }
 
             self.all_open_orders[order_id] = dict(order_record)
@@ -529,13 +654,63 @@ class OrderEntry(QWidget):
             if not bot_order:
                 self.manual_open_orders[order_id] = dict(order_record)
 
+                if side_text == "BUY":
+                    total = price_decimal * qty_decimal
+                    self.available_quote_balance -= total
+                else:
+                    self.available_base_balance -= qty_decimal
+
+                self.update_balance_display()
+
             return order_id
 
         except Exception as e:
             print(f"Error sending order: {e}")
+            return None
 
-    def cancel_order(self, order_id):
+    def cancel_order(self, side, order_id):
+        try:
+            if self.fix_client:
+                cancel = pyclient.PyOrder(
+                    client_id=10,
+                    order_id=order_id,
+                    side=pyclient.PyOrderSide.Bid if side.upper() == "BUY" else pyclient.PyOrderSide.Ask,
+                    timestamp=int(time.time() * 1000),
+                    kind=pyclient.PyOrderType.cancel(order_id)
+                )
+                self.fix_client.send_message(cancel)
+        except Exception as e:
+            print(f"Error sending cancel for order {order_id}: {e}")
+
         self.mark_order_cancelled(order_id)
+
+    def validate_order(self, side_text, price_decimal, qty_decimal):
+        if price_decimal is None or qty_decimal is None:
+            return False, "Price and amount are required."
+
+        if price_decimal <= 0:
+            return False, "Price must be greater than 0."
+
+        if qty_decimal <= 0:
+            return False, "Amount must be greater than 0."
+
+        total = price_decimal * qty_decimal
+
+        if side_text == "BUY":
+            if total > self.available_quote_balance:
+                return (
+                    False,
+                    f"Need {total:.4f}, available {self.available_quote_balance:.4f}."
+                )
+
+        elif side_text == "SELL":
+            if qty_decimal > self.available_base_balance:
+                return (
+                    False,
+                    f"Need {qty_decimal:.4f}, available {self.available_base_balance:.4f}."
+                )
+
+        return True, ""
 
     def get_open_manual_orders(self):
         return list(self.manual_open_orders.values())
@@ -560,8 +735,20 @@ class OrderEntry(QWidget):
             self.all_open_orders.pop(order_id, None)
 
     def mark_order_cancelled(self, order_id):
-        self.manual_open_orders.pop(order_id, None)
+        order = self.manual_open_orders.pop(order_id, None)
         self.all_open_orders.pop(order_id, None)
+
+        if order is not None:
+            side = order.get("side", "").upper()
+            price = Decimal(str(order.get("price", 0)))
+            qty = Decimal(str(order.get("qty", 0)))
+
+            if side == "BUY":
+                self.available_quote_balance += price * qty
+            elif side == "SELL":
+                self.available_base_balance += qty
+
+            self.update_balance_display()
 
 class CancelButtonDelegate(QStyledItemDelegate):
     cancelClicked = pyqtSignal(int)
@@ -745,13 +932,13 @@ class TradeHistory(QWidget):
                     "Owner": bot_name,
                     "Symbol": symbol,
                     "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(submitted_at)) if submitted_at else "",
-                    "Type": "Limit",
+                    "Type": order.get("order_type", "Limit"),
                     "Side": side,
                     "Price": f"${price:,.2f}",
                     "Amount": f"{qty:,.4f}",
-                    "Filled": "0%",
+                    "Filled": f'{float(order.get("filled_pct", 0.0)):.0f}%',
                     "Total": f"${total:,.2f}",
-                    "Status": "Open",
+                    "Status": order.get("status", "Open"),
                     "Action": "Cancel",
                     "_order_id": order_id,
                 })
@@ -824,43 +1011,70 @@ class TradeHistory(QWidget):
                         "Filled": "100%",
                         "Total": f"${entry_price * remaining_qty:,.2f}",
                         "Status": f"{unrealized:+.2f}",
-                        "Action": "",
                         "Bot": bot_name,
                     })
 
         self.model = trade_history_model.TradeHistoryModel(rows)
         self.table.setModel(self.model)
 
+        action_col = self.find_column("Action")
+        if action_col >= 0:
+            self.table.setItemDelegateForColumn(action_col, None)
+
     def refresh_order_history(self):
         rows = []
 
         if self.performance_tracker is not None:
-            summary = self.performance_tracker.get_account_summary()
-
-            for trade in summary.get("trades", []):
-                exit_time = float(trade.get("exit_time", 0.0) or trade.get("entry_time", 0.0))
-                side = trade.get("side", "").title()
-                entry_price = float(trade.get("entry_price", 0.0))
-                exit_price = float(trade.get("exit_price", 0.0))
-                entry_qty = float(trade.get("entry_qty", 0.0))
-                pnl = float(trade.get("pnl", 0.0))
+            for rec in self.performance_tracker.get_order_history():
+                ts = float(rec.get("timestamp", 0.0))
+                side = str(rec.get("side", "")).title()
+                price = float(rec.get("price", 0.0))
+                qty = float(rec.get("qty", 0.0))
+                filled_pct = float(rec.get("filled_pct", 0.0))
 
                 rows.append({
-                    "Symbol": trade.get("symbol", ""),
-                    "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(exit_time)) if exit_time else "",
-                    "Type": "Filled",
+                    "Source": rec.get("source", ""),
+                    "Owner": rec.get("owner", ""),
+                    "Symbol": rec.get("symbol", ""),
+                    "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(ts)) if ts else "",
+                    "Type": rec.get("order_type", "Limit"),
                     "Side": side,
-                    "Price": f"${exit_price:,.2f}",
-                    "Amount": f"{entry_qty:,.4f}",
-                    "Filled": "100%",
-                    "Total": f"${exit_price * entry_qty:,.2f}",
-                    "Status": f"{pnl:+.2f}",
-                    "Action": "",
-                    "Bot": trade.get("bot_name", ""),
+                    "Price": f"${price:,.2f}",
+                    "Amount": f"{qty:,.4f}",
+                    "Filled": f"{filled_pct:.0f}%",
+                    "Total": f"${price * qty:,.2f}",
+                    "Status": rec.get("status", ""),
                 })
+                
+        if self.order_entry is not None and hasattr(self.order_entry, "manual_order_history"):
+            for order in self.order_entry.manual_order_history:
+                filled_at = float(order.get("filled_at", 0.0))
+                side = str(order.get("side", "")).title()
+                price = float(order.get("avg_fill_price", order.get("fill_price", order.get("price", 0.0))))
+                qty = float(order.get("qty", 0.0))
+                total = price * qty
+
+                rows.append({
+                    "Symbol": order.get("symbol", ""),
+                    "Date": time.strftime("%b %d, %Y %I:%M %p", time.localtime(filled_at)) if filled_at else "",
+                    "Type": order.get("order_type", "Limit"),
+                    "Side": side,
+                    "Price": f"${price:,.2f}",
+                    "Amount": f"{qty:,.4f}",
+                    "Filled": "100%",
+                    "Total": f"${total:,.2f}",
+                    "Status": "Filled",
+                    "Bot": "User",
+                })
+
+        rows.sort(key=lambda r: r["Date"], reverse=True)
 
         self.model = trade_history_model.TradeHistoryModel(rows)
         self.table.setModel(self.model)
+
+        action_col = self.find_column("Action")
+        if action_col >= 0:
+            self.table.setItemDelegateForColumn(action_col, None)
 
     def find_column(self, column_name):
         model = self.table.model()
@@ -877,6 +1091,7 @@ class TradeHistory(QWidget):
     def handle_cancel_clicked(self, row):
         row_data = self.model.rows[row]
         order_id = row_data.get("_order_id")
+        side = row_data.get("Side")
         source = row_data.get("Source")
 
         if order_id is None:
@@ -885,12 +1100,12 @@ class TradeHistory(QWidget):
         try:
             if source == "Manual":
                 if self.order_entry is not None and hasattr(self.order_entry, "cancel_order"):
-                    self.order_entry.cancel_order(order_id)
+                    self.order_entry.cancel_order(side, order_id)
 
             elif source == "Bot":
                 for runner in self.strategy_sessions.values():
                     if order_id in getattr(runner, "pending_orders", {}):
-                        runner.cancel_order(order_id)
+                        runner.cancel_order(side, order_id)
                         break
 
             self.refresh_data()
@@ -973,8 +1188,9 @@ class LogCard(QFrame):
         self.log_layout.addWidget(row)
 
 class Strategies(QWidget):
-    def __init__(self):
+    def __init__(self, performance_tracker=None):
         super().__init__()
+        self.performance_tracker = performance_tracker
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setStyleSheet("""
@@ -1144,18 +1360,47 @@ class Strategies(QWidget):
             self.clear_stats()
             return
 
-        # TODO: format values properly
-        position = stats.get("position", 0.0)
+        bot_id = stats.get("bot_id", self.current_bot_id)
+
+        tracker_summary = None
+        if self.performance_tracker is not None and bot_id is not None:
+            try:
+                tracker_summary = self.performance_tracker.get_bot_summary(bot_id)
+            except Exception:
+                tracker_summary = None
+
+        if tracker_summary is None:
+            self.update_fallback_stats(stats)
+            return
+
+        open_unrealized = float(tracker_summary.get("unrealized_pnl", 0.0))
+        open_trades = int(tracker_summary.get("open_trades", 0))
+        avg_win = float(tracker_summary.get("avg_winning_trade", 0.0))
+        avg_loss = float(tracker_summary.get("avg_losing_trade", 0.0))
+        max_drawdown = float(tracker_summary.get("max_drawdown_pct", 0.0))
+        profit_factor = float(tracker_summary.get("profit_factor", 0.0))
+
+        self.open_trade_value.setText(str(open_trades))
+        self.set_metric_value(self.open_pnl_value, f"{open_unrealized:+.2f}", open_unrealized >= 0)
+        self.set_metric_value(self.avg_win_value, f"{avg_win:+.2f}" if avg_win != 0 else "--", True if avg_win > 0 else None)
+        self.set_metric_value(self.avg_loss_value, f"{avg_loss:+.2f}" if avg_loss != 0 else "--", False if avg_loss < 0 else None)
+        self.set_metric_value(self.max_drawdown_value, f"{max_drawdown:.2f}%", False if max_drawdown > 0 else None)
+        self.set_metric_value(self.risk_reward_value, f"{profit_factor:.2f}" if profit_factor > 0 else "--", True if profit_factor > 1 else None)   
+
+    def update_fallback_stats(self, stats):
+        position = float(stats.get("position", 0.0))
         best_bid = stats.get("best_bid")
         best_ask = stats.get("best_ask")
-        mid_price = stats.get("mid_price")
 
         self.open_trade_value.setText("1" if position != 0 else "0")
 
-        if None not in (best_bid, best_ask):
-            mid_price = (best_bid + best_ask) / 2.0
-            pnl = position * mid_price
-            self.open_pnl_value.setText(f"{pnl:.2f}")
+        if best_bid is not None and best_ask is not None:
+            try:
+                mid_price = (float(best_bid) + float(best_ask)) / 2.0
+                pnl = position * mid_price
+                self.open_pnl_value.setText(f"{pnl:+.2f}")
+            except Exception:
+                self.open_pnl_value.setText("--")
         else:
             self.open_pnl_value.setText("--")
 
@@ -1163,6 +1408,16 @@ class Strategies(QWidget):
         self.avg_win_value.setText("--")
         self.avg_loss_value.setText("--")
         self.max_drawdown_value.setText("--")
+
+    def set_metric_value(self, label, text, positive=None):
+        color = "white"
+        if positive is True:
+            color = "#00C278"
+        elif positive is False:
+            color = "#EB5757"
+
+        label.setText(text)
+        label.setStyleSheet(f"color: {color}; border: none;")
 
     def add_strategy_log(self, bot_id, message):
         if bot_id != self.current_bot_id:
