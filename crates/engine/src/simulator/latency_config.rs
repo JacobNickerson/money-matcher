@@ -1,59 +1,15 @@
+use crate::cli_args::Args;
 use crate::simulator::SimTime;
-use clap::Subcommand;
-use engine::positive_float_parser;
+use clap::ValueEnum;
 use rand::Rng;
 use rand_distr::{Distribution, Normal, Uniform};
 
-#[derive(Debug, Subcommand)]
-pub enum JitterCfg {
-    /// No SimJitter (default)
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum JitterKind {
     None,
-
-    /// SimJitter sampled using uniform distribution
-    Uniform {
-        /// Inclusive low value of range in nanoseconds
-        #[arg(long)]
-        low: u64,
-
-        /// Inclusive high value of range in nanoseconds
-        #[arg(long)]
-        high: u64,
-    },
-
-    /// SimJitter sampled using gaussian distribution
-    Normal {
-        /// Mean value in nanoseconds
-        #[arg(long, value_parser = positive_float_parser)]
-        mean: f64,
-
-        /// Standard deviation in nanoseconds
-        #[arg(long, value_parser = positive_float_parser)]
-        std_dev: f64,
-    },
+    Uniform,
+    Normal,
 }
-impl JitterCfg {
-    pub fn validate(&self) -> Result<(), String> {
-        match self {
-            JitterCfg::None => Ok(()),
-            JitterCfg::Normal { mean, std_dev } => {
-                if *mean < 0.0 {
-                    return Err("Mean must be a positive value".into());
-                }
-                if *std_dev < 0.0 {
-                    return Err("Variance must be a positive value".into());
-                }
-                Ok(())
-            }
-            JitterCfg::Uniform { low, high } => {
-                if low > high {
-                    return Err("uniform jitter: `low` must be <= `high`".into());
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum SimJitter {
     None,
@@ -69,24 +25,17 @@ impl SimJitter {
         }
     }
 }
-impl From<Option<JitterCfg>> for SimJitter {
-    fn from(cfg: Option<JitterCfg>) -> SimJitter {
-        if let Some(cfg) = cfg {
-            match cfg.validate() {
-                Ok(_) => {}
-                Err(msg) => panic!("{}", msg),
+
+impl From<&Args> for SimJitter {
+    fn from(args: &Args) -> Self {
+        match args.sim_jitter_type {
+            JitterKind::None => SimJitter::None,
+            JitterKind::Uniform => SimJitter::Uniform(
+                Uniform::new_inclusive(args.low.unwrap(), args.high.unwrap()).unwrap(),
+            ),
+            JitterKind::Normal => {
+                SimJitter::Normal(Normal::new(args.mean.unwrap(), args.std_dev.unwrap()).unwrap())
             }
-            match cfg {
-                JitterCfg::None => SimJitter::None,
-                JitterCfg::Uniform { low, high } => {
-                    SimJitter::Uniform(Uniform::new_inclusive(low, high).unwrap())
-                }
-                JitterCfg::Normal { mean, std_dev } => {
-                    SimJitter::Normal(Normal::new(mean, std_dev).unwrap())
-                }
-            }
-        } else {
-            SimJitter::None
         }
     }
 }
