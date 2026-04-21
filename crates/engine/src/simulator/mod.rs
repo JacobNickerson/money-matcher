@@ -134,6 +134,7 @@ mod tests {
                 UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
                 GaussianOrderGenerator::new(150.0, 30.0),
                 ChaCha8Rng::seed_from_u64(0),
+                None,
             ),
             NullFeeds {}, // use this since nothing is draining the market events
             user_order_cons,
@@ -172,6 +173,7 @@ mod tests {
                 UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
                 GaussianOrderGenerator::new(150.0, 30.0),
                 ChaCha8Rng::seed_from_u64(0),
+                None,
             ),
             SingleEventFeed::new(market_event_prod, client_event_prod),
             user_order_cons,
