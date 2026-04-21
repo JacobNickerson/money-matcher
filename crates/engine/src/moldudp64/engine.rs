@@ -6,7 +6,7 @@ use mm_core::{
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
     },
     lob_core::{
-        market_events::{L3EventExtra, MarketEvent, MarketEventType},
+        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType},
         market_orders::OrderType,
     },
     moldudp64_core::types::Event,
@@ -146,7 +146,7 @@ impl MoldEngine {
                     self.current_tracking_number = self.current_tracking_number.wrapping_add(1);
                     Self::push_event(&mut self.l3_tx, &buf);
                 }
-                OrderType::Cancel { .. } => {
+                OrderType::Cancel { old_id } => {
                     let mut buf = [0u8; 23];
 
                     let L3EventExtra::Cancel(cancel_qty) = e.extra else {
@@ -155,12 +155,13 @@ impl MoldEngine {
                             e.extra
                         );
                     };
+
                     OrderCancel::encode_into(
                         &mut buf,
                         0, // PLACEHOLDER
                         self.current_tracking_number,
                         event.timestamp,
-                        e.order_id,
+                        old_id,
                         cancel_qty,
                     );
 
