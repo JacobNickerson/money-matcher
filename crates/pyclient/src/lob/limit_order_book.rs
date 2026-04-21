@@ -60,8 +60,8 @@ impl OrderBook {
         // NOTE: LimitOrder events only denote limit orders being entered into the book, trades are executed via trade events
     }
     fn handle_cancel(&mut self, e: L3Event) {
-        let (old_price, old_qty) = match self.user_orders.get_mut(&e.order_id) {
-            Some(o) => (o.price, o.qty),
+        let (old_price, old_qty, old_side) = match self.user_orders.get_mut(&e.order_id) {
+            Some(o) => (o.price, o.qty, o.side),
             None => {
                 panic!(
                     "Expected to find order with id {} for cancel event, but it did not exist",
@@ -70,7 +70,7 @@ impl OrderBook {
             }
         };
 
-        let side = match e.side {
+        let side = match old_side {
             OrderSide::Ask => &mut self.ask_levels,
             OrderSide::Bid => &mut self.bid_levels,
         };
