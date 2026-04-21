@@ -27,6 +27,7 @@ mod pyclient {
     #[gen_stub_pyclass_enum]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Enum determining which side of the order book an order belongs to, can have values Bid and Ask
     pub enum PyOrderSide {
         Bid,
         Ask,
@@ -51,6 +52,7 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Enum determining the type of an order, can have values limit, market, update, and cancel
     struct PyOrderType {
         inner: OrderType,
     }
@@ -89,6 +91,7 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Struct representing an order
     struct PyOrder {
         inner: Order,
     }
@@ -128,6 +131,8 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Struct representing a Limit Order, this is a type unique to limit orders that has some unnecessary fields removed
+    /// It is used for storing limit orders within the limit order book, as opposed to the Order struct
     pub struct PyLimitOrder {
         inner: LimitOrder,
     }
@@ -166,7 +171,7 @@ mod pyclient {
         #[new]
         pub fn new() -> Self {
             Self {
-                client_id_counter: 0
+                client_id_counter: 0,
             }
         }
         /// Creates a new limit order and increments the client ID counter
@@ -215,7 +220,7 @@ mod pyclient {
             order
         }
         /// Creates a new market order and increments the client ID counter
-        /// Accepts the quantity and side to execute the market order on 
+        /// Accepts the quantity and side to execute the market order on
         pub fn new_market(&mut self, side: PyOrderSide, qty: OrderQty) -> PyOrder {
             let order = PyOrder::new(
                 self.client_id_counter,
@@ -232,6 +237,7 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
+    /// Enum that contains extra information depending on the type of L3 event, such as qty for canceled orders
     struct PyL3EventExtra {
         inner: L3EventExtra,
     }
@@ -239,7 +245,7 @@ mod pyclient {
     #[pymethods]
     impl PyL3EventExtra {
         #[staticmethod]
-        fn cancel(old_price: Price, old_qty: OrderQty) -> Self {
+        fn cancel(old_qty: OrderQty) -> Self {
             Self {
                 inner: L3EventExtra::Cancel(old_qty),
             }
@@ -266,6 +272,7 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
+    /// Enum determining the type of a MarketEvent, it can have values Trade and L3
     struct PyMarketEventType {
         inner: MarketEventType,
     }
@@ -333,6 +340,8 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Copy, Clone, Debug)]
+    /// Struct representing a MarketEvent, it contains information pertaining to all events, like timestamp, as well
+    /// as unique information which is stored in the type
     struct PyMarketEvent {
         pub id: u16,
         pub timestamp: u64,
