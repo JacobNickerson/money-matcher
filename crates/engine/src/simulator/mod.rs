@@ -52,19 +52,21 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             is_real_time,
         }
     }
-    pub fn step(&mut self) {
-        // TODO: Tune the ingress_value
+    pub fn step(&mut self) -> Result<(),String> {
         self.drain_user_orders();
-        // TODO: Evaluate this is correct and doesn't cause issues
-        let synth_order = self.generate_single_order();
-        self.orders.push(synth_order);
-        let mut event = self.orders.pop().unwrap();
-        event.order_id = self.id_counter;
-        self.id_counter += 1;
-        if self.is_real_time {
-            self.pace(event.timestamp);
+        if let Some(synth_order) = self.generate_single_order() {
+            self.orders.push(synth_order);
+            let mut event = self.orders.pop().unwrap();
+            event.order_id = self.id_counter;
+            self.id_counter += 1;
+            if self.is_real_time {
+                self.pace(event.timestamp);
+            }
+            self.process_event(event);
+            Ok(())
+        } else {
+            Err("Reached end of event stream".to_string())
         }
-        self.process_event(event);
     }
     pub fn time(&self) -> SimTime {
         self.time
@@ -78,19 +80,13 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             self.orders.push(order)
         }
     }
-    fn generate_single_order(&mut self) -> Order {
-        let mut event = self.order_generator.next_event();
-        event.order_id = self.id_counter;
-        self.id_counter += 1;
-        event
-    }
-    fn generate_orders_til(&mut self, horizon: SimTime) {
-        loop {
-            let event = self.generate_single_order();
-            self.orders.push(event);
-            if event.timestamp > horizon {
-                break;
-            }
+    fn generate_single_order(&mut self) -> Option<Order> {
+        if let Some(mut event) = self.order_generator.next_event() {
+            event.order_id = self.id_counter;
+            self.id_counter += 1;
+            Some(event)
+        } else {
+            None
         }
     }
     fn process_event(&mut self, event: Order) {
