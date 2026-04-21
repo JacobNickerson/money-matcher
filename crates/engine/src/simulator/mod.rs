@@ -16,11 +16,11 @@ const SIM_HEAP_CAPACITY: usize = USER_ORDER_INGRESS * 10;
 pub type SimTime = u64;
 
 /// Object that owns the simulation, responsible for managing simulation time
-pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
+pub struct Simulator<S: EventSink, R: Rng> {
     time: SimTime,
     limit_order_book: OrderBook<S>,
     orders: BinaryHeap<Order>,
-    order_generator: E,
+    generate_order: Box<dyn FnMut() -> Option<Order>>,
     user_orders: HeapCons<Order>,
     user_order_buffer: Vec<Order>,
     id_counter: u64,
@@ -29,9 +29,9 @@ pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     real_time: Instant,
     is_real_time: bool,
 }
-impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
+impl<S: EventSink, R: Rng> Simulator<S, R> {
     pub fn new(
-        order_generator: E,
+        generate_order: Box<dyn FnMut() -> Option<Order>>,
         event_sink: S,
         user_orders: HeapCons<Order>,
         latency_settings: LatencyConfig,
@@ -43,7 +43,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             limit_order_book: OrderBook::new(event_sink),
             orders: BinaryHeap::with_capacity(SIM_HEAP_CAPACITY),
             latency_settings,
-            order_generator,
+            generate_order,
             user_orders,
             user_order_buffer: vec![Order::default(); USER_ORDER_INGRESS],
             id_counter: 0,
@@ -81,7 +81,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         }
     }
     fn generate_single_order(&mut self) -> Option<Order> {
-        if let Some(mut event) = self.order_generator.next_event() {
+        if let Some(mut event) = (self.generate_order)() {
             event.order_id = self.id_counter;
             self.id_counter += 1;
             Some(event)

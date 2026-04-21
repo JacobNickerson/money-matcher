@@ -14,7 +14,7 @@ use std::sync::{
 use std::thread;
 use std::time::Instant;
 
-use crate::data_generator::event_source::PoissonSource;
+use crate::data_generator::event_source::{EventSource, FileReplaySource, PoissonSource};
 use crate::data_generator::order_generators::GaussianOrderGenerator;
 use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
@@ -131,8 +131,15 @@ fn main() {
         latency: args.sim_latency,
         jitter: SimJitter::from(args.sim_jitter),
     };
-    let mut sim = Simulator::new(
-        PoissonSource::new(
+    let filename = "./test-file.bin";
+    let source = match FileReplaySource::new(filename,64) {
+        Ok(source) => source,
+        Err(e) => {
+            eprintln!("{}",e);
+            return;
+        },
+    };
+    let mut poissony = PoissonSource::new(
             ConstantPoissonRate::new(args.order_rate),
             UniformTypeSelector::new(
                 args.bid_rate,
@@ -143,7 +150,10 @@ fn main() {
             ),
             GaussianOrderGenerator::new(args.avg_price, args.price_dev),
             rng.clone(),
-        ),
+        );
+    let generator = Box::new(move || poissony.next_event());
+    let mut sim = Simulator::new(
+        generator,
         SingleEventFeed::new(market_event_prod, client_event_prod),
         user_order_cons,
         latency_settings,
@@ -205,7 +215,12 @@ fn main() {
         Some(range) => {
             for _ in 0..range {
                 #[allow(dead_code)]
-                sim.step();
+                if let Err(msg) = sim.step() {
+                    if args.logging {
+                        println!("{}", msg);
+                    }
+                    break;
+                }
                 sim_step_count += 1;
                 if !running.load(Ordering::Relaxed) {
                     break;
@@ -215,7 +230,12 @@ fn main() {
         None => {
             while running.load(Ordering::Relaxed) {
                 #[allow(dead_code)]
-                sim.step();
+                if let Err(msg) = sim.step() {
+                    if args.logging {
+                        println!("{}", msg);
+                    }
+                    break;
+                }
                 sim_step_count += 1;
             }
         }
