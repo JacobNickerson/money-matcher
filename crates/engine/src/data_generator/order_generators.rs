@@ -29,7 +29,6 @@ pub struct GaussianOrderGenerator {
     order_counter: u64,
 }
 impl GaussianOrderGenerator {
-    const ACTIVE_ORDER_BUFFER_SIZE: usize = 1_000_000;
     pub fn new(mean: f64, deviation: f64) -> Self {
         Self {
             dist: Normal::new(mean, deviation).unwrap(),
@@ -40,7 +39,7 @@ impl GaussianOrderGenerator {
     fn compute_price(&mut self, rng: &mut impl Rng) -> Price {
         (self.dist.sample(rng).abs() * 100.0) as Price
     }
-    fn get_active_order(&self, side: OrderSide) -> OrderId {
+    fn get_active_order(&self) -> OrderId {
         fastrand::u64(0..self.order_counter)
     }
 }
