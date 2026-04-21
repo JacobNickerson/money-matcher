@@ -226,14 +226,19 @@ class OrderEntry(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setMinimumWidth(320)
+
         self.fix_client = fix_client
         self.orderid_gen = OrderIdGenerator()
         self.manual_open_orders = {}
         self.all_open_orders = {}
         self.manual_order_history = []
+
         self.default_symbol = "SOL/USD"
         self.available_quote_balance = Decimal("0")
         self.available_base_balance = Decimal("0")
+
+        self.best_bid = None
+        self.best_ask = None
 
         self.setStyleSheet("""
             OrderEntry {
@@ -251,7 +256,7 @@ class OrderEntry(QWidget):
 
         tabbar = QTabBar()
         tabbar.addTab("Spot")
-        #tabbar.addTab("Bots")
+        # tabbar.addTab("Bots")
         tabbar.setFont(QFont("Inter", 10, QFont.Medium))
         tabbar.setStyleSheet("""
             QTabBar::tab {
@@ -331,9 +336,9 @@ class OrderEntry(QWidget):
         """)
 
         self.limit_btn = QPushButton("Limit")
-        self.tpsl_btn = QPushButton("Market")
+        self.market_btn = QPushButton("Market")
 
-        for btn in (self.limit_btn, self.tpsl_btn):
+        for btn in (self.limit_btn, self.market_btn):
             btn.setCheckable(True)
             btn.setFont(QFont("Inter", 10))
             btn.setCursor(Qt.PointingHandCursor)
@@ -360,12 +365,14 @@ class OrderEntry(QWidget):
 
         price_widget, self.price_input = self.input_field("Price", "0.00")
         amount_widget, self.amount_input = self.input_field("Amount", "0.0000")
-        self.price_input.textChanged.connect(self.update_total)
-        self.amount_input.textChanged.connect(self.update_total)
-
         total_widget, self.total_input = self.input_field("Total", "0.000")
+
         self.total_input.setReadOnly(True)
         self.total_input.setFocusPolicy(Qt.NoFocus)
+
+        self.price_input.textChanged.connect(self.update_total)
+        self.amount_input.textChanged.connect(self.update_total)
+        self.price_input.textChanged.connect(self.update_balance_display)
 
         layout.addWidget(price_widget)
         layout.addWidget(amount_widget)
@@ -380,14 +387,22 @@ class OrderEntry(QWidget):
         self.submit_btn.setCursor(Qt.PointingHandCursor)
 
         self.update_submit_button()
+        self.submit_btn.clicked.connect(self.submit_order)
+
         self.buy_btn.toggled.connect(self.update_submit_button)
         self.sell_btn.toggled.connect(self.update_submit_button)
-        self.submit_btn.clicked.connect(self.submit_order)
+
         self.buy_btn.toggled.connect(self.update_balance_display)
         self.sell_btn.toggled.connect(self.update_balance_display)
-        self.price_input.textChanged.connect(self.update_balance_display)
+
+        self.limit_btn.toggled.connect(self.update_price_mode)
+        self.market_btn.toggled.connect(self.update_price_mode)
+        self.buy_btn.toggled.connect(self.update_price_mode)
+        self.sell_btn.toggled.connect(self.update_price_mode)
 
         layout.addWidget(self.submit_btn)
+
+        self.update_price_mode()
         self.update_balance_display()
 
     def input_field(self, label_text, placeholder):
@@ -398,6 +413,7 @@ class OrderEntry(QWidget):
                 background-color: #101010;
             }
         """)
+
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -411,7 +427,6 @@ class OrderEntry(QWidget):
         field.setFont(QFont("Inter", 10))
         field.setMinimumHeight(30)
         field.setMaximumHeight(36)
-
         field.setStyleSheet("""
             QLineEdit {
                 background-color: #1D1D1D;
@@ -431,12 +446,17 @@ class OrderEntry(QWidget):
         layout.addLayout(field_layout)
 
         return container, field
-    
+
     def set_balances(self, quote_balance, base_balance):
         self.available_quote_balance = Decimal(str(quote_balance))
         self.available_base_balance = Decimal(str(base_balance))
         self.update_balance_display()
-    
+
+    def set_book(self, best_bid, best_ask):
+        self.best_bid = Decimal(str(best_bid)) if best_bid is not None else None
+        self.best_ask = Decimal(str(best_ask)) if best_ask is not None else None
+        self.update_price_mode()
+
     def table(self, available_val="0.000", max_buy_val="0.000"):
         container = QWidget()
         container.setAttribute(Qt.WA_StyledBackground, True)
@@ -461,7 +481,7 @@ class OrderEntry(QWidget):
 
         self.available_title = QLabel("Available")
         self.available_title.setStyleSheet("""
-            color: white; 
+            color: white;
             font-size: 10pt;
             border: none;
             padding: 8px;
@@ -469,7 +489,7 @@ class OrderEntry(QWidget):
 
         self.max_title = QLabel("Max Buy")
         self.max_title.setStyleSheet("""
-            color: white; 
+            color: white;
             font-size: 10pt;
             border: none;
             padding: 8px;
@@ -477,7 +497,7 @@ class OrderEntry(QWidget):
 
         self.available_value = QLabel(available_val)
         self.available_value.setStyleSheet("""
-            color: #707070; 
+            color: #707070;
             font-size: 9pt;
             padding: 8px;
             border: none;
@@ -485,7 +505,7 @@ class OrderEntry(QWidget):
 
         self.max_value = QLabel(max_buy_val)
         self.max_value.setStyleSheet("""
-            color: #707070; 
+            color: #707070;
             font-size: 9pt;
             padding: 8px;
             border: none;
@@ -510,28 +530,6 @@ class OrderEntry(QWidget):
         grid.addWidget(v_divider, 0, 1, 3, 1)
 
         return container
-    
-    def update_balance_display(self):
-        price = self.safe_decimal(self.price_input.text())
-
-        if self.buy_btn.isChecked():
-            self.available_title.setText("Available")
-            self.max_title.setText("Max Buy")
-
-            self.available_value.setText(f"{self.available_quote_balance:.4f}")
-
-            if price is not None and price > 0:
-                max_buy = self.available_quote_balance / price
-                self.max_value.setText(f"{max_buy:.4f}")
-            else:
-                self.max_value.setText(f"0.0000")
-
-        else:
-            self.available_title.setText("Available")
-            self.max_title.setText("Max Sell")
-
-            self.available_value.setText(f"{self.available_base_balance:.4f}")
-            self.max_value.setText(f"{self.available_base_balance:.4f}")
 
     def safe_decimal(self, value):
         try:
@@ -541,9 +539,72 @@ class OrderEntry(QWidget):
             return Decimal(value)
         except (AttributeError, InvalidOperation, ValueError):
             return None
-    
+
+    def get_effective_price(self):
+        if self.market_btn.isChecked():
+            return self.best_ask if self.buy_btn.isChecked() else self.best_bid
+        return self.safe_decimal(self.price_input.text())
+
+    def update_price_mode(self):
+        is_market = self.market_btn.isChecked()
+
+        if is_market:
+            self.price_input.setReadOnly(True)
+            self.price_input.setFocusPolicy(Qt.NoFocus)
+            self.price_input.setStyleSheet("""
+                QLineEdit {
+                    background-color: #161616;
+                    border: none;
+                    border-radius: 6px;
+                    padding-right: 10px;
+                    color: #888888;
+                }
+            """)
+
+            market_price = self.get_effective_price()
+            if market_price is not None:
+                self.price_input.setText(f"{market_price:.4f}")
+            else:
+                self.price_input.clear()
+                self.price_input.setPlaceholderText("Market")
+        else:
+            self.price_input.setReadOnly(False)
+            self.price_input.setFocusPolicy(Qt.StrongFocus)
+            self.price_input.setPlaceholderText("0.00")
+            self.price_input.setStyleSheet("""
+                QLineEdit {
+                    background-color: #1D1D1D;
+                    border: none;
+                    border-radius: 6px;
+                    padding-right: 10px;
+                    color: white;
+                }
+            """)
+
+        self.update_total()
+        self.update_balance_display()
+
+    def update_balance_display(self):
+        price = self.get_effective_price()
+
+        if self.buy_btn.isChecked():
+            self.available_title.setText("Available")
+            self.max_title.setText("Max Buy")
+            self.available_value.setText(f"{self.available_quote_balance:.4f}")
+
+            if price is not None and price > 0:
+                max_buy = self.available_quote_balance / price
+                self.max_value.setText(f"{max_buy:.4f}")
+            else:
+                self.max_value.setText("0.0000")
+        else:
+            self.available_title.setText("Available")
+            self.max_title.setText("Max Sell")
+            self.available_value.setText(f"{self.available_base_balance:.4f}")
+            self.max_value.setText(f"{self.available_base_balance:.4f}")
+
     def update_total(self):
-        price = self.safe_decimal(self.price_input.text())
+        price = self.get_effective_price()
         amount = self.safe_decimal(self.amount_input.text())
 
         if price is None or amount is None:
@@ -585,7 +646,36 @@ class OrderEntry(QWidget):
                     background-color: #C44B4B;
                 }
             """)
-    
+
+    def validate_order(self, side_text, price_decimal, qty_decimal, is_market=False):
+        if qty_decimal is None:
+            return False, "Amount is required."
+
+        if qty_decimal <= 0:
+            return False, "Amount must be greater than 0."
+
+        if not is_market:
+            if price_decimal is None:
+                return False, "Price is required."
+            if price_decimal <= 0:
+                return False, "Price must be greater than 0."
+            price_for_check = price_decimal
+        else:
+            if price_decimal is None or price_decimal <= 0:
+                return False, "No market price available."
+            price_for_check = price_decimal
+
+        total = price_for_check * qty_decimal
+
+        if side_text == "BUY":
+            if total > self.available_quote_balance:
+                return False, f"Need {total:.4f}, available {self.available_quote_balance:.4f}."
+        elif side_text == "SELL":
+            if qty_decimal > self.available_base_balance:
+                return False, f"Need {qty_decimal:.4f}, available {self.available_base_balance:.4f}."
+
+        return True, ""
+
     def submit_order(self, bot_order=False, _side=None, _price=None, _qty=None):
         try:
             timestamp = int(time.time() * 1000)
@@ -596,25 +686,37 @@ class OrderEntry(QWidget):
                 qty_decimal = Decimal(str(_qty))
                 side = pyclient.PyOrderSide.Bid if side_text == "BUY" else pyclient.PyOrderSide.Ask
                 order_type_name = "Limit"
+                is_market = False
             else:
                 side_text = "BUY" if self.buy_btn.isChecked() else "SELL"
-                price_decimal = self.safe_decimal(self.price_input.text())
                 qty_decimal = self.safe_decimal(self.amount_input.text())
+                is_market = self.market_btn.isChecked()
 
-                ok, message = self.validate_order(side_text, price_decimal, qty_decimal)
+                if is_market:
+                    price_decimal = self.best_ask if side_text == "BUY" else self.best_bid
+                    order_type_name = "Market"
+                else:
+                    price_decimal = self.safe_decimal(self.price_input.text())
+                    order_type_name = "Limit"
+
+                ok, message = self.validate_order(
+                    side_text,
+                    price_decimal,
+                    qty_decimal,
+                    is_market=is_market
+                )
                 if not ok:
                     QMessageBox.warning(self, "Order Rejected", message)
                     return None
 
                 side = pyclient.PyOrderSide.Bid if side_text == "BUY" else pyclient.PyOrderSide.Ask
-                order_type_name = "Limit" if self.limit_btn.isChecked() else "Market"
 
-            price = int(price_decimal * Decimal("1e4"))
+            price = int(price_decimal * Decimal("1e4")) if price_decimal is not None else 0
             qty = int(qty_decimal * Decimal("1e4"))
 
             order_type = (
                 pyclient.PyOrderType.limit(qty, price)
-                if (bot_order or self.limit_btn.isChecked())
+                if (bot_order or not is_market)
                 else pyclient.PyOrderType.market(qty)
             )
 
@@ -630,8 +732,7 @@ class OrderEntry(QWidget):
             if self.fix_client:
                 self.fix_client.send_message(order)
 
-            # store manual orders for dashboard
-            price_float = float(price_decimal)
+            price_float = float(price_decimal) if price_decimal is not None else 0.0
             qty_float = float(qty_decimal)
 
             order_record = {
@@ -683,34 +784,6 @@ class OrderEntry(QWidget):
             print(f"Error sending cancel for order {order_id}: {e}")
 
         self.mark_order_cancelled(order_id)
-
-    def validate_order(self, side_text, price_decimal, qty_decimal):
-        if price_decimal is None or qty_decimal is None:
-            return False, "Price and amount are required."
-
-        if price_decimal <= 0:
-            return False, "Price must be greater than 0."
-
-        if qty_decimal <= 0:
-            return False, "Amount must be greater than 0."
-
-        total = price_decimal * qty_decimal
-
-        if side_text == "BUY":
-            if total > self.available_quote_balance:
-                return (
-                    False,
-                    f"Need {total:.4f}, available {self.available_quote_balance:.4f}."
-                )
-
-        elif side_text == "SELL":
-            if qty_decimal > self.available_base_balance:
-                return (
-                    False,
-                    f"Need {qty_decimal:.4f}, available {self.available_base_balance:.4f}."
-                )
-
-        return True, ""
 
     def get_open_manual_orders(self):
         return list(self.manual_open_orders.values())

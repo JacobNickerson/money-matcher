@@ -161,6 +161,9 @@ class Dashboard(QWidget):
             self.order_book.refresh_order_book_display(self.rust_book)
             self.market_events.refresh_chart()
             self.trade_history.refresh_data()
+            self.order_entry.set_book(self.rust_book.best_bid(), self.rust_book.best_ask())
+
+        self.refresh_strategy_panel()
 
         now = time.time()
         for runner in self.strategy_runners.values():
