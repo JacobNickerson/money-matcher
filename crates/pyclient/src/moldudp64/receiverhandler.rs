@@ -219,12 +219,9 @@ impl ReceiverHandler {
                         side: side.try_into().unwrap(),
                         timestamp,
                         kind: if price > 0 {
-                            OrderType::Limit {
-                                qty: shares.into(),
-                                price: price.into(),
-                            }
+                            OrderType::Limit { qty: shares, price }
                         } else {
-                            OrderType::Market { qty: shares.into() }
+                            OrderType::Market { qty: shares }
                         },
                         extra: L3EventExtra::None,
                     }),
@@ -245,8 +242,8 @@ impl ReceiverHandler {
                     id,
                     timestamp,
                     kind: MarketEventType::Trade(TradeEvent {
-                        quantity: executed_shares.into(),
-                        price: execution_price.into(),
+                        quantity: executed_shares,
+                        price: execution_price,
                         aggressor_side: OrderSide::Ask,
                         maker_id,
                     }),
@@ -273,8 +270,8 @@ impl ReceiverHandler {
                         timestamp,
                         kind: OrderType::Update {
                             old_id: original_order_ref,
-                            qty: shares.into(),
-                            price: price.into(),
+                            qty: shares,
+                            price,
                         },
                         extra: L3EventExtra::None,
                     }),
@@ -298,7 +295,7 @@ impl ReceiverHandler {
                         order_id: order_reference_number,
                         side: OrderSide::Ask,
                         timestamp,
-                        kind: OrderType::Cancel,
+                        kind: OrderType::Cancel { old_id: 0 }, // NOTE: Old_ID isn't needed and is set to a garbage value
                         extra: L3EventExtra::Cancel(old_order_qty),
                     }),
                 })

@@ -55,8 +55,8 @@ impl FIXBusinessMessage for NewOrderSingle {
             },
             timestamp: convert_timestamp(self.transact_time.expect("")).expect(""),
             kind: OrderType::Limit {
-                qty: self.qty.into(),
-                price: self.price.into(),
+                qty: self.qty,
+                price: self.price,
             },
         }
     }

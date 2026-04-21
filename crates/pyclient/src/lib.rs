@@ -27,6 +27,7 @@ mod pyclient {
     #[gen_stub_pyclass_enum]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Enum determining which side of the order book an order belongs to, can have values Bid and Ask
     pub enum PyOrderSide {
         Bid,
         Ask,
@@ -51,7 +52,8 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct PyOrderType {
+    /// Enum determining the type of an order, can have values limit, market, update, and cancel
+    pub struct PyOrderType {
         inner: OrderType,
     }
     #[gen_stub_pymethods]
@@ -81,7 +83,7 @@ mod pyclient {
         #[staticmethod]
         fn cancel(old_id: OrderId) -> Self {
             Self {
-                inner: OrderType::Cancel,
+                inner: OrderType::Cancel { old_id },
             }
         }
     }
@@ -89,7 +91,8 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct PyOrder {
+    /// Struct representing an order
+    pub struct PyOrder {
         inner: Order,
     }
     #[gen_stub_pymethods]
@@ -128,6 +131,8 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    /// Struct representing a Limit Order, this is a type unique to limit orders that has some unnecessary fields removed
+    /// It is used for storing limit orders within the limit order book, as opposed to the Order struct
     pub struct PyLimitOrder {
         inner: LimitOrder,
     }
@@ -154,15 +159,93 @@ mod pyclient {
 
     #[gen_stub_pyclass]
     #[pyclass]
+    #[derive(Debug)]
+    /// A helper for creating PyOrders of various types, maintains an internal counter
+    /// for client IDs
+    pub struct PyOrderGenerator {
+        client_id_counter: ClientId,
+    }
+    #[gen_stub_pymethods]
+    #[pymethods]
+    impl PyOrderGenerator {
+        #[new]
+        pub fn new() -> Self {
+            Self {
+                client_id_counter: 0,
+            }
+        }
+        /// Creates a new limit order and increments the client ID counter
+        pub fn new_limit(&mut self, side: PyOrderSide, qty: OrderQty, price: Price) -> PyOrder {
+            let order = PyOrder::new(
+                self.client_id_counter,
+                0, // NOTE: Set by the engine, use a garbage value
+                side,
+                0, // NOTE: Set by the engine, use a garbage value
+                PyOrderType::limit(qty, price),
+            );
+            self.client_id_counter += 1;
+            order
+        }
+        /// Creates a new update order and increments the client ID counter
+        /// Accepts the ID of the order to be updated and the new side, quantity, and price to set
+        pub fn new_update(
+            &mut self,
+            side: PyOrderSide,
+            old_id: OrderId,
+            qty: OrderQty,
+            price: Price,
+        ) -> PyOrder {
+            let order = PyOrder::new(
+                self.client_id_counter,
+                0, // NOTE: Set by the engine, use a garbage value
+                side,
+                0, // NOTE: Set by the engine, use a garbage value
+                PyOrderType::update(old_id, qty, price),
+            );
+            self.client_id_counter += 1;
+            order
+        }
+        /// Creates a new cancel order and increments the client ID counter
+        /// Accepts the ID of the order to be updated
+        /// Created order has side set to Ask, since the side isn't needed to cancel an order
+        pub fn new_cancel(&mut self, old_id: OrderId) -> PyOrder {
+            let order = PyOrder::new(
+                self.client_id_counter,
+                0, // NOTE: Set by the engine, use a garbage value
+                PyOrderSide::Ask,
+                0, // NOTE: Set by the engine, use a garbage value
+                PyOrderType::cancel(old_id),
+            );
+            self.client_id_counter += 1;
+            order
+        }
+        /// Creates a new market order and increments the client ID counter
+        /// Accepts the quantity and side to execute the market order on
+        pub fn new_market(&mut self, side: PyOrderSide, qty: OrderQty) -> PyOrder {
+            let order = PyOrder::new(
+                self.client_id_counter,
+                0, // NOTE: Set by the engine, use a garbage value
+                side,
+                0, // NOTE: Set by the engine, use a garbage value
+                PyOrderType::market(qty),
+            );
+            self.client_id_counter += 1;
+            order
+        }
+    }
+
+    #[gen_stub_pyclass]
+    #[pyclass]
     #[derive(Debug, Clone, Copy)]
-    struct PyL3EventExtra {
+    /// Enum that contains extra information depending on the type of L3 event, such as qty for canceled orders
+    pub struct PyL3EventExtra {
         inner: L3EventExtra,
     }
     #[gen_stub_pymethods]
     #[pymethods]
     impl PyL3EventExtra {
         #[staticmethod]
-        fn cancel(old_price: Price, old_qty: OrderQty) -> Self {
+        fn cancel(old_qty: OrderQty) -> Self {
             Self {
                 inner: L3EventExtra::Cancel(old_qty),
             }
@@ -189,7 +272,8 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Debug, Clone, Copy)]
-    struct PyMarketEventType {
+    /// Enum determining the type of a MarketEvent, it can have values Trade and L3
+    pub struct PyMarketEventType {
         inner: MarketEventType,
     }
     #[gen_stub_pymethods]
@@ -256,7 +340,9 @@ mod pyclient {
     #[gen_stub_pyclass]
     #[pyclass]
     #[derive(Copy, Clone, Debug)]
-    struct PyMarketEvent {
+    /// Struct representing a MarketEvent, it contains information pertaining to all events, like timestamp, as well
+    /// as unique information which is stored in the type
+    pub struct PyMarketEvent {
         pub id: u16,
         pub timestamp: u64,
         pub kind: PyMarketEventType,
@@ -311,7 +397,7 @@ mod pyclient {
     #[pyclass]
     /// A stripped down version of the OrderBook. Directly manages its state
     /// via MarketEvents instead of handling matching logic, trade execution, etc.
-    struct PyOrderBook {
+    pub struct PyOrderBook {
         inner: OrderBook,
     }
     #[gen_stub_pymethods]
@@ -372,7 +458,7 @@ mod pyclient {
 
     #[gen_stub_pyclass]
     #[pyclass]
-    struct PyMoldClient {
+    pub struct PyMoldClient {
         inner: Mutex<MoldClient>,
     }
 

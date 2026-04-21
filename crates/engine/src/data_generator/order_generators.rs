@@ -1,4 +1,3 @@
-use circular_buffer::CircularBuffer;
 use fastrand;
 use mm_core::lob_core::{
     ClientId, OrderId, OrderQty, Price, Timestamp,
@@ -7,7 +6,7 @@ use mm_core::lob_core::{
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
-use crate::simulator::simulator::SimTime;
+use crate::simulator::SimTime;
 
 /// Generates the next event, also handles selection of price level, memory of orders for cancellation
 pub trait OrderGenerator {
@@ -29,7 +28,6 @@ pub struct GaussianOrderGenerator {
     order_counter: u64,
 }
 impl GaussianOrderGenerator {
-    const ACTIVE_ORDER_BUFFER_SIZE: usize = 1_000_000;
     pub fn new(mean: f64, deviation: f64) -> Self {
         Self {
             dist: Normal::new(mean, deviation).unwrap(),
@@ -40,7 +38,7 @@ impl GaussianOrderGenerator {
     fn compute_price(&mut self, rng: &mut impl Rng) -> Price {
         (self.dist.sample(rng).abs() * 100.0) as Price
     }
-    fn get_active_order(&self, side: OrderSide) -> OrderId {
+    fn get_active_order(&self) -> OrderId {
         fastrand::u64(0..self.order_counter)
     }
 }
@@ -58,7 +56,7 @@ impl OrderGenerator for GaussianOrderGenerator {
         self.order_counter += 1;
         self.current_time += time_stamp;
         match kind {
-            OrderType::Limit { qty: _, price: _ } => {
+            OrderType::Limit { .. } => {
                 self.order_counter += 1;
                 Order::new(
                     client_id,
@@ -68,31 +66,29 @@ impl OrderGenerator for GaussianOrderGenerator {
                     OrderType::Limit { qty, price },
                 )
             }
-            OrderType::Market { qty: _ } => Order::new(
+            OrderType::Market { .. } => Order::new(
                 client_id,
                 0, // NOTE: Use a junk value, simulator sets this on receipt
                 side,
                 self.current_time,
                 OrderType::Market { qty },
             ),
-            OrderType::Cancel => Order::new(
+            OrderType::Cancel { .. } => Order::new(
                 client_id,
-                self.get_active_order(side),
+                0,
                 side,
                 self.current_time,
-                OrderType::Cancel,
+                OrderType::Cancel {
+                    old_id: self.get_active_order(),
+                },
             ),
-            OrderType::Update {
-                old_id: _,
-                qty: _,
-                price: _,
-            } => Order::new(
+            OrderType::Update { .. } => Order::new(
                 client_id,
                 0, // NOTE: Use a junk value, simulator sets this on receipt
                 side,
                 self.current_time,
                 OrderType::Update {
-                    old_id: self.get_active_order(side),
+                    old_id: self.get_active_order(),
                     qty,
                     price,
                 },
@@ -179,7 +175,7 @@ mod tests {
             order_gen.generate(
                 0,
                 4 * i + 2,
-                (OrderSide::Bid, OrderType::Cancel),
+                (OrderSide::Bid, OrderType::Cancel { old_id: 0 }),
                 &mut seeded_rng,
             );
             order_gen.generate(
