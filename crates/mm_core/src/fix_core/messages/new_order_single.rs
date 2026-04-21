@@ -71,7 +71,7 @@ impl FIXBusinessMessage for NewOrderSingle {
         };
 
         Ok(Self {
-            cl_ord_id: order.order_id,
+            cl_ord_id: order.client_id,
             handl_inst: 0,
             qty,
             ord_type: OrdType::Limit,

@@ -383,7 +383,7 @@ class Header(QWidget):
             if not file_path:
                 return
 
-            content = f"""class {strategy_name.replace(" ", "")}(Strategy):
+            content = f"""class {strategy_name.replace(" ", "")}():
     symbol = "{symbol}"
 
     # strategy state initialization
