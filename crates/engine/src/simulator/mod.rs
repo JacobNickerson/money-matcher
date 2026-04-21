@@ -1,8 +1,8 @@
 pub mod latency_config;
 
 use crate::data_generator::event_source::EventSource;
-use crate::lob::limitorderbook::OrderBook;
 use crate::simulator::latency_config::LatencyConfig;
+use engine::limit_order_book::OrderBook;
 use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
 use rand::Rng;
 use ringbuf::{HeapCons, traits::*};

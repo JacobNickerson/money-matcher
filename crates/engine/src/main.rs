@@ -27,7 +27,6 @@ use engine::{positive_float_parser, prob_parser};
 
 mod data_generator;
 mod fix;
-mod lob;
 mod moldudp64;
 mod simulator;
 

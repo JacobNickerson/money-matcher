@@ -16,4 +16,4 @@ pub fn positive_float_parser(s: &str) -> Result<f64, String> {
     }
 }
 
-pub mod lob;
+pub mod limit_order_book;
