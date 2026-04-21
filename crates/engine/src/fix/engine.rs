@@ -458,8 +458,9 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
 
+        let running = Arc::new(AtomicBool::new(true));
         let engine_thread = thread::spawn(move || {
-            engine.run();
+            engine.run(running);
         });
 
         loop {
