@@ -64,9 +64,7 @@ class SimulatedExecutionEngine:
                         filled_pct=100.0,
                         status="Filled",
                         timestamp=float(fill.timestamp),
-                        bot_name=runner.bot_name,
-                        pnl=realized_pnl,
-                        pnl_pct=realized_pct,
+                        bot_name=runner.bot_name
                     )
 
                 pending_orders.pop(order["order_id"], None)
