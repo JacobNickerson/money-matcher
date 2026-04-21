@@ -219,10 +219,7 @@ impl ReceiverHandler {
                         side: side.try_into().unwrap(),
                         timestamp,
                         kind: if price > 0 {
-                            OrderType::Limit {
-                                qty: shares,
-                                price,
-                            }
+                            OrderType::Limit { qty: shares, price }
                         } else {
                             OrderType::Market { qty: shares }
                         },

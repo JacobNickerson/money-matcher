@@ -20,8 +20,8 @@ use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
 use crate::fix::engine::FixEngine;
 use crate::moldudp64::engine::MoldEngine;
+use crate::simulator::Simulator;
 use crate::simulator::latency_config::{JitterCfg, LatencyConfig, SimJitter};
-use crate::simulator::simulator::Simulator;
 
 use engine::{positive_float_parser, prob_parser};
 

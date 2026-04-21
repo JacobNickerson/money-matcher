@@ -6,7 +6,7 @@ use mm_core::lob_core::{
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
-use crate::simulator::simulator::SimTime;
+use crate::simulator::SimTime;
 
 /// Generates the next event, also handles selection of price level, memory of orders for cancellation
 pub trait OrderGenerator {
