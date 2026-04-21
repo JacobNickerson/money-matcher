@@ -41,8 +41,9 @@ impl GaussianOrderGenerator {
     fn compute_price(&mut self, rng: &mut impl Rng) -> Price {
         (self.dist.sample(rng).abs() * 100.0) as Price
     }
-    fn get_active_order(&self) -> OrderId {
-        fastrand::u64(0..self.order_counter)
+    fn get_active_order(&self, rng: &mut impl Rng) -> OrderId {
+        let dist = Uniform::new(0,self.order_counter).unwrap();
+        dist.sample(rng)
     }
 }
 impl OrderGenerator for GaussianOrderGenerator {
@@ -82,7 +83,7 @@ impl OrderGenerator for GaussianOrderGenerator {
                 side,
                 self.current_time,
                 OrderType::Cancel {
-                    old_id: self.get_active_order(),
+                    old_id: self.get_active_order(rng),
                 },
             ),
             OrderType::Update { .. } => Order::new(
@@ -91,7 +92,7 @@ impl OrderGenerator for GaussianOrderGenerator {
                 side,
                 self.current_time,
                 OrderType::Update {
-                    old_id: self.get_active_order(),
+                    old_id: self.get_active_order(rng),
                     qty,
                     price,
                 },
