@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     io,
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -85,11 +85,11 @@ impl FixEngine {
     }
 
     /// Runs the main blocking event loop. Polls for network I/O and checks session health continuously.
-    pub fn run(&mut self) {
+    pub fn run(&mut self, running: Arc<AtomicBool>) {
         let mut events = Events::with_capacity(1024);
         println!("Server running on {}", self.listener.local_addr().unwrap());
 
-        loop {
+        while running.load(Ordering::Relaxed) {
             self.poll
                 .poll(&mut events, Some(Duration::from_secs(1)))
                 .unwrap();
@@ -458,8 +458,9 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
 
+        let running = Arc::new(AtomicBool::new(true));
         let engine_thread = thread::spawn(move || {
-            engine.run();
+            engine.run(running);
         });
 
         loop {
