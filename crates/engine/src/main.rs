@@ -14,7 +14,7 @@ use std::sync::{
 use std::thread;
 use std::time::Instant;
 
-use crate::data_generator::event_source::{EventSource, FileReplaySource, PoissonSource};
+use crate::data_generator::event_source::{EventSource, FileReplaySource, PoissonSource, SourceEnum};
 use crate::data_generator::order_generators::GaussianOrderGenerator;
 use crate::data_generator::rate_controllers::ConstantPoissonRate;
 use crate::data_generator::type_selectors::UniformTypeSelector;
@@ -132,7 +132,7 @@ fn main() {
         jitter: SimJitter::from(args.sim_jitter),
     };
     let filename = "./test-file.bin";
-    let source = match FileReplaySource::new(filename,64) {
+    let mut source = match FileReplaySource::new(filename,64) {
         Ok(source) => source,
         Err(e) => {
             eprintln!("{}",e);
@@ -151,7 +151,8 @@ fn main() {
             GaussianOrderGenerator::new(args.avg_price, args.price_dev),
             rng.clone(),
         );
-    let generator = Box::new(move || poissony.next_event());
+    // let generator = Box::new(move || source.next_event());
+    let generator = SourceEnum::Poisson(poissony);
     let mut sim = Simulator::new(
         generator,
         SingleEventFeed::new(market_event_prod, client_event_prod),

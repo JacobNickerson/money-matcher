@@ -1,6 +1,6 @@
 pub mod latency_config;
 
-use crate::data_generator::event_source::EventSource;
+use crate::data_generator::event_source::{EventSource, SourceEnum, SourceFunction};
 use crate::simulator::latency_config::LatencyConfig;
 use engine::limit_order_book::OrderBook;
 use mm_core::lob_core::{market_events::EventSink, market_orders::Order};
@@ -16,11 +16,11 @@ const SIM_HEAP_CAPACITY: usize = USER_ORDER_INGRESS * 10;
 pub type SimTime = u64;
 
 /// Object that owns the simulation, responsible for managing simulation time
-pub struct Simulator<S: EventSink, R: Rng> {
+pub struct Simulator<E: EventSource, S: EventSink, R: Rng> {
     time: SimTime,
     limit_order_book: OrderBook<S>,
     orders: BinaryHeap<Order>,
-    generate_order: Box<dyn FnMut() -> Option<Order>>,
+    source: E,
     user_orders: HeapCons<Order>,
     user_order_buffer: Vec<Order>,
     id_counter: u64,
@@ -29,9 +29,9 @@ pub struct Simulator<S: EventSink, R: Rng> {
     real_time: Instant,
     is_real_time: bool,
 }
-impl<S: EventSink, R: Rng> Simulator<S, R> {
+impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
     pub fn new(
-        generate_order: Box<dyn FnMut() -> Option<Order>>,
+        source: E,
         event_sink: S,
         user_orders: HeapCons<Order>,
         latency_settings: LatencyConfig,
@@ -43,7 +43,7 @@ impl<S: EventSink, R: Rng> Simulator<S, R> {
             limit_order_book: OrderBook::new(event_sink),
             orders: BinaryHeap::with_capacity(SIM_HEAP_CAPACITY),
             latency_settings,
-            generate_order,
+            source,
             user_orders,
             user_order_buffer: vec![Order::default(); USER_ORDER_INGRESS],
             id_counter: 0,
@@ -52,7 +52,7 @@ impl<S: EventSink, R: Rng> Simulator<S, R> {
             is_real_time,
         }
     }
-    pub fn step(&mut self) -> Result<(),String> {
+    pub fn step(&mut self) -> Result<(), String> {
         self.drain_user_orders();
         if let Some(synth_order) = self.generate_single_order() {
             self.orders.push(synth_order);
@@ -81,7 +81,7 @@ impl<S: EventSink, R: Rng> Simulator<S, R> {
         }
     }
     fn generate_single_order(&mut self) -> Option<Order> {
-        if let Some(mut event) = (self.generate_order)() {
+        if let Some(mut event) = self.source.next_event() {
             event.order_id = self.id_counter;
             self.id_counter += 1;
             Some(event)
@@ -100,6 +100,14 @@ impl<S: EventSink, R: Rng> Simulator<S, R> {
         std::thread::sleep(Duration::from_nanos(real_time_delta));
     }
 }
+/// A specific typedef of Simulator, where the EventSource is a struct that wraps around a function pointer
+/// This allows the source type to be picked dynamically at run-time, but comes with a performance penalty for
+/// virtual calls
+pub type DynamicSimulator<S, R> = Simulator<SourceFunction, S, R>;
+/// A specific typedef of Simulator, where the EventSource is an enum that contains a limited subset of EventSource types
+/// This allows the source type to be picked dynamically at run-time, but only from the limited subset included in the enum
+/// The performance penalty of this is negligible as long as the enum does not encompass too many types
+pub type EnumSimulator<S, R> = Simulator<SourceEnum, S, R>;
 
 #[cfg(test)]
 mod tests {
