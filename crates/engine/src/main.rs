@@ -15,7 +15,7 @@ use std::thread;
 use std::time::Instant;
 
 use crate::data_generator::event_source::{
-    ConstantPoissonSource, EventSource, FileReplaySource, PoissonSource, SourceEnum, SourceFunction,
+    ConstantPoissonSource, EventSource, FileReplaySource, SourceFunction,
 };
 use crate::data_generator::order_generators::GaussianOrderGenerator;
 use crate::data_generator::rate_controllers::ConstantPoissonRate;
@@ -23,7 +23,7 @@ use crate::data_generator::type_selectors::UniformTypeSelector;
 use crate::fix::engine::FixEngine;
 use crate::moldudp64::engine::MoldEngine;
 use crate::simulator::latency_config::{LatencyConfig, SimJitter};
-use crate::simulator::{DynamicSimulator, Simulator};
+use crate::simulator::DynamicSimulator;
 
 use crate::cli_args::{Args, EventSourceType, validate};
 

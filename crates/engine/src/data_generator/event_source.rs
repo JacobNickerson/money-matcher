@@ -44,14 +44,24 @@ pub struct PoissonSource<R: RateController, T: TypeSelector, G: OrderGenerator, 
     type_selector: T,
     order_generator: G,
     rng: N,
+    limit: Option<u64>,
+    count: u64,
 }
 impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> PoissonSource<R, T, G, N> {
-    pub fn new(rate_controller: R, type_selector: T, order_generator: G, rng: N) -> Self {
+    pub fn new(
+        rate_controller: R,
+        type_selector: T,
+        order_generator: G,
+        rng: N,
+        limit: Option<u64>,
+    ) -> Self {
         Self {
             rate_controller,
             type_selector,
             order_generator,
             rng,
+            limit,
+            count: 0,
         }
     }
 }
@@ -59,13 +69,18 @@ impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> EventSource
     for PoissonSource<R, T, G, N>
 {
     fn next_event(&mut self) -> Option<Order> {
+        if let Some(limit) = self.limit
+            && self.count >= limit
+        {
+            return None;
+        }
+        self.count += 1;
         let dt = self.rate_controller.next_dt(&mut self.rng);
         let kind = self.type_selector.sample(&mut self.rng);
-        // TODO: Right now client_id is hard-coded as 0, but maybe it should be configurable
         Some(self.order_generator.generate(0, dt, kind, &mut self.rng))
     }
 }
-type ConstantPoissonSource =
+pub type ConstantPoissonSource =
     PoissonSource<ConstantPoissonRate, UniformTypeSelector, GaussianOrderGenerator, ChaCha8Rng>;
 
 /// EventSource that replays orders from a binary file created by OrderLogger
@@ -84,7 +99,8 @@ impl FileReplaySource {
         let file = File::open(path)?;
         let file_size = file.metadata()?.len() as usize;
 
-        let this = Ok(Self {
+        
+        Ok(Self {
             mmap: unsafe { Mmap::map(&file)? },
             file_size,
             batch_size,
@@ -92,8 +108,7 @@ impl FileReplaySource {
             offset: 0,
             buffer: Vec::with_capacity(batch_size),
             remaining: 0,
-        });
-        this
+        })
     }
     fn read_file(&mut self) {
         // TODO: Handle end of file
@@ -140,6 +155,7 @@ mod tests {
             UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
             GaussianOrderGenerator::new(15.0, 1.0),
             ChaCha8Rng::seed_from_u64(0),
+            None,
         )
     }
     #[test]
@@ -149,6 +165,10 @@ mod tests {
         for _ in 0..1_000_000 {
             events.push(generator.next_event());
         }
-        assert!(events.windows(2).all(|e| e[0].timestamp <= e[1].timestamp));
+        assert!(
+            events
+                .windows(2)
+                .all(|e| e[0].unwrap().timestamp <= e[1].unwrap().timestamp)
+        );
     }
 }

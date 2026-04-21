@@ -1,6 +1,5 @@
-use crate::simulator::latency_config::{JitterKind, SimJitter};
+use crate::simulator::latency_config::JitterKind;
 use clap::{Parser, Subcommand};
-use rand_distr::{Normal, Uniform};
 
 pub fn prob_parser(s: &str) -> Result<f64, String> {
     let val: f64 = s.parse().map_err(|_| "invalid float")?;
