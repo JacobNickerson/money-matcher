@@ -1,8 +1,9 @@
 use crate::lob_core::{ClientId, OrderId, OrderQty, Price, Timestamp};
+use rkyv::{Archive, Serialize, Deserialize};
 use std::cmp::Ordering;
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 
 pub enum OrderSide {
     Bid = b'B',
@@ -26,7 +27,7 @@ pub enum OrderStatus {
     Canceled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 pub struct Order {
     pub client_id: ClientId,
     pub order_id: OrderId,
@@ -78,7 +79,7 @@ impl Default for Order {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 pub enum OrderType {
     Limit {
         qty: OrderQty,

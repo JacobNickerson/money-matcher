@@ -1,5 +1,6 @@
 use mm_core::lob_core::market_orders::Order;
-use rkyv::{rancor::Error as RancorError, to_bytes, util::AlignedVec};
+use rand_distr::num_traits::ToBytes;
+use rkyv::util::AlignedVec;
 use std::{
     fs::File,
     io::{self, BufWriter, Write},
@@ -7,30 +8,23 @@ use std::{
 };
 
 pub struct BinaryLogger {
-    buffer: Vec<u8>,
-    buf_write: BufWriter<File>,
-    batch_size: usize,
-    batches_queued: usize,
+    writer: BufWriter<File>,
 }
 impl BinaryLogger {
     pub fn new(path: &str, batch_size: usize) -> io::Result<Self> {
         let file = File::create(path)?;
         Ok(Self {
-            buffer: Vec::with_capacity(batch_size * size_of::<Order>()),
-            buf_write: BufWriter::with_capacity(16 * 1024 * 1024, file), // TODO: Tune the size of this
-            batch_size,
-            batches_queued: 0,
+            writer: BufWriter::new(file),
         })
     }
-    pub fn log_order(&mut self, order: Order) {
-        // let bytes: AlignedVec =
-        //     to_bytes::<RancorError>(&order).expect("binarylogger: failed to serialize order");
-        // self.buffer.extend_from_slice(bytes.as_ref());
-        // self.batches_queued += 1;
-        // if self.batches_queued == self.batch_size {
-        //     self.buf_write
-        //         .write_all(&self.buffer)
-        //         .expect("binarylogger: bufwriter failed to write");
-        // }
+    pub fn log_order(&mut self, order: &Order) -> Result<(), Box<dyn std::error::Error>> {
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(order)?;
+        let len = bytes.len() as u8;
+        self.writer.write_all(&len.to_le_bytes())?;
+        self.writer.write_all(&bytes)?;
+        Ok(())
+    }
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
     }
 }
