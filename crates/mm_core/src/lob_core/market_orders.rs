@@ -27,6 +27,8 @@ pub enum OrderStatus {
     Canceled,
 }
 
+pub type OrderByteArray = [u8; size_of::<Order>()];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 pub struct Order {
     pub client_id: ClientId,
@@ -54,8 +56,8 @@ impl Order {
         }
     }
 
-    pub fn to_bytes(&self) -> [u8; size_of::<Order>()] {
-        let mut buf = [0u8; size_of::<Order>()];
+    pub fn to_bytes(&self) -> OrderByteArray {
+        let mut buf: OrderByteArray = [0u8; size_of::<Order>()];
 
         const CLID_START: usize = 0;
         const CLID_END: usize = size_of::<ClientId>();
@@ -131,7 +133,7 @@ impl Order {
         buf
     }
 
-    pub fn from_bytes(buf: [u8; size_of::<Order>()]) -> Self {
+    pub fn from_bytes(buf: OrderByteArray) -> Self {
         const CLID_START: usize = 0;
         const CLID_END: usize = size_of::<ClientId>();
         let client_id = ClientId::from_le_bytes(buf[CLID_START..CLID_END].try_into().unwrap());
