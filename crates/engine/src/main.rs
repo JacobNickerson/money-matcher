@@ -86,8 +86,10 @@ fn main() {
             cancel_rate,
             market_rate,
             update_rate,
-            avg_price,
-            price_dev,
+            bid_avg_price,
+            bid_price_dev,
+            ask_avg_price,
+            ask_price_dev,
         } => {
             let mut source = ConstantPoissonSource::new(
                 ConstantPoissonRate::new(order_rate),
@@ -98,7 +100,7 @@ fn main() {
                     cancel_rate,
                     update_rate,
                 ),
-                GaussianOrderGenerator::new(avg_price, price_dev),
+                GaussianOrderGenerator::new(bid_avg_price,bid_price_dev,ask_avg_price,ask_price_dev),
                 rng.clone(),
                 count,
             );
@@ -195,9 +197,10 @@ fn main() {
                 println!("{}", msg);
             }
             break;
-        } else if let Ok(event) = res {
-            logger.log_order(event);
-        }
+        } else if let Ok(event) = res
+            && args.logging && let Err(msg) = logger.log_order(&event) {
+                println!("{}", msg)
+            }
         sim_step_count += 1;
     }
     let elapsed = time.elapsed();

@@ -60,6 +60,11 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub logging: bool,
 
+    /// Log events to a binary file for use with file-based replay
+    #[arg(long, default_value_t = false)]
+    pub record: bool,
+
+
     /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
     ///
     /// Output is in CSV format: step_count,run_time(nanosec),sim_time(nanosec)
@@ -99,13 +104,21 @@ pub enum EventSourceType {
         #[arg(long, default_value_t = 0.05, value_parser = prob_parser)]
         update_rate: f64,
 
-        /// Average order price in cents, must be a positive, non-zero value
+        /// Average order price in cents for bids, must be a positive, non-zero value
         #[arg(long, default_value_t = 1000.0, value_parser = positive_float_parser)]
-        avg_price: f64,
+        bid_avg_price: f64,
 
-        /// Standard deviation of order price in cents, must be a positive, non-zero value
+        /// Standard deviation of order price in cents for bids, must be a positive, non-zero value
         #[arg(long, default_value_t = 50.0, value_parser = positive_float_parser)]
-        price_dev: f64,
+        bid_price_dev: f64,
+
+        /// Average order price in cents for asks, must be a positive, non-zero value
+        #[arg(long, default_value_t = 1000.0, value_parser = positive_float_parser)]
+        ask_avg_price: f64,
+
+        /// Standard deviation of order price in cents for asks, must be a positive, non-zero value
+        #[arg(long, default_value_t = 50.0, value_parser = positive_float_parser)]
+        ask_price_dev: f64,
     },
     /// Replay a historical record of order data from a file, file must contain binary data logged using --record
     File {
