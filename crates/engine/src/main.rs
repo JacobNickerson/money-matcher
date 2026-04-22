@@ -150,7 +150,7 @@ fn main() {
     let mut mold_engine = MoldEngine::start(Arc::clone(&running));
     let broadcast_running = Arc::clone(&running);
     let event_broadcast_thread = thread::spawn(move || {
-        ready.store(true,Ordering::Release);
+        ready.store(true, Ordering::Release);
         while broadcast_running.load(Ordering::Relaxed) {
             while let Some(order) = market_event_cons.try_pop() {
                 // Let all events be broadcasted before joining thread
@@ -164,7 +164,7 @@ fn main() {
 
     let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
     let gateway_running = Arc::clone(&running);
-    let order_gateway_ready = Arc::new(AtomicBool::new(false));  
+    let order_gateway_ready = Arc::new(AtomicBool::new(false));
     let ready = Arc::clone(&order_gateway_ready);
     let order_gateway_thread = thread::spawn(move || {
         let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
@@ -172,7 +172,7 @@ fn main() {
         let engine_thread = thread::spawn(move || {
             engine.run(Arc::clone(&engine_running));
         });
-        ready.store(true,Ordering::Release);
+        ready.store(true, Ordering::Release);
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
@@ -199,12 +199,14 @@ fn main() {
         let _ = engine_thread.join();
     });
 
+    let logger_ready = Arc::new(AtomicBool::new(false));
+    let ready = Arc::clone(&logger_ready);
     let logger_running = Arc::clone(&running);
     let logger_thread = match args.record {
         true => Some(thread::spawn(move || {
             let mut logger = PlainTextLogger::new("test.txt").expect("Failed to create logger");
-            println!("Spun up a writer");
             let mut logger_cons = logger_cons.unwrap(); // Will always exist if this thread is spawned
+            ready.store(true, Ordering::Release);
             while logger_running.load(Ordering::Relaxed) {
                 while let Some(event) = logger_cons.try_pop() {
                     // Let logger finish writing before joining thread
@@ -215,15 +217,24 @@ fn main() {
             }
         })),
 
-        false => None,
+        false => {
+            ready.store(true, Ordering::Release);
+            None
+        }
     };
 
+    let mut sim_step_count: u128 = 0;
+
+    while !mold_ready.load(Ordering::Acquire)
+        || !order_gateway_ready.load(Ordering::Acquire)
+        || !logger_ready.load(Ordering::Acquire)
+    {
+        // Wait for all the threads to be ready
+    }
     if args.logging {
         println!("FixEngine started");
         println!("Running...");
     }
-
-    let mut sim_step_count: u128 = 0;
     let time = Instant::now();
 
     while running.load(Ordering::Relaxed) {
