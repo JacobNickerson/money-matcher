@@ -4,11 +4,11 @@ use crate::data_generator::type_selectors::{TypeSelector, UniformTypeSelector};
 use mm_core::lob_core::market_orders::Order;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
+use rkyv::{Archived, Deserialize, access};
+use std::convert::Infallible;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::vec::Vec;
-use std::convert::Infallible;
-use rkyv::{Archived, Deserialize, access};
 
 pub trait EventSource {
     fn next_event(&mut self) -> Option<Order>;
@@ -90,7 +90,7 @@ pub struct FileReplaySource {
     reader: BufReader<File>,
     batch_size: usize,
     order_buf: Vec<Order>,
-    len_buf: [u8; 8], 
+    len_buf: [u8; 8],
     read_buf: [u8; 64],
 }
 impl FileReplaySource {

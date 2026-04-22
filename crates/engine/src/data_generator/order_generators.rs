@@ -60,7 +60,7 @@ impl OrderGenerator for GaussianOrderGenerator {
         rng: &mut impl Rng,
     ) -> Order {
         let (side, kind) = order_variant;
-        let price = self.compute_price(side,rng);
+        let price = self.compute_price(side, rng);
         let qty = self.qty_dist.sample(rng);
         self.order_counter += 1;
         self.current_time += time_stamp;
@@ -118,7 +118,7 @@ mod tests {
 
     fn generate_limit_orders(count: u64) -> Vec<Order> {
         let mut orders = Vec::new();
-        let mut order_gen = GaussianOrderGenerator::new(50.0,1.0,50.0, 1.0);
+        let mut order_gen = GaussianOrderGenerator::new(50.0, 1.0, 50.0, 1.0);
         let mut seeded_rng = ChaCha8Rng::seed_from_u64(0);
         for i in 0..count {
             orders.push(order_gen.generate(
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_no_panic() {
-        let mut order_gen = GaussianOrderGenerator::new(50.0,1.0,50.0, 1.0);
+        let mut order_gen = GaussianOrderGenerator::new(50.0, 1.0, 50.0, 1.0);
         let mut seeded_rng = ChaCha8Rng::seed_from_u64(0);
         for i in 0..1_000_000 {
             order_gen.generate(

@@ -64,7 +64,6 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub record: bool,
 
-
     /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
     ///
     /// Output is in CSV format: step_count,run_time(nanosec),sim_time(nanosec)

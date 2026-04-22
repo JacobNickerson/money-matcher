@@ -1,5 +1,5 @@
 use crate::lob_core::{ClientId, OrderId, OrderQty, Price, Timestamp};
-use rkyv::{Archive, Serialize, Deserialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use std::cmp::Ordering;
 
 #[repr(u8)]
