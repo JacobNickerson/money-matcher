@@ -26,7 +26,7 @@ use crate::simulator::DynamicSimulator;
 use crate::simulator::latency_config::{LatencyConfig, SimJitter};
 
 use crate::cli_args::{Args, EventSourceType, validate};
-use crate::event_logger::BinaryLogger;
+use crate::event_logger::{BinaryLogger, Logger, PlainTextLogger};
 
 mod cli_args;
 mod data_generator;
@@ -68,6 +68,13 @@ fn main() {
         HeapRb::<MarketEvent>::new(BUFFER_SIZE).split();
     let (client_event_prod, mut client_event_cons) =
         HeapRb::<ClientEvent>::new(BUFFER_SIZE).split();
+    let (mut logger_prod, logger_cons) = match args.record {
+        true => {
+            let (logger_prod, logger_cons) = HeapRb::<Order>::new(BUFFER_SIZE).split();
+            (Some(logger_prod), Some(logger_cons))
+        }
+        false => (None, None),
+    };
     if args.logging {
         println!("Initialized order queues");
     }
@@ -100,7 +107,12 @@ fn main() {
                     cancel_rate,
                     update_rate,
                 ),
-                GaussianOrderGenerator::new(bid_avg_price,bid_price_dev,ask_avg_price,ask_price_dev),
+                GaussianOrderGenerator::new(
+                    bid_avg_price,
+                    bid_price_dev,
+                    ask_avg_price,
+                    ask_price_dev,
+                ),
                 rng.clone(),
                 count,
             );
@@ -133,11 +145,15 @@ fn main() {
         println!("Spawned simulator");
     }
 
+    let mold_ready = Arc::new(AtomicBool::new(false));
+    let ready = Arc::clone(&mold_ready);
     let mut mold_engine = MoldEngine::start(Arc::clone(&running));
     let broadcast_running = Arc::clone(&running);
     let event_broadcast_thread = thread::spawn(move || {
+        ready.store(true,Ordering::Release);
         while broadcast_running.load(Ordering::Relaxed) {
-            if let Some(order) = market_event_cons.try_pop() {
+            while let Some(order) = market_event_cons.try_pop() {
+                // Let all events be broadcasted before joining thread
                 mold_engine.push(order);
             }
         }
@@ -148,12 +164,15 @@ fn main() {
 
     let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
     let gateway_running = Arc::clone(&running);
+    let order_gateway_ready = Arc::new(AtomicBool::new(false));  
+    let ready = Arc::clone(&order_gateway_ready);
     let order_gateway_thread = thread::spawn(move || {
         let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
         let engine_running = Arc::clone(&gateway_running);
         let engine_thread = thread::spawn(move || {
             engine.run(Arc::clone(&engine_running));
         });
+        ready.store(true,Ordering::Release);
         while gateway_running.load(Ordering::Relaxed) {
             if let Some(order) = handler.get_order() {
                 // TODO: Find a more elegant way to handle this
@@ -179,6 +198,26 @@ fn main() {
         }
         let _ = engine_thread.join();
     });
+
+    let logger_running = Arc::clone(&running);
+    let logger_thread = match args.record {
+        true => Some(thread::spawn(move || {
+            let mut logger = PlainTextLogger::new("test.txt").expect("Failed to create logger");
+            println!("Spun up a writer");
+            let mut logger_cons = logger_cons.unwrap(); // Will always exist if this thread is spawned
+            while logger_running.load(Ordering::Relaxed) {
+                while let Some(event) = logger_cons.try_pop() {
+                    // Let logger finish writing before joining thread
+                    if let Err(msg) = logger.log_event(event) {
+                        println!("{}", msg);
+                    }
+                }
+            }
+        })),
+
+        false => None,
+    };
+
     if args.logging {
         println!("FixEngine started");
         println!("Running...");
@@ -187,20 +226,24 @@ fn main() {
     let mut sim_step_count: u128 = 0;
     let time = Instant::now();
 
-    let mut logger = BinaryLogger::new("test.bin", 4).expect("Failed to create logger");
-
     while running.load(Ordering::Relaxed) {
         #[allow(dead_code)]
-        let res = sim.step();
-        if let Err(msg) = res {
-            if args.logging {
-                println!("{}", msg);
+        match sim.step() {
+            Ok(event) => {
+                if let Some(log_queue) = &mut logger_prod
+                    && let Err(_) = log_queue.try_push(event)
+                    && args.logging
+                {
+                    println!("failed to log an order, queue may be full");
+                }
             }
-            break;
-        } else if let Ok(event) = res
-            && args.logging && let Err(msg) = logger.log_order(&event) {
-                println!("{}", msg)
+            Err(msg) => {
+                if args.logging {
+                    println!("{}", msg);
+                }
+                break;
             }
+        }
         sim_step_count += 1;
     }
     let elapsed = time.elapsed();
@@ -225,4 +268,7 @@ fn main() {
 
     let _ = event_broadcast_thread.join();
     let _ = order_gateway_thread.join();
+    if let Some(t) = logger_thread {
+        t.join();
+    }
 }
