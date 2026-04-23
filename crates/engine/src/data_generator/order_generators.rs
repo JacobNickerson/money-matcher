@@ -1,13 +1,9 @@
-use fastrand;
 use mm_core::lob_core::{
     ClientId, OrderId, OrderQty, Price, Timestamp,
     market_orders::{Order, OrderSide, OrderType},
 };
 use rand::{Rng, RngExt};
-use rand_distr::{
-    Distribution, Normal, Uniform,
-    uniform::{UniformSampler, UniformUsize},
-};
+use rand_distr::{Distribution, Normal, Uniform, uniform::UniformSampler};
 
 use crate::simulator::SimTime;
 

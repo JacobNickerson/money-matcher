@@ -4,8 +4,6 @@ use crate::data_generator::type_selectors::{TypeSelector, UniformTypeSelector};
 use mm_core::lob_core::market_orders::{Order, OrderByteArray};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
-use rkyv::{Archived, Deserialize, access};
-use std::convert::Infallible;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::vec::Vec;
