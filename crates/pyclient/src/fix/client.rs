@@ -391,10 +391,6 @@ mod tests {
     #[test]
     #[ignore]
     fn fix_client_test() {
-        for _ in 0..50 {
-            println!("");
-        }
-
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let (mut client, mut handler) = FixClient::new(
             addr,
