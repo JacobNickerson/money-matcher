@@ -26,7 +26,7 @@ use crate::simulator::DynamicSimulator;
 use crate::simulator::latency_config::{LatencyConfig, SimJitter};
 
 use crate::cli_args::{Args, EventSourceType, validate};
-use crate::event_recorder::{BinaryRecorder, Recorder, RecorderEnum, RecorderType, TextRecorder};
+use crate::event_recorder::{BinaryRecorder, RecorderEnum, RecorderType, TextRecorder};
 use crate::logging::log;
 
 mod cli_args;
