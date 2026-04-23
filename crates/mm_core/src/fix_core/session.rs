@@ -213,7 +213,7 @@ impl Session {
                 _ => Err("Unsupported MsgType"),
             };
 
-            println!("Process Inbound Message | {:?}", parsed);
+            println!("Process Inbound Message | {:?}", parsed); // TODO: Use the logging method here
 
             if let Ok(payload) = parsed {
                 let comp_id: Arc<str> = Arc::from(comp_id);
@@ -249,7 +249,7 @@ impl Session {
 
         let mut body = payload.as_bytes();
 
-        println!("Send Message | {:?}", payload);
+        println!("Send Message | {:?}", payload); // TODO: Use the logging method here
 
         if poss_dup_flag {
             let mut new_body = Vec::new();
