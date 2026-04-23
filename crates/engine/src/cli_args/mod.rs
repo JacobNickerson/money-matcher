@@ -1,4 +1,4 @@
-use crate::{event_logger::RecorderType, simulator::latency_config::JitterKind};
+use crate::{event_recorder::RecorderType, simulator::latency_config::JitterKind};
 use clap::{Parser, Subcommand};
 
 pub fn prob_parser(s: &str) -> Result<f64, String> {
