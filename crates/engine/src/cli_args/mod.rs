@@ -21,7 +21,6 @@ pub fn positive_float_parser(s: &str) -> Result<f64, String> {
     }
 }
 
-
 #[derive(Parser, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
