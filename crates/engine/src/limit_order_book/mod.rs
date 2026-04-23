@@ -8,6 +8,8 @@ use mm_core::lob_core::{
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+/// Struct representing a single price level within a limit order book. Contains a FIFO queue for order IDs, which should
+/// be used to look up orders from a table
 #[derive(Debug, Default)]
 pub struct PriceLevel {
     pub total_qty: u64,
@@ -480,6 +482,7 @@ impl<T: EventSink> OrderBook<T> {
         }
     }
 
+    /// Executes a market order, emitting trade events for all trades made
     fn execute_market_order_and_emit_events(
         &mut self,
         order: Order,
@@ -494,7 +497,7 @@ impl<T: EventSink> OrderBook<T> {
         Some(market_order)
     }
 
-    // Checks the current state of the lob and updates cached value for best_ask and best_bid
+    /// Checks the current state of the lob and updates cached value for best_ask and best_bid
     fn update_aggregates(&mut self) {
         self.best_ask = self.best_ask().unwrap_or(0);
         self.best_bid = self.best_bid().unwrap_or(0);
