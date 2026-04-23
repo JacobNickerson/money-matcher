@@ -6,7 +6,7 @@ use mm_core::{
         order_executed_with_price::OrderExecutedWithPrice, order_replace::OrderReplace,
     },
     lob_core::{
-        market_events::{L3Event, L3EventExtra, MarketEvent, MarketEventType},
+        market_events::{L3EventExtra, MarketEvent, MarketEventType},
         market_orders::OrderType,
     },
     moldudp64_core::types::Event,

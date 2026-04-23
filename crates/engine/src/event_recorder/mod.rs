@@ -5,12 +5,14 @@ use std::{
     io::{self, BufWriter, Write},
 };
 
+/// Enum denoting the type of a recorder. Used for selecting a Recorder using command-line args
 #[derive(Clone, Copy, ValueEnum)]
 pub enum RecorderType {
     Binary,
     Text,
 }
 
+/// Enum containing Recorders for dynamic selection of recorders
 pub enum RecorderEnum {
     Binary(BinaryRecorder),
     Text(TextRecorder),
@@ -30,11 +32,15 @@ impl RecorderEnum {
     }
 }
 
+/// Trait that all Recorders must implement.
 pub trait Recorder {
+    /// Record an event
     fn record_event(&mut self, order: Order) -> Result<(), Box<dyn std::error::Error>>;
+    /// Called when the Recorder is cleaning up, typically used to flush to file
     fn shutdown(&mut self) -> io::Result<()>;
 }
 
+/// Recorder that writes structs in a constant-size byte-packed format to file
 pub struct BinaryRecorder {
     writer: BufWriter<File>,
     batch_size: usize,
@@ -65,6 +71,8 @@ impl Recorder for BinaryRecorder {
         Ok(())
     }
 }
+
+/// Recorder that writes structs in plaintext to file
 pub struct TextRecorder {
     writer: BufWriter<File>,
     batch_size: usize,

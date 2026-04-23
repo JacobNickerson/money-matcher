@@ -4,15 +4,16 @@ use crate::data_generator::type_selectors::{TypeSelector, UniformTypeSelector};
 use mm_core::lob_core::market_orders::{Order, OrderByteArray};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
-use rkyv::{Archived, Deserialize, access};
-use std::convert::Infallible;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::vec::Vec;
 
+/// Trait that must be implemented by all sources of events
 pub trait EventSource {
     fn next_event(&mut self) -> Option<Order>;
 }
+/// Enum holding multiple event source types. It is more limited than using SourceFunction, but potentially faster
+/// by avoiding dynamic dispatch and allowing inlining
 pub enum SourceEnum {
     Poisson(ConstantPoissonSource),
     File(FileReplaySource),
@@ -25,6 +26,9 @@ impl EventSource for SourceEnum {
         }
     }
 }
+
+/// Struct that contains a function pointer to any function that generates Option<Order>. More flexible than SourceEnum
+/// if more event sources are implemented, but potentially slower due to using dynamic dispatch and being unable to inline
 pub struct SourceFunction {
     func: Box<dyn FnMut() -> Option<Order>>,
 }
@@ -39,8 +43,8 @@ impl EventSource for SourceFunction {
     }
 }
 
-/* Poisson */
-pub struct PoissonSource<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> {
+/// EventSource that randomly samples event parameters from distributions
+pub struct RandomSource<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> {
     rate_controller: R,
     type_selector: T,
     order_generator: G,
@@ -48,7 +52,7 @@ pub struct PoissonSource<R: RateController, T: TypeSelector, G: OrderGenerator, 
     limit: Option<u64>,
     count: u64,
 }
-impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> PoissonSource<R, T, G, N> {
+impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> RandomSource<R, T, G, N> {
     pub fn new(
         rate_controller: R,
         type_selector: T,
@@ -67,7 +71,7 @@ impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> PoissonSourc
     }
 }
 impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> EventSource
-    for PoissonSource<R, T, G, N>
+    for RandomSource<R, T, G, N>
 {
     fn next_event(&mut self) -> Option<Order> {
         if let Some(limit) = self.limit
@@ -82,7 +86,7 @@ impl<R: RateController, T: TypeSelector, G: OrderGenerator, N: Rng> EventSource
     }
 }
 pub type ConstantPoissonSource =
-    PoissonSource<ConstantPoissonRate, UniformTypeSelector, GaussianOrderGenerator, ChaCha8Rng>;
+    RandomSource<ConstantPoissonRate, UniformTypeSelector, GaussianOrderGenerator, ChaCha8Rng>;
 
 /// EventSource that replays orders from a binary file created by OrderLogger
 /// Expects that binary file contains binary-serialized Orders
@@ -143,9 +147,9 @@ mod tests {
     use rand_chacha::ChaCha8Rng;
 
     fn poisson_generator()
-    -> PoissonSource<ConstantPoissonRate, UniformTypeSelector, GaussianOrderGenerator, ChaCha8Rng>
+    -> RandomSource<ConstantPoissonRate, UniformTypeSelector, GaussianOrderGenerator, ChaCha8Rng>
     {
-        PoissonSource::new(
+        RandomSource::new(
             ConstantPoissonRate::new(1_000_000.0),
             UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
             GaussianOrderGenerator::new(15.0, 1.0, 15.0, 1.0),

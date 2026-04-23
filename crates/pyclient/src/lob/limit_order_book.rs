@@ -5,6 +5,8 @@ use mm_core::lob_core::{
 };
 use std::collections::{BTreeMap, HashMap};
 
+/// A stripped down version of a PriceLevel. Instead of holding a queue of OrderIDs, it only
+/// tracks the qty and number of orders in a price level.
 #[derive(Default)]
 struct Level {
     pub qty: u64,
@@ -39,6 +41,7 @@ impl OrderBook {
         }
     }
 
+    /// Helper for handling limit orders
     fn handle_limit(&mut self, e: L3Event, qty: OrderQty, price: Price) {
         let level = match e.side {
             OrderSide::Ask => self.ask_levels.entry(price).or_default(),
@@ -59,6 +62,7 @@ impl OrderBook {
         );
         // NOTE: LimitOrder events only denote limit orders being entered into the book, trades are executed via trade events
     }
+    /// Helper for handling cancel orders
     fn handle_cancel(&mut self, e: L3Event) {
         let (old_price, old_qty, old_side) = match self.user_orders.get_mut(&e.order_id) {
             Some(o) => (o.price, o.qty, o.side),
@@ -85,6 +89,7 @@ impl OrderBook {
             side.remove(&old_price);
         }
     }
+    /// Helper for handling update orders
     fn handle_update(&mut self, e: L3Event, old_id: OrderId, qty: OrderQty, price: Price) {
         let old_order = match self.user_orders.get_mut(&old_id) {
             Some(o) => o,
@@ -128,6 +133,7 @@ impl OrderBook {
         );
         self.user_orders.remove(&old_id);
     }
+    /// Helper for handling trade orders
     fn handle_trade(&mut self, e: TradeEvent) {
         let maker = match self.user_orders.get_mut(&e.maker_id) {
             Some(o) => o,

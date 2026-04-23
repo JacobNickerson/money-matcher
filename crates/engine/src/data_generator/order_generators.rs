@@ -1,13 +1,9 @@
-use fastrand;
 use mm_core::lob_core::{
     ClientId, OrderId, OrderQty, Price, Timestamp,
     market_orders::{Order, OrderSide, OrderType},
 };
 use rand::{Rng, RngExt};
-use rand_distr::{
-    Distribution, Normal, Uniform,
-    uniform::{UniformSampler, UniformUsize},
-};
+use rand_distr::{Distribution, Normal, Uniform, uniform::UniformSampler};
 
 use crate::simulator::SimTime;
 
@@ -23,6 +19,7 @@ pub trait OrderGenerator {
     ) -> Order;
 }
 
+/// OrderGenerator that samples order prices from a gaussian distribution
 pub struct GaussianOrderGenerator {
     bid_dist: Normal<f64>,
     ask_dist: Normal<f64>,

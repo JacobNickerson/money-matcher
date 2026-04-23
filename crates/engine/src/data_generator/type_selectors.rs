@@ -8,6 +8,7 @@ pub trait TypeSelector {
     fn sample(&mut self, rng: &mut impl Rng) -> (OrderSide, OrderType);
 }
 
+/// Type selector that selects order side and type using uniform distributions
 pub struct UniformTypeSelector {
     bid_proportion: f64,
     new_limit_cutoff: f64,

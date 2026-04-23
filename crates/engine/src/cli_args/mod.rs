@@ -1,6 +1,7 @@
 use crate::{event_recorder::RecorderType, simulator::latency_config::JitterKind};
 use clap::{Parser, Subcommand};
 
+/// Helper function that verifies that a float is between 0 and 1.0
 pub fn prob_parser(s: &str) -> Result<f64, String> {
     let val: f64 = s.parse().map_err(|_| "invalid float")?;
     if (0.0..=1.0).contains(&val) {
@@ -10,6 +11,7 @@ pub fn prob_parser(s: &str) -> Result<f64, String> {
     }
 }
 
+/// Helper function that verifies that a float is >= 0.0
 pub fn positive_float_parser(s: &str) -> Result<f64, String> {
     let val: f64 = s.parse().map_err(|_| "invalid float")?;
     if val > 0.0 {
@@ -80,6 +82,7 @@ pub struct Args {
 }
 
 #[derive(Debug, Subcommand, Clone)]
+/// Subcommand that controls what type of event source to use, and settings for that type
 pub enum EventSourceType {
     /// Generate synthetic orders by randomly sampling inter-arrival times from an exponential distribution
     Poisson {
@@ -139,6 +142,7 @@ pub enum EventSourceType {
     },
 }
 
+/// Validate additional parameters that cannot be handled with value parsers
 pub fn validate(args: &Args) -> Result<(), String> {
     match args.sim_jitter_type {
         JitterKind::None => {}

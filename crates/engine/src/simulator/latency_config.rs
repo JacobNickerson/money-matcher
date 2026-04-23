@@ -4,12 +4,15 @@ use clap::ValueEnum;
 use rand::Rng;
 use rand_distr::{Distribution, Normal, Uniform};
 
+/// Enum denoting the type of distribution used for sampling jitter. Used for selecting distribution from command-line args.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum JitterKind {
     None,
     Uniform,
     Normal,
 }
+/// Enum that represents simulated jitter. Wraps around different random distributions and provides a method to sample from the held
+/// distribution.
 #[derive(Clone, Copy, Debug)]
 pub enum SimJitter {
     None,
@@ -17,6 +20,7 @@ pub enum SimJitter {
     Normal(Normal<f64>),
 }
 impl SimJitter {
+    /// Sample the held distribution for jitter, normal distribution is floored to zero
     pub fn sample(&self, rng: &mut impl Rng) -> SimTime {
         match self {
             SimJitter::None => 0,
@@ -40,6 +44,7 @@ impl From<&Args> for SimJitter {
     }
 }
 
+/// Struct containing simulated latency effects
 #[derive(Clone, Copy, Debug)]
 pub struct LatencyConfig {
     pub latency: SimTime,

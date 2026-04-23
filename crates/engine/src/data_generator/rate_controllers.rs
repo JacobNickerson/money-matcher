@@ -9,6 +9,7 @@ pub trait RateController {
     fn next_dt(&mut self, rng: &mut impl Rng) -> u64;
 }
 
+/// Rate controller that samples inter-arrival time from an exponential distribution that does not change over time.
 pub struct ConstantPoissonRate {
     exp: Exp<f64>,
 }
