@@ -1,4 +1,4 @@
-use crate::simulator::latency_config::JitterKind;
+use crate::{event_logger::RecorderType, simulator::latency_config::JitterKind};
 use clap::{Parser, Subcommand};
 
 pub fn prob_parser(s: &str) -> Result<f64, String> {
@@ -60,9 +60,21 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub logging: bool,
 
-    /// Log events to a binary file for use with file-based replay
+    /// Records events to a file
     #[arg(long, default_value_t = false)]
     pub record: bool,
+
+    /// Determines the format that the recorder should use when writing to a file
+    #[arg(long, required_if_eq("record", "true"))]
+    pub recorder_type: RecorderType,
+
+    /// The name of the file that the run should be recorded to
+    #[arg(long, default_value = "run.mm")]
+    pub record_file: String,
+
+    /// Batch size for recorder file writes
+    #[arg(long, default_value_t = 512)]
+    pub record_batch_size: usize,
 
     /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
     ///
