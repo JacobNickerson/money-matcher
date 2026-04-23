@@ -19,6 +19,7 @@ pub trait OrderGenerator {
     ) -> Order;
 }
 
+/// OrderGenerator that samples order prices from a gaussian distribution
 pub struct GaussianOrderGenerator {
     bid_dist: Normal<f64>,
     ask_dist: Normal<f64>,
