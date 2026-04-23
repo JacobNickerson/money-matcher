@@ -118,7 +118,7 @@ mod tests {
 
     fn generate_limit_orders(count: u64) -> Vec<Order> {
         let mut orders = Vec::new();
-        let mut order_gen = GaussianOrderGenerator::new(50.0, 1.0, 50.0, 1.0);
+        let mut order_gen = GaussianOrderGenerator::new(150.0, 1.0, 50.0, 1.0);
         let mut seeded_rng = ChaCha8Rng::seed_from_u64(0);
         for i in 0..count {
             orders.push(order_gen.generate(
@@ -128,21 +128,38 @@ mod tests {
                 &mut seeded_rng,
             ));
         }
+        for i in 0..count {
+            orders.push(order_gen.generate(
+                0,
+                i,
+                (OrderSide::Ask, OrderType::Limit { qty: 0, price: 0 }),
+                &mut seeded_rng,
+            ));
+        }
         orders
     }
 
     #[test]
     fn test_price_mean() {
         let orders = generate_limit_orders(1000000);
-        let mut total_price: u64 = 0;
+        let mut bid_total_price: u64 = 0;
+        let mut ask_total_price: u64 = 0;
         for order in &orders {
             if let OrderType::Limit { qty: _, price } = order.kind {
-                total_price += price as u64;
+                match order.side {
+                    OrderSide::Bid => bid_total_price += price as u64,
+                    OrderSide::Ask => ask_total_price += price as u64,
+                }
             }
         }
-        let avg_price = total_price as f64 / 1000000.0;
-        assert!(avg_price / 5000.0 < 1.0 + PRECISION);
-        assert!(avg_price / 5000.0 > 1.0 - PRECISION);
+        let avg_bid_price = bid_total_price as f64 / 1000000.0;
+        let avg_ask_price = ask_total_price as f64 / 1000000.0;
+        println!("{avg_bid_price}");
+        println!("{avg_ask_price}");
+        assert!(avg_bid_price / 150.0 < 1.0 + PRECISION);
+        assert!(avg_bid_price / 150.0 > 1.0 - PRECISION);
+        assert!(avg_ask_price / 50.0 < 1.0 + PRECISION);
+        assert!(avg_ask_price / 50.0 > 1.0 - PRECISION);
     }
 
     #[test]
@@ -152,7 +169,11 @@ mod tests {
         let mut greater: u64 = 0;
         for order in &orders {
             if let OrderType::Limit { qty: _, price } = order.kind {
-                if price < 5000 {
+                let threshold = match order.side {
+                    OrderSide::Ask => 150,
+                    OrderSide::Bid => 50,
+                };
+                if price < threshold {
                     lesser += 1;
                 } else {
                     greater += 1;
