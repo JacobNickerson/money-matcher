@@ -137,6 +137,7 @@ impl MarketEvent {
     }
 }
 
+/// Enum containing type specific information about a MarketEvent
 #[derive(Copy, Clone, Debug)]
 pub enum MarketEventType {
     L3(L3Event),
