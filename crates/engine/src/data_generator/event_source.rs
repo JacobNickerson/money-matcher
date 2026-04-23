@@ -1,12 +1,13 @@
 use crate::data_generator::order_generators::{GaussianOrderGenerator, OrderGenerator};
 use crate::data_generator::rate_controllers::{ConstantPoissonRate, RateController};
 use crate::data_generator::type_selectors::{TypeSelector, UniformTypeSelector};
-use memmap2::Mmap;
-use mm_core::lob_core::market_orders::Order;
+use mm_core::lob_core::market_orders::{Order, OrderByteArray};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
+use rkyv::{Archived, Deserialize, access};
+use std::convert::Infallible;
 use std::fs::File;
-use std::io::Result;
+use std::io::{BufReader, Read};
 use std::vec::Vec;
 
 pub trait EventSource {
@@ -86,52 +87,47 @@ pub type ConstantPoissonSource =
 /// EventSource that replays orders from a binary file created by OrderLogger
 /// Expects that binary file contains binary-serialized Orders
 pub struct FileReplaySource {
-    mmap: Mmap,
-    file_size: usize,
-    offset: usize,
+    reader: BufReader<File>,
     batch_size: usize,
-    read_size: usize,
-    buffer: Vec<Order>,
+    order_buf: Vec<Order>,
+    read_buf: OrderByteArray,
     remaining: usize,
+    curr: usize,
 }
 impl FileReplaySource {
-    pub fn new(path: &str, batch_size: usize) -> Result<Self> {
+    pub fn new(path: &str, batch_size: usize) -> std::io::Result<Self> {
         let file = File::open(path)?;
-        let file_size = file.metadata()?.len() as usize;
 
         Ok(Self {
-            mmap: unsafe { Mmap::map(&file)? },
-            file_size,
+            reader: BufReader::new(file),
             batch_size,
-            read_size: (batch_size / size_of::<Order>()) * size_of::<Order>(),
-            offset: 0,
-            buffer: Vec::with_capacity(batch_size),
+            order_buf: vec![Order::default(); batch_size],
+            read_buf: [0u8; size_of::<Order>()],
             remaining: 0,
+            curr: 0,
         })
     }
-    fn read_file(&mut self) {
-        // TODO: Handle end of file
-        let end = std::cmp::min(self.offset + self.read_size, self.file_size);
-        let chunk_size = end - self.offset;
-        let read_size = chunk_size * size_of::<Order>();
-        let chunk = &self.mmap[self.offset..end];
-        for (idx, rec_bytes) in chunk.chunks_exact(read_size).enumerate() {
-            self.buffer[idx] = unsafe { *(rec_bytes.as_ptr() as *const Order) };
+    fn read_file(&mut self) -> usize {
+        let mut read: usize = 0;
+        for i in 0..self.batch_size {
+            if self.reader.read_exact(&mut self.read_buf).is_err() {
+                break; // EOF
+            }
+            self.order_buf[i] = Order::from_bytes(self.read_buf);
+            read += 1;
         }
-        self.offset += read_size;
-        self.remaining = chunk_size;
+        self.remaining = read;
+        self.curr = 0;
+        read
     }
 }
 impl EventSource for FileReplaySource {
     fn next_event(&mut self) -> Option<Order> {
-        if self.offset == self.file_size {
-            return None;
+        if self.curr == self.remaining && self.read_file() == 0 {
+            return None; // EOF
         }
-        if self.remaining == 0 {
-            self.read_file();
-        }
-        let order = self.buffer[self.buffer.len() - self.remaining];
-        self.remaining -= 1;
+        let order = self.order_buf[self.curr];
+        self.curr += 1;
         Some(order)
     }
 }
@@ -152,7 +148,7 @@ mod tests {
         PoissonSource::new(
             ConstantPoissonRate::new(1_000_000.0),
             UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
-            GaussianOrderGenerator::new(15.0, 1.0),
+            GaussianOrderGenerator::new(15.0, 1.0, 15.0, 1.0),
             ChaCha8Rng::seed_from_u64(0),
             None,
         )

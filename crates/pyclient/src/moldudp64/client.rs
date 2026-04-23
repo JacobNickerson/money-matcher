@@ -135,9 +135,6 @@ mod tests {
     fn receive_orders() {
         let mut mold_client = MoldClient::start();
         std::thread::sleep(Duration::from_millis(250));
-        for _ in 0..50 {
-            println!("");
-        }
 
         let mut count = 0;
         let mut last_received = Instant::now();
@@ -146,7 +143,7 @@ mod tests {
             let now = Instant::now();
             if let Some(event) = mold_client.next_event() {
                 println!("Received {:?}", event);
-                count = count + 1;
+                count += 1;
                 last_received = now;
             } else if count > 0 && now - last_received > Duration::from_secs(10) {
                 println!("\n\nReceived {} events", count);

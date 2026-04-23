@@ -1,4 +1,4 @@
-use crate::simulator::latency_config::JitterKind;
+use crate::{event_recorder::RecorderType, simulator::latency_config::JitterKind};
 use clap::{Parser, Subcommand};
 
 pub fn prob_parser(s: &str) -> Result<f64, String> {
@@ -60,6 +60,18 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub logging: bool,
 
+    /// Record events to a file in either plain-text or a serialized binary format
+    #[arg(long = "record")]
+    pub record_type: Option<RecorderType>,
+
+    /// The name of the file that the run should be recorded to
+    #[arg(long, default_value = "run.mm")]
+    pub record_file: String,
+
+    /// Batch size for recorder file writes
+    #[arg(long, default_value_t = 512)]
+    pub record_batch_size: usize,
+
     /// Records runtime and events processed and outputs to stdout after simulator finishes generating orders
     ///
     /// Output is in CSV format: step_count,run_time(nanosec),sim_time(nanosec)
@@ -99,18 +111,26 @@ pub enum EventSourceType {
         #[arg(long, default_value_t = 0.05, value_parser = prob_parser)]
         update_rate: f64,
 
-        /// Average order price in cents, must be a positive, non-zero value
+        /// Average order price in cents for bids, must be a positive, non-zero value
         #[arg(long, default_value_t = 1000.0, value_parser = positive_float_parser)]
-        avg_price: f64,
+        bid_avg_price: f64,
 
-        /// Standard deviation of order price in cents, must be a positive, non-zero value
+        /// Standard deviation of order price in cents for bids, must be a positive, non-zero value
         #[arg(long, default_value_t = 50.0, value_parser = positive_float_parser)]
-        price_dev: f64,
+        bid_price_dev: f64,
+
+        /// Average order price in cents for asks, must be a positive, non-zero value
+        #[arg(long, default_value_t = 1000.0, value_parser = positive_float_parser)]
+        ask_avg_price: f64,
+
+        /// Standard deviation of order price in cents for asks, must be a positive, non-zero value
+        #[arg(long, default_value_t = 50.0, value_parser = positive_float_parser)]
+        ask_price_dev: f64,
     },
     /// Replay a historical record of order data from a file, file must contain binary data logged using --record
     File {
         /// File path to file containing binary-mapped order data
-        #[arg(long, required = true)]
+        #[arg(required = true)]
         file_name: String,
 
         /// Batch size for batch-reading from file
@@ -134,6 +154,19 @@ pub fn validate(args: &Args) -> Result<(), String> {
             let high = args.high.unwrap();
             if low > high {
                 return Err("uniform jitter: `low` must be <= `high`".into());
+            }
+        }
+    }
+    match &args.event_source {
+        EventSourceType::Poisson { .. } => {}
+        EventSourceType::File {
+            file_name,
+            batch_size: _,
+        } => {
+            if let Some(_) = args.record_type
+                && args.record_file == *file_name
+            {
+                return Err("file replay: attempting to read and write from the same file".into());
             }
         }
     }

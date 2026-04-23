@@ -1,3 +1,4 @@
+use crate::logging::log;
 use mio::{
     Events, Interest, Poll, Token, Waker,
     event::Event,
@@ -85,9 +86,10 @@ impl FixEngine {
     }
 
     /// Runs the main blocking event loop. Polls for network I/O and checks session health continuously.
-    pub fn run(&mut self, running: Arc<AtomicBool>) {
+    pub fn run(&mut self, ready: Arc<AtomicBool>, running: Arc<AtomicBool>) {
         let mut events = Events::with_capacity(1024);
-        println!("Server running on {}", self.listener.local_addr().unwrap());
+        log(format!("Server running on {}", self.listener.local_addr().unwrap()).as_str());
+        ready.store(true, Ordering::Release);
 
         while running.load(Ordering::Relaxed) {
             self.poll
@@ -311,7 +313,7 @@ impl FixEngine {
                     }
                 }
                 _ => {
-                    println!("Unhandled engine event: {:?}", event.payload);
+                    log(format!("Unhandled engine event: {:?}", event.payload).as_str());
                 }
             }
         }
@@ -451,16 +453,14 @@ mod tests {
     #[test]
     #[ignore]
     fn fix_engine_test() {
-        for _ in 0..50 {
-            println!("");
-        }
-
+        #[allow(dead_code)]
         let addr: SocketAddr = "127.0.0.1:34254".parse().unwrap();
         let (mut engine, mut handler) = FixEngine::new(addr, "ENGINE01".to_owned()).unwrap();
 
         let running = Arc::new(AtomicBool::new(true));
+        let ready = Arc::new(AtomicBool::new(false));
         let engine_thread = thread::spawn(move || {
-            engine.run(running);
+            engine.run(running, ready);
         });
 
         loop {

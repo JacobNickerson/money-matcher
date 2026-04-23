@@ -594,7 +594,6 @@ dependencies = [
  "pyo3-stub-gen",
  "ringbuf",
  "rkyv",
- "serde",
  "time",
 ]
 

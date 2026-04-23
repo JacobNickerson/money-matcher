@@ -81,13 +81,7 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
         }
     }
     fn generate_single_order(&mut self) -> Option<Order> {
-        if let Some(mut event) = self.source.next_event() {
-            event.order_id = self.id_counter;
-            self.id_counter += 1;
-            Some(event)
-        } else {
-            None
-        }
+        self.source.next_event()
     }
     fn process_event(&mut self, event: Order) {
         self.time = event.timestamp;
@@ -123,7 +117,6 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use ringbuf::HeapRb;
-    use std::time::Instant;
 
     #[test]
     fn simulator_time_monotonic() {
@@ -132,7 +125,7 @@ mod tests {
             PoissonSource::new(
                 ConstantPoissonRate::new(100_000.0),
                 UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
-                GaussianOrderGenerator::new(150.0, 30.0),
+                GaussianOrderGenerator::new(150.0, 30.0, 150.0, 30.0),
                 ChaCha8Rng::seed_from_u64(0),
                 None,
             ),
@@ -145,11 +138,11 @@ mod tests {
             ChaCha8Rng::seed_from_u64(67),
             false,
         );
-        sim.step();
+        let _ = sim.step();
         let mut prev_time: SimTime = 0;
         while sim.time < 1_000_000_000 {
             // run for a full simulated second
-            sim.step();
+            let _ = sim.step();
             assert!(
                 sim.time >= prev_time,
                 "Sim time: {:?}; Prev time: {:?}",
@@ -171,7 +164,7 @@ mod tests {
             PoissonSource::new(
                 ConstantPoissonRate::new(100_000.0),
                 UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
-                GaussianOrderGenerator::new(150.0, 30.0),
+                GaussianOrderGenerator::new(150.0, 30.0, 150.0, 30.0),
                 ChaCha8Rng::seed_from_u64(0),
                 None,
             ),
@@ -184,9 +177,8 @@ mod tests {
             ChaCha8Rng::seed_from_u64(67),
             false,
         );
-        // for _ in 0..100_000 {
-        for _ in 0..25 {
-            sim.step();
+        for _ in 0..5_000 {
+            let _ = sim.step();
         }
         let mut prev_time = market_event_cons.try_pop().unwrap().timestamp;
         let mut saw_greater_than_zero = false;

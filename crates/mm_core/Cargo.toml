@@ -10,5 +10,6 @@ mio = { version = "1.1.1", features = ["net", "os-poll"] }
 pyo3 = "0.27.0"
 pyo3-stub-gen = { version = "0.19.0", default-features = false }
 ringbuf = "0.4.8"
+rkyv = "0.8.15"
 time = { version = "0.3.47", features = ["formatting", "parsing", "macros", "local-offset"] }
 
