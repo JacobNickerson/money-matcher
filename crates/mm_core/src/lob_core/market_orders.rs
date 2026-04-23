@@ -2,6 +2,7 @@ use crate::lob_core::{ClientId, OrderId, OrderQty, Price, Timestamp};
 use rkyv::{Archive, Deserialize, Serialize};
 use std::cmp::Ordering;
 
+/// Enum denoting the side of the order book an order belongs to
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 
@@ -21,14 +22,18 @@ impl TryFrom<u8> for OrderSide {
     }
 }
 
+/// Enum determining the current status of a limit order. Only used for limit orders
+/// found in the order book
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderStatus {
     Active,
     Canceled,
 }
 
+/// Typedef of the fixed-size array of bytes used for a serialized order
 pub type OrderByteArray = [u8; size_of::<Order>()];
 
+/// The Most Important Struct. Represents an order, with type specific information held in its OrderType
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 pub struct Order {
     pub client_id: ClientId,
@@ -56,6 +61,7 @@ impl Order {
         }
     }
 
+    /// Serialize an order to a constant size byte array
     pub fn to_bytes(&self) -> OrderByteArray {
         let mut buf: OrderByteArray = [0u8; size_of::<Order>()];
 
@@ -133,6 +139,7 @@ impl Order {
         buf
     }
 
+    /// Construct an order from a constant size byte array
     pub fn from_bytes(buf: OrderByteArray) -> Self {
         const CLID_START: usize = 0;
         const CLID_END: usize = size_of::<ClientId>();
@@ -229,6 +236,8 @@ impl Default for Order {
     }
 }
 
+/// Enum containing type-specific information for an Order. Currently an Order can be either a
+/// limit order, market order, update, or cancel
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
 pub enum OrderType {
     Limit {
@@ -248,6 +257,8 @@ pub enum OrderType {
     },
 }
 
+/// Stripped down version of Order only used for Orders with type Limit. Used specifically for
+/// storage inside of the limit order book
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LimitOrder {
     pub client_id: ClientId,
