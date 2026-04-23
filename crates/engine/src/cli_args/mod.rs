@@ -60,13 +60,9 @@ pub struct Args {
     #[arg(long, default_value_t = false)]
     pub logging: bool,
 
-    /// Records events to a file
-    #[arg(long, requires("recorder_type"))]
-    pub record: bool,
-
-    /// Determines the format that the recorder should use when writing to a file
-    #[arg(long)]
-    pub recorder_type: Option<RecorderType>,
+    /// Record events to a file in either plain-text or a serialized binary format
+    #[arg(long = "record")]
+    pub record_type: Option<RecorderType>,
 
     /// The name of the file that the run should be recorded to
     #[arg(long, default_value = "run.mm")]
@@ -134,7 +130,7 @@ pub enum EventSourceType {
     /// Replay a historical record of order data from a file, file must contain binary data logged using --record
     File {
         /// File path to file containing binary-mapped order data
-        #[arg(long, required = true)]
+        #[arg(required = true)]
         file_name: String,
 
         /// Batch size for batch-reading from file
@@ -158,6 +154,19 @@ pub fn validate(args: &Args) -> Result<(), String> {
             let high = args.high.unwrap();
             if low > high {
                 return Err("uniform jitter: `low` must be <= `high`".into());
+            }
+        }
+    }
+    match &args.event_source {
+        EventSourceType::Poisson { .. } => {}
+        EventSourceType::File {
+            file_name,
+            batch_size: _,
+        } => {
+            if let Some(_) = args.record_type
+                && args.record_file == *file_name
+            {
+                return Err("file replay: attempting to read and write from the same file".into());
             }
         }
     }
