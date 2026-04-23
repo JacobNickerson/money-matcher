@@ -61,12 +61,12 @@ pub struct Args {
     pub logging: bool,
 
     /// Records events to a file
-    #[arg(long, default_value_t = false)]
+    #[arg(long, requires("recorder_type"))]
     pub record: bool,
 
     /// Determines the format that the recorder should use when writing to a file
-    #[arg(long, required_if_eq("record", "true"))]
-    pub recorder_type: RecorderType,
+    #[arg(long)]
+    pub recorder_type: Option<RecorderType>,
 
     /// The name of the file that the run should be recorded to
     #[arg(long, default_value = "run.mm")]
