@@ -1,7 +1,7 @@
 use crate::data_generator::order_generators::{GaussianOrderGenerator, OrderGenerator};
 use crate::data_generator::rate_controllers::{ConstantPoissonRate, RateController};
 use crate::data_generator::type_selectors::{TypeSelector, UniformTypeSelector};
-use mm_core::lob_core::market_orders::Order;
+use mm_core::lob_core::market_orders::{Order, OrderByteArray};
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use rkyv::{Archived, Deserialize, access};
@@ -90,8 +90,9 @@ pub struct FileReplaySource {
     reader: BufReader<File>,
     batch_size: usize,
     order_buf: Vec<Order>,
-    len_buf: [u8; 8],
-    read_buf: [u8; 64],
+    read_buf: OrderByteArray,
+    remaining: usize,
+    curr: usize,
 }
 impl FileReplaySource {
     pub fn new(path: &str, batch_size: usize) -> std::io::Result<Self> {
@@ -100,35 +101,34 @@ impl FileReplaySource {
         Ok(Self {
             reader: BufReader::new(file),
             batch_size,
-            order_buf: Vec::with_capacity(batch_size),
-            len_buf: [0; 8],
-            read_buf: [0; 64],
+            order_buf: vec![Order::default(); batch_size],
+            read_buf: [0u8; size_of::<Order>()],
+            remaining: 0,
+            curr: 0,
         })
     }
-    fn read_file(&mut self) {
+    fn read_file(&mut self) -> usize {
+        let mut read: usize = 0;
         for i in 0..self.batch_size {
-            if self.reader.read_exact(&mut self.len_buf).is_err() {
-                return; // EOF
+            if self.reader.read_exact(&mut self.read_buf).is_err() {
+                break; // EOF
             }
-            let len = u64::from_le_bytes(self.len_buf) as usize;
-            self.reader.read_exact(&mut self.read_buf[0..len]);
-            // let archived = access::<Archived<Order>,_>(&self.read_buf[0..len]).unwrap();
-            // self.order_buf[i] = archived.deserialize(&mut Infallible).unwrap();
+            self.order_buf[i] = Order::from_bytes(self.read_buf);
+            read += 1;
         }
+        self.remaining = read;
+        self.curr = 0;
+        read
     }
 }
 impl EventSource for FileReplaySource {
     fn next_event(&mut self) -> Option<Order> {
-        // if self.offset == self.file_size {
-        //     return None;
-        // }
-        // if self.remaining == 0 {
-        //     self.read_file();
-        // }
-        // let order = self.buffer[self.buffer.len() - self.remaining];
-        // self.remaining -= 1;
-        None
-        // Some(order)
+        if self.curr == self.remaining && self.read_file() == 0 {
+            return None; // EOF
+        }
+        let order = self.order_buf[self.curr];
+        self.curr += 1;
+        Some(order)
     }
 }
 
@@ -148,7 +148,7 @@ mod tests {
         PoissonSource::new(
             ConstantPoissonRate::new(1_000_000.0),
             UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
-            GaussianOrderGenerator::new(15.0, 1.0),
+            GaussianOrderGenerator::new(15.0, 1.0, 15.0, 1.0),
             ChaCha8Rng::seed_from_u64(0),
             None,
         )
