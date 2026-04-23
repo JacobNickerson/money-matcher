@@ -52,6 +52,8 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             is_real_time,
         }
     }
+    /// Takes a single step in the simulation. Generates a single order from its held order source,
+    /// drains a batch of user orders, inserts them all into a heap, and selects the one with the lowest timestamp
     pub fn step(&mut self) -> Result<Order, String> {
         self.drain_user_orders();
         if let Some(synth_order) = self.generate_single_order() {
@@ -68,9 +70,11 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             Err("Reached end of event stream".to_string())
         }
     }
+    /// Getter for the current simulation time
     pub fn time(&self) -> SimTime {
         self.time
     }
+    /// Attempts to read a batch of user orders from the queue and inserts them into the order heap
     fn drain_user_orders(&mut self) {
         for i in 0..self.user_orders.pop_slice(&mut self.user_order_buffer) {
             let mut order = self.user_order_buffer[i];
@@ -80,13 +84,16 @@ impl<E: EventSource, S: EventSink, R: Rng> Simulator<E, S, R> {
             self.orders.push(order)
         }
     }
+    /// Generates a single event from the artificial event source
     fn generate_single_order(&mut self) -> Option<Order> {
         self.source.next_event()
     }
+    /// Update the simulation time to the timestamp of the order, and pass the order into the limit order book
     fn process_event(&mut self, event: Order) {
         self.time = event.timestamp;
         self.limit_order_book.process_order(event);
     }
+    /// Wait until wall clock time reaches the current simulation time
     fn pace(&self, next_event_time: SimTime) {
         let real_time_delta =
             next_event_time.saturating_sub(self.real_time.elapsed().as_nanos() as u64);
@@ -108,7 +115,7 @@ mod tests {
     use super::*;
     use crate::{
         data_generator::{
-            event_source::PoissonSource, order_generators::GaussianOrderGenerator,
+            event_source::RandomSource, order_generators::GaussianOrderGenerator,
             rate_controllers::ConstantPoissonRate, type_selectors::UniformTypeSelector,
         },
         simulator::latency_config::SimJitter,
@@ -122,7 +129,7 @@ mod tests {
     fn simulator_time_monotonic() {
         let (_, user_order_cons) = HeapRb::<Order>::new(SIM_HEAP_CAPACITY).split();
         let mut sim = Simulator::new(
-            PoissonSource::new(
+            RandomSource::new(
                 ConstantPoissonRate::new(100_000.0),
                 UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
                 GaussianOrderGenerator::new(150.0, 30.0, 150.0, 30.0),
@@ -161,7 +168,7 @@ mod tests {
         let (client_event_prod, mut client_event_cons) =
             HeapRb::<ClientEvent>::new(1 << 24).split();
         let mut sim = Simulator::new(
-            PoissonSource::new(
+            RandomSource::new(
                 ConstantPoissonRate::new(100_000.0),
                 UniformTypeSelector::new(0.5, 0.4, 0.3, 0.2, 0.1),
                 GaussianOrderGenerator::new(150.0, 30.0, 150.0, 30.0),
