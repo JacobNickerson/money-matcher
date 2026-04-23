@@ -1,3 +1,4 @@
+use crate::logging::log;
 use bytes::{BufMut, Bytes, BytesMut};
 use mm_core::moldudp64_core::{sessions::SessionTable, types::Event};
 use ringbuf::{HeapCons, traits::Consumer};
@@ -110,10 +111,11 @@ impl SequencerPublisher {
             let start_seq = u64::from_be_bytes(buf[10..18].try_into().unwrap());
             let count = u16::from_be_bytes(buf[18..20].try_into().unwrap());
 
-            println!(
+            log(format!(
                 "RECEIVED RESEND REQUEST {} {} {}",
                 src_addr, start_seq, count
-            );
+            )
+            .as_str());
 
             self.handle_resend(src_addr, start_seq, count);
         }

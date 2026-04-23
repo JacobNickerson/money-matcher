@@ -222,14 +222,10 @@ mod tests {
     fn send_orders() {
         let mut server = MoldEngine::start(Arc::new(AtomicBool::new(true)));
         std::thread::sleep(std::time::Duration::from_millis(250));
-        for _ in 0..50 {
-            println!("");
-        }
-
         let mut i = 0;
 
         for _ in 0..5 {
-            i = i + 1;
+            i += 1;
 
             let limit_event = MarketEvent {
                 id: 0,
@@ -247,12 +243,12 @@ mod tests {
             };
 
             println!("Sending {:?}", limit_event);
-            server.push(limit_event.clone());
+            server.push(limit_event);
         }
         std::thread::sleep(std::time::Duration::from_secs(5));
 
         for _ in 0..5 {
-            i = i + 1;
+            i += 1;
 
             let cancel_event = MarketEvent {
                 id: 0,
@@ -267,11 +263,11 @@ mod tests {
             };
 
             println!("Sending {:?}", cancel_event);
-            server.push(cancel_event.clone());
+            server.push(cancel_event);
         }
 
         for _ in 0..5 {
-            i = i + 1;
+            i += 1;
 
             let update_event = MarketEvent {
                 id: 0,
@@ -290,11 +286,11 @@ mod tests {
             };
 
             println!("Sending {:?}", update_event);
-            server.push(update_event.clone());
+            server.push(update_event);
         }
 
         for _ in 0..5 {
-            i = i + 1;
+            i += 1;
 
             let trade_event = MarketEvent {
                 id: 0,
@@ -308,7 +304,7 @@ mod tests {
             };
 
             println!("Sending {:?}", trade_event);
-            server.push(trade_event.clone());
+            server.push(trade_event);
         }
 
         std::thread::sleep(std::time::Duration::from_secs(5));
